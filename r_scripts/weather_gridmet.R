@@ -194,7 +194,7 @@ process_weather_gridmet <- function(shapefile, start_year, end_year, output_dir,
         wth_data$DATE_FMT <- sprintf("%d%03d", lubridate::year(wth_data$DATE), lubridate::yday(wth_data$DATE))
         
         header <- sprintf(
-          "$WEATHER DATA: GridMET Data (Point ID: %s)\n@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\nGMET  %8.4f %8.4f   -99 %5.1f %5.1f   -99   -99\n@  DATE  SRAD  TMAX  TMIN  RAIN  TDEW  RH2M  WIND",
+          "$WEATHER DATA: GridMET Data (Point ID: %s)\n@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n GMET  %8.4f %8.4f   -99 %5.1f %5.1f   -99   -99\n@  DATE  SRAD  TMAX  TMIN  RAIN  TDEW  RH2M  WIND",
           point_id, lat, lon, tav, amp
         )
         lines <- sprintf("%7s%6.1f%6.1f%6.1f%6.1f%6.1f%6.1f%6.1f",
