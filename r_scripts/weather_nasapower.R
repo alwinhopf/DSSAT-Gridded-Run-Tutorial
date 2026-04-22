@@ -103,7 +103,7 @@ process_weather_nasapower <- function(shapefile, start_year, end_year, output_di
       # Format and write the .WTH file
       wth_header <- sprintf(
         #"$WEATHER DATA: NASA-POWER (Point ID: %s)\n@ INSI      LAT     LONG  ELEV  TAV  AMP REFHT WNDHT\n  NASA %8.4f %8.4f  -99 %5.1f %5.1f   2.0   2.0\n@ DATE  SRAD  TMAX  TMIN  RAIN  TDEW  RH2M  WIND",
-        "$WEATHER DATA: NASA-POWER (Point ID: %s)\n@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n  NASA %8.4f %8.4f   -99 %5.1f %5.1f   -99   -99\n@  DATE  SRAD  TMAX  TMIN  RAIN  TDEW  RH2M  WIND",
+        "$WEATHER DATA: NASA-POWER (Point ID: %s)\n@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n  NASA %8.4f %8.4f   -99 %5.1f %5.1f   2.0   2.0\n@  DATE  SRAD  TMAX  TMIN  RAIN  TDEW  RH2M  WIND",
         point_id, latitude, longitude, tav, amp
       )
       
