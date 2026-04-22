@@ -73,15 +73,6 @@ This repository is a **work in progress**. The core workflow (R folder builder â
 - **Single-process merge:** rank 0 merges all rank files; this is a bottleneck for huge outputs.
 - **Assumes CSV outputs:** the parser expects DSSAT CSV output files (`summary.csv`, `soilwat.csv`, etc.). If your DSSAT setup produces only `*.OUT` text files, you must enable CSV outputs or adapt the parser.
 
-### Roadmap
-
-- Streaming rank output to disk (write rows as you go).
-- Dynamic scheduling (work queue) for better load balancing.
-- Node-local scratch execution to reduce shared filesystem pressure.
-- Checkpoint/restart: skip completed points, log failures to `failures.csv`.
-- Parquet outputs for faster downstream analytics.
-- `environment.yml` / Apptainer container for reproducible HPC installs.
-
 ---
 
 ## What is DSSAT and why spatial modeling?
