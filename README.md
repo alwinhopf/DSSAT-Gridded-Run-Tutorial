@@ -166,16 +166,16 @@ Copy a known-good experiment file (e.g., `UFGA8201.MZX` from your DSSAT `Maize/`
 
 ### 5 — Source the pipeline
 
-Click **Source** in RStudio. With default demo settings (Montana at 50 km spacing, 3 years of Daymet weather, SSURGO soil, local DSSAT run), the script will:
+Click **Source** in RStudio. With default demo settings (Iowa at 50 km spacing, 2 years of Daymet weather, SSURGO soil, local DSSAT run), the script will:
 
-- Generate ~60 grid points across Montana
+- Generate ~50 grid points across Iowa
 - Download soil and weather data for each point
 - Build one DSSAT run folder per point
 - Run DSSAT locally
 - Parse and merge results
 - Write a merged results CSV and a yield map under `results/`
 
-First run can take 10–30 minutes depending on your internet connection and machine speed.
+First run can take about 10–30 minutes depending on your internet connection and machine speed.
 
 ### 6 — Confirm you got results
 
