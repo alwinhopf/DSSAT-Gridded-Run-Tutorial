@@ -23,7 +23,7 @@
 # Override from dssat_main_pipeline.R before calling the function:
 #   USE_REST_API <- TRUE    # REST API mode  (interactive / local)
 #   USE_REST_API <- FALSE   # VRT/GDAL mode  (HPC / batch)
-USE_REST_API <- FALSE
+USE_REST_API <- TRUE
 
 # ==============================================================================
 #  LIBRARIES
@@ -75,26 +75,30 @@ calculate_soil_physics <- function(sand_pct, clay_pct, om_pct) {
 # ==============================================================================
 #  2. DSSAT .SOL FORMATTER (STRICT VALIDATION MODE)
 # ==============================================================================
-format_dssat_sol_file <- function(site_data, output_dir) {
-  
+format_dssat_sol_file <- function(site_data, output_dir,
+                                  source_name = "ISRIC SoilGrids 2.0",
+                                  source_tag = NULL) {
+
   # 1. Validation: Ensure we actually have data
   if (nrow(site_data) == 0) stop("No soil layers found for this ID.")
-  
+
   # 2. Strict Check for Critical Missing Values (Sand, Clay, BD, OrgC)
   # DSSAT cannot run if these are NA. We abort this specific file if found.
   critical_vars <- c("sand", "clay", "bdod", "soc_pct")
   if (any(is.na(site_data[, critical_vars]))) {
     stop("Critical soil physical data (Sand, Clay, Bulk Density, or OC) contains NAs.")
   }
-  
+
   soil_id <- as.character(site_data$ID[1])
   if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   filename <- file.path(output_dir, paste0(soil_id, ".SOL"))
-  
+
   # --- Header Writing ---
-  cat("*SOILS: SoilGrids2.0 Online\n", file = filename)
-  cat(sprintf("! Source: ISRIC SoilGrids 2.0 (%s)\n\n", 
-              ifelse("VRT" %in% names(site_data), "VRT", "REST API")), file = filename, append = TRUE)
+  if (is.null(source_tag))
+    source_tag <- ifelse("VRT" %in% names(site_data), "VRT", "REST API")
+  cat(sprintf("*SOILS: %s\n", source_name), file = filename)
+  cat(sprintf("! Source: %s (%s)\n\n", source_name, source_tag),
+      file = filename, append = TRUE)
   
   cat(sprintf("*%-10s  SOILGRIDS     %9.3f %9.3f\n",
               substr(soil_id, 1, 10), site_data$latitude[1], site_data$longitude[1]),

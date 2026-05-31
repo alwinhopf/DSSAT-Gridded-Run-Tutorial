@@ -34,6 +34,7 @@ This repository provides an end-to-end, beginner-friendly workflow for **spatial
 - [Step 0 — Prepare DSSAT templates](#step-0--prepare-dssat-templates)
 - [Step 1 — Configure and run the R pipeline](#step-1--configure-and-run-the-r-pipeline)
 - [Validate one point folder before scaling](#validate-one-point-folder-before-scaling)
+- [Testing](#testing)
 - [Option A — Run locally](#option-a--run-locally)
 - [Option B — Run on HPC / cloud (SLURM + MPI)](#option-b--run-on-hpc--cloud-slurm--mpi)
 - [Outputs and what they mean](#outputs-and-what-they-mean)
@@ -65,13 +66,21 @@ This repository is a **work in progress**. The core workflow (R folder builder �
 - **HPC runs with SLURM + MPI:** distributes points across ranks, runs DSSAT, parses CSV outputs, and merges into a single results file.
 - **Output parsing:** merges yield/biomass/management/emissions metrics plus seasonal-average stress indicators.
 
+### Scaling features (HPC MPI runner)
+
+The MPI runner (`hpc/dssat_mpi_runner.py`) was built to scale to large grids:
+
+- **Dynamic work-stealing:** a manager hands points to workers on demand (not static `folders[rank::size]` slicing), so slow points don't stall a rank.
+- **Streaming per-point writes:** each rank streams results straight to its part file instead of accumulating them in memory.
+- **Node-local scratch staging** (`--scratch_dir`, defaults to `$TMPDIR`): each rank stages its small files on fast local disk to avoid a metadata storm on Lustre/GPFS, then copies results back.
+- **Optional merge skip** (`--merge_mode none`): skip the rank-0 serial merge on very large grids and merge the per-rank parts later.
+- **Tiny run folders:** with `DSSATPRO.V48` next to the executable, genotype/support files are resolved from the install instead of copied per point (see [Performance tips](#performance-tips)) — far fewer files for the filesystem to track.
+
 ### Known limitations
 
-- **I/O-heavy at scale:** DSSAT creates many small files per run. On shared filesystems (Lustre/GPFS/NFS), performance can become dominated by metadata overhead once you run many hundreds to thousands of concurrent ranks.
-- **Static work allocation:** MPI ranks are assigned points via simple slicing. Some points may run slower, causing load imbalance.
-- **Memory accumulation:** each rank accumulates results in memory before writing `temp_results_rank_<rank>.csv`. For very large point counts this can become memory-heavy.
-- **Single-process merge:** rank 0 merges all rank files; this is a bottleneck for huge outputs.
 - **Assumes CSV outputs:** the parser expects DSSAT CSV output files (`summary.csv`, `soilwat.csv`, etc.). If your DSSAT setup produces only `*.OUT` text files, you must enable CSV outputs or adapt the parser.
+- **Per-point network sources:** Daymet / NASA POWER / Open-Meteo make one HTTP request per point (parallelised, cached). For very large grids prefer a gridded source (GridMET, CHIRPS, AgERA5) that downloads once and extracts all points locally.
+- **AgERA5 licence + queue:** AgERA5 needs a Copernicus CDS key and a one-time licence acceptance, and its requests are queued server-side (first run for a new area/period can take minutes).
 
 ---
 
@@ -422,7 +431,8 @@ Set `SOIL_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 |-------|----------|--------|-------|
 | `SSURGO` | United States only | Queries USDA Soil Data Access (SDA) web service per point | Most detailed US data; requires internet; queries one point at a time |
 | `SOILGRIDS_10K` | Global | Reads a pre-downloaded master `.SOL` file at 10 km resolution | Fastest for large domains; download the country file once (see below) |
-| `SOILGRIDS_ONLINE` | Global | Queries ISRIC SoilGrids 2.0 REST API or VRT/GDAL per point | Flexible; use `USE_REST_API` flag to switch between REST (interactive) and VRT (HPC batch) mode |
+| `SOILGRIDS_ONLINE` | Global | Queries ISRIC SoilGrids 2.0 via REST API or VRT/GDAL virtual rasters | Flexible; set `soilgrids_mode: REST` (interactive) or `VRT` (HPC batch) in `config.yml` — see [VRT vs REST](#soilgrids-online-vrt-vs-rest-api) |
+| `HWSD` | Global | Reads the FAO Harmonized World Soil Database v2.0 (raster of mapping-unit IDs + SQLite attribute DB) | The FAO "official" ~1 km global product; the long-standing reference for global gridded crop-model studies. **One-time manual download** from FAO (not a streaming API): set `hwsd_raster_file` + `hwsd_db_file` in `config.yml`. Samples the dominant soil per mapping unit and computes DSSAT physics. Requires `rasterio` (Python) / `terra`+`RSQLite` (R). |
 
 ### SoilGrids 10K pre-formatted files
 
@@ -436,16 +446,39 @@ Download the country file you need (e.g. `US.SOL`), place it under `SoilGrids/`,
 EXTERNAL_SOIL_FILE <- file.path(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL")
 ```
 
+### HWSD v2.0 (FAO Harmonized World Soil Database)
+
+`HWSD` reads two files you download **once** from FAO (it is a curated dataset, not a streaming API):
+
+- The HWSD2 **raster** of mapping-unit (SMU) IDs (GeoTIFF/BIL).
+- The HWSD2 **attribute database** (SQLite) with per-layer soil properties.
+- **Source:** FAO HWSD v2.0 — https://www.fao.org/soils-portal/data-hub/soil-maps-and-databases/harmonized-world-soil-database-v2-0/
+
+Place them anywhere and point `config.yml` at them:
+```yaml
+soil_source:       "HWSD"
+hwsd_raster_file:  "HWSD/HWSD2.bil"       # or .tif
+hwsd_db_file:      "HWSD/HWSD2.sqlite"
+```
+The module samples the raster at each point to get the SMU ID, selects the **dominant** soil component (largest area share) from the SQLite DB, computes DSSAT physics (Saxton & Rawls), and writes per-point `.SOL` files. Column names are matched tolerantly; on first use, confirm one output `.SOL` looks sane against your particular HWSD2 release. Points over no-data cells are skipped with a warning.
+
 ### SoilGrids online: VRT vs REST API
 
-The `USE_REST_API` flag in `soil_soilgrids_online.R` controls how data is fetched:
+`SOILGRIDS_ONLINE` can fetch data two ways. Select with the **`soilgrids_mode`** key in `config.yml` (both pipelines honour it):
 
-```r
-USE_REST_API <- TRUE    # JSON REST API — best for interactive / local use;
-                         # rate-limited; includes exponential back-off retry (up to 5 attempts)
-USE_REST_API <- FALSE   # VRT/GDAL virtual rasters — best for HPC / large batch jobs;
-                         # avoids per-point HTTP overhead; benefits from GDAL block caching
+```yaml
+soilgrids_mode: "REST"   # JSON REST API (default)
+soilgrids_mode: "VRT"    # GDAL virtual rasters
 ```
+
+| Mode | Best for | How it works | Dependencies |
+|------|----------|--------------|--------------|
+| `REST` | Interactive / small local runs | One HTTPS request **per point**; rate-limited (~5 req/min) with exponential back-off (up to 5 attempts) | none beyond `requests` / `httr` |
+| `VRT` | HPC / large batch jobs | Streams each global SoilGrids raster **once** (via `/vsicurl/`) and samples all points from it — no per-point HTTP, no rate limit, and often better coverage at the cell level | Python: `rasterio` (GDAL ≥ 3); R: `terra` |
+
+Both modes project points to SoilGrids' native Interrupted Goode's Homolosine CRS, compute DSSAT physics with Saxton & Rawls (2006), and write identical `.SOL` output (the file header records which mode produced it). Points that fall on a SoilGrids no-data cell (e.g. over water) are masked and skipped with a warning rather than producing invalid soil. For grids beyond a handful of points, prefer `VRT`: it reads 36 rasters (6 properties × 6 depths) total regardless of point count, whereas `REST` makes one rate-limited request per point.
+
+> **Direct override:** the underlying `USE_REST_API` flag in `soil_soilgrids_online.R` / `.py` still works if you call the module directly (`TRUE` = REST, `FALSE` = VRT); `soilgrids_mode` simply sets it for you from the central config.
 
 ---
 
@@ -458,8 +491,28 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 | `DAYMET` | North America | ~1 km daily | Best choice for US simulations; uses the `daymetr` package |
 | `NASA_POWER` | Global | ~0.5° daily | Recommended for international runs; outputs real wind speed (`WS2M`) at `WNDHT = 2.0` m |
 | `GRIDMET` | Contiguous US | ~4 km daily | High spatial resolution for US; requires `terra`, `ncdf4`, and `httr` |
+| `OPEN_METEO` | Global (1940–present) | ~9–11 km daily (ERA5/ERA5-Land) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Daily dewpoint and RH are not available (written as `-99`). Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
+| `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
+| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless** — needs a free [Copernicus CDS](https://cds.climate.copernicus.eu/) API key in `~/.cdsapirc`, **plus a one-time licence acceptance** for the dataset (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python) / `ecmwfr`+`terra` (R). |
+
+Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give full global daily coverage, so Europe, Asia, and Africa runs need no US-only source. For **rainfed crops in the tropics/semi-arid**, `NASA_POWER_CHIRPS` gives the best rainfall; for **all-variable global incl. high latitudes**, `AGERA5` (key required) is the highest-resolution option. Soil coverage is likewise global via `SOILGRIDS_10K` / `SOILGRIDS_ONLINE` (ISRIC SoilGrids) or `HWSD` (FAO).
 
 > **NASA-POWER wind note:** Previous versions of `weather_nasapower.R` wrote `WIND = -99` (missing) and set `WNDHT = -99` in the `.WTH` header. The current version writes the real `WS2M` value and correctly sets `REFHT = 2.0` and `WNDHT = 2.0`, matching the NASA-POWER AG community product specification.
+
+### AgERA5 one-time setup (Copernicus CDS)
+
+`AGERA5` needs a free Copernicus CDS account and **three** one-time steps:
+
+1. **Register** at https://cds.climate.copernicus.eu/ and copy your *Personal Access Token* from your profile.
+2. **Create `~/.cdsapirc`** (Linux/macOS) or `%USERPROFILE%\.cdsapirc` (Windows):
+   ```
+   url: https://cds.climate.copernicus.eu/api
+   key: <your-personal-access-token>
+   ```
+3. **Accept the dataset licence** (otherwise the first request fails with `403 … required licences not accepted`): open
+   https://cds.climate.copernicus.eu/datasets/sis-agrometeorological-indicators?tab=download and accept the licence(s) under *Manage licences*.
+
+Then `pip install cdsapi` (Python) or `install.packages("ecmwfr")` (R) and set `weather_source: "AGERA5"`. Requests are queued server-side, so the first run for a new area/period can take minutes; downloads are cached under `agera5_netcdf_cache/`.
 
 ---
 
@@ -467,16 +520,25 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 
 ```text
 .
-├── dssat_main_pipeline.R              # MAIN entrypoint — start here
+├── config.yml                         # CENTRAL CONFIG — shared by R and Python pipelines
+├── config_loader.R                    # loads config.yml into the R pipeline
+├── config_loader.py                   # loads config.yml into the Python pipeline
+├── dssat_main_pipeline.R              # MAIN entrypoint (R) — start here
+├── dssat_main_pipeline.py             # Python port of the R pipeline (serial/multiprocessing)
 ├── r_scripts/
 │   ├── soil_ssurgo.R
 │   ├── soil_soilgrids.R
 │   ├── soil_soilgrids_online.R
+│   ├── soil_hwsd.R                    # FAO HWSD v2.0 global soil (external files)
 │   ├── weather_daymet.R
 │   ├── weather_nasapower.R
 │   ├── weather_gridmet.R
+│   ├── weather_openmeteo.R            # global, keyless ERA5 (EU/Asia/Africa/…)
+│   ├── weather_nasapower_chirps.R     # NASA POWER + high-res CHIRPS rainfall
+│   ├── weather_agera5.R               # AgERA5 (CDS key required)
 │   ├── landcover_raster.R
 │   └── landcover_raster_to_gridpoints.R
+├── python_scripts/                    # Python twins of the r_scripts/ modules
 ├── dssat_templates/                   # template FileX/SQX + cultivar/ecotype/species files
 ├── shapefile/                         # boundary polygons (TIGER/Line or custom)
 ├── gridpoints/                        # generated or user-supplied point shapefiles
@@ -486,8 +548,15 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 ├── SoilGrids/                         # pre-downloaded master .SOL files (SOILGRIDS_10K)
 ├── dssat_runs/                        # generated per-point DSSAT run folders
 ├── results/                           # merged CSVs and yield maps
-├── dssat_mpi_runner.py                # Advanced: MPI runner for HPC
-└── run_dssat_python.slurm             # Advanced: SLURM submit script
+├── tests/
+│   ├── test_smoke.py                  # offline CI test (config + imports + .WTH writer)
+│   └── test_global_sources.py         # live EU/Asia/Africa test (Open-Meteo + SoilGrids)
+├── .github/workflows/smoke.yml        # CI: runs the smoke test + byte-compiles modules
+├── environment.yml / requirements.txt # Python dependency pins (conda / pip)
+├── setup_renv.R                       # R dependency setup (renv)
+└── hpc/
+    ├── dssat_mpi_runner.py            # Advanced: MPI runner for HPC
+    └── run_dssat_python.slurm         # Advanced: SLURM submit script
 ```
 
 > **`.gitignore` note:** the provided `.gitignore` prevents accidentally committing generated run folders (`dssat_runs/`), weather/soil inputs, and merged outputs (`results/`). Review and adjust for your team's data-sharing preferences.
@@ -524,7 +593,7 @@ DSSAT supports two fundamentally different run types. Your choice determines the
 **Use `experiment`** when each treatment is independent (typical single-season management comparisons).
 **Use `sequence`** when you want multi-year carryover (rotation / cover crop / soil C-N dynamics).
 
-> **MPI runner note:** the current `dssat_mpi_runner.py` always looks for a `*.SQX` file and runs DSSAT with the `Q` switch. Treat it as **sequence-mode only** unless you extend it to detect and handle seasonal FileX types.
+> **MPI runner note:** `hpc/dssat_mpi_runner.py` supports both run modes via `--run_mode`. In `sequence` mode it runs the per-point `*.SQX` with the `Q` switch; in `experiment` mode it runs the seasonal FileX (`*.MZX`, `*.WHX`, etc.) with the `A`/`B` switch. Match `--run_mode` (and `--trt_*` / `--seq_*`) to the template you built the folders with.
 
 ---
 
@@ -621,7 +690,36 @@ Copy a working DSSAT example into `dssat_templates/`. For a quick test, copy `UF
 
 ## Step 1 — Configure and run the R pipeline
 
-The main entrypoint is `dssat_main_pipeline.R`. The only section you need to edit for most runs is **SECTION 0: MASTER CONFIGURATION**.
+### Central configuration: `config.yml` (recommended)
+
+The repository ships a single **`config.yml`** at the project root that is the **shared source of truth for both pipelines** — the R pipeline (`dssat_main_pipeline.R`) and the Python port (`dssat_main_pipeline.py`) each load it at startup via a small loader (`config_loader.R` / `config_loader.py`). Edit settings **once** in `config.yml` and both pipelines pick them up, so the R and Python configurations cannot drift apart.
+
+```yaml
+# config.yml — edit these; both R and Python read them.
+project_name:         "dssat_spatial_demo"
+grid_spacing_meters:  50000          # 50 km demo; 5000–10000 for production
+crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
+
+weather_source:       "DAYMET"       # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO
+weather_start_year:   1982
+weather_end_year:     1983
+
+soil_source:          "SOILGRIDS_10K"  # SSURGO | SOILGRIDS_10K | SOILGRIDS_ONLINE
+external_soil_file:   ""                # blank = script default (SoilGrids/US.SOL)
+
+template_file_name:   "UFGA8201.MZX"
+run_mode:             "experiment"   # experiment | sequence
+treatment_start:      1
+treatment_end:        4
+```
+
+**How precedence works:** every key in `config.yml` **overrides** the matching in-script default in SECTION 0. Any key you delete (or leave blank, `""`) falls back to the SECTION 0 default. `config.yml` is therefore fully optional — delete it and both pipelines run exactly on their built-in defaults. If PyYAML / the R `yaml` package is missing, the loader prints a notice and silently uses the in-script defaults.
+
+> The in-script **SECTION 0** values (below) remain the authoritative fallback and documentation of every setting. For most runs you only need to touch `config.yml`. The HPC MPI runner is configured separately via command-line flags (see [HPC execution](#hpc-execution-mpi--slurm)), not `config.yml`.
+
+### Editing SECTION 0 directly (alternative)
+
+The main entrypoint is `dssat_main_pipeline.R`. If you prefer not to use `config.yml`, edit **SECTION 0: MASTER CONFIGURATION** directly.
 
 Key settings:
 
@@ -633,7 +731,7 @@ STATE_NAME_FILTER             <- c("Montana")
 GRID_SPACING_METERS           <- 50000
 
 # --- Weather ---
-WEATHER_SOURCE     <- "DAYMET"               # "DAYMET", "NASA_POWER", or "GRIDMET"
+WEATHER_SOURCE     <- "DAYMET"               # "DAYMET", "NASA_POWER", "GRIDMET", or "OPEN_METEO"
 WEATHER_START_YEAR <- 1999
 WEATHER_END_YEAR   <- 2001
 
@@ -696,6 +794,36 @@ Inspect `dssat_runs/<RUN_NAME>/00000001/` and confirm:
 
 ---
 
+## Testing
+
+The repository ships two test scripts under `tests/`, plus a GitHub Actions CI workflow.
+
+### Offline smoke test (no internet, no DSSAT)
+
+`tests/test_smoke.py` validates the parts of the pipeline that don't need live APIs or a DSSAT install: `config.yml` loading and fallback semantics, that every helper module imports cleanly, and that the DSSAT `.WTH` writer produces a well-formed file from synthetic data. It runs in seconds and is what CI executes on every push.
+
+```bash
+# from the repo root, in your Python environment
+python -m pytest tests/test_smoke.py -v
+#   or as a plain script:
+python tests/test_smoke.py
+```
+
+### Live global-source test (internet required, no DSSAT)
+
+`tests/test_global_sources.py` exercises the **global** data sources end-to-end on three points (Europe / Asia / Africa): it downloads Open-Meteo weather and SoilGrids soil and checks that the emitted `.WTH` / `.SOL` files are well-formed. It accounts for every input point individually — a point that hits a genuine SoilGrids coverage gap is reported as `[skip-no-data]` rather than silently dropped. Because it hits live, rate-limited APIs it is meant to be run on your own machine, not in CI.
+
+```bash
+python tests/test_global_sources.py
+python tests/test_global_sources.py --keep   # keep the output dir for inspection
+```
+
+### Continuous integration
+
+`.github/workflows/smoke.yml` runs the offline smoke test and byte-compiles all Python modules on every push and pull request, so import errors and `.WTH` formatting regressions are caught automatically.
+
+---
+
 ## Option A — Run locally
 
 ### Option A1: Run from R (default)
@@ -707,7 +835,7 @@ If `RUN_DSSAT_EXECUTION <- TRUE` in Section 0, the pipeline runs DSSAT per point
 This is the best way to test the HPC execution path on a workstation before submitting to a cluster:
 
 ```bash
-mpirun -n 4 python dssat_mpi_runner.py \
+mpirun -n 4 python hpc/dssat_mpi_runner.py \
   --base_dir "dssat_runs/<RUN_NAME>" \
   --summary_dir "results" \
   --exe_path "/path/to/dscsm048" \
@@ -790,10 +918,10 @@ cd /scratch/user && unzip <RUN_NAME>.zip
 
 ### 4 — Submit the SLURM job
 
-Edit `run_dssat_python.slurm` to set `DSSAT_EXE`, `BASE_DIR`, `SUMMARY_DIR`, node count, and walltime. Then:
+Edit `hpc/run_dssat_python.slurm` to set `DSSAT_EXE`, the `RUN_DIRS` array (one or more `--base_dir` targets under `/scratch/$USER/`), `SUMMARY_DIR`, node count, and walltime. Then:
 
 ```bash
-sbatch run_dssat_python.slurm
+sbatch hpc/run_dssat_python.slurm
 squeue -u $USER
 ```
 
@@ -802,7 +930,7 @@ squeue -u $USER
 ### 5 — End-to-end mini run (strongly recommended before scaling)
 
 ```bash
-mpirun -n 2 python dssat_mpi_runner.py \
+mpirun -n 2 python hpc/dssat_mpi_runner.py \
   --base_dir "dssat_runs/<RUN_NAME>" \
   --summary_dir "results" \
   --exe_path "$DSSAT_EXE" \
@@ -870,12 +998,13 @@ plot(pts_res["final_grain_kg_ha"])
 
 ## How the MPI Python runner works
 
-1. Rank 0 scans folders under `--base_dir` and identifies point folders (digit-only names).
-2. MPI ranks split the folder list using simple rank slicing (`folders[rank::size]`).
-3. Each rank runs DSSAT per point and per treatment, and writes `temp_results_rank_<rank>.csv`.
-4. Rank 0 merges all temp files into the final `results_<RUN_NAME>.csv`.
+1. Rank 0 scans folders under `--base_dir` and identifies point folders (digit-only names), then broadcasts the task list.
+2. Work is distributed by **dynamic work-stealing**: rank 0 acts as a manager and hands out one folder at a time to each worker on demand, so slow points can't stall a rank's static share while other ranks sit idle. (With `-n 1` it falls back to a single-process loop.)
+3. Each worker runs DSSAT per point/treatment and **streams** rows straight to its `temp_results_rank_<rank>.csv` as each point finishes — no rank-wide in-memory accumulation, and progress survives a late rank failure.
+4. Part files are written to **node-local scratch** (`--scratch_dir`, defaults to `$TMPDIR` in the SLURM script) to avoid a small-file metadata storm on shared Lustre/GPFS, then each rank stages its own part back to the shared summary dir in parallel.
+5. Final merge is controlled by `--merge_mode`: `concat` (default) streams all parts into one `results_<RUN_NAME>.csv`; `none` leaves the per-rank parts in place (each a complete, valid CSV) to skip the rank-0 serial read on very large grids.
 
-The runner supports optional output cleanup (`--cleanup_mode never/success/always`) and output archiving (`--archive_outputs`).
+The runner also supports optional output cleanup (`--cleanup_mode never/success/always`) and output archiving (`--archive_outputs`).
 
 ---
 
@@ -900,6 +1029,8 @@ The runner supports optional output cleanup (`--cleanup_mode never/success/alway
 
 ## Performance tips
 
+- **Tiny run folders (default):** when `DSSATPRO.V48` sits next to the DSSAT executable, the pipeline lets DSSAT resolve genotype/species/SDA/CO₂ files from the install directory instead of copying ~27 files into every point folder. Each folder then holds just the 4–5 essential files (`.WTH`, `SOIL.SOL`, FileX, `DSSBatch.V48`, `DSSATPRO.V48`). On a 10,000-point grid that's ~270,000 fewer files — a large saving on shared filesystems (Lustre/GPFS/NFS) where metadata ops dominate. Set `bundle_genotype_files: true` (auto-forced by `ZIP_FOR_HPC`) only when you need self-contained folders to ship to a host whose `DSSATPRO` doesn't match.
+- **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap. All `.WTH`/`.SOL` writes are skipped if the file already exists, so re-runs resume cheaply.
 - Use **scratch storage** (fast local SSD or parallel filesystem) for `base_dir` — DSSAT creates many small files per run.
 - Use `--cleanup_mode always` in production to remove transient DSSAT files after each point.
 - Always **debug with a single point** first (`DSSAT_CORES <- 1`).
@@ -1093,30 +1224,47 @@ Official compile guide: https://dssat.net/source-code/
 
 ## R package requirements
 
+**You normally don't need to install anything by hand.** When you `source()`
+`dssat_main_pipeline.R`, it runs an `ensure_packages()` bootstrap *before* loading
+any helper module: it checks every package the pipeline needs and, if any are
+missing, **prompts you to install them** in RStudio (`Install these N package(s)
+now? [Y/n]`) or installs them automatically when run non-interactively via
+`Rscript`. If a package can't be installed automatically (e.g. `terra` needs a
+system GDAL), it stops with a clear message naming exactly which package failed,
+instead of a cryptic `there is no package called …` error mid-source.
+
+> **Using RStudio?** RStudio may point at a *different* R installation (and
+> package library) than your command-line `Rscript`. If a package looks
+> "installed" in a terminal but the pipeline still asks to install it, that's
+> why — let the prompt install it into the RStudio library.
+
+The full set it manages (install manually only if you prefer):
+
 ```r
 # Core (always required)
 install.packages(c(
   "sf", "dplyr", "tidyr", "stringr", "lubridate",
   "foreach", "doParallel", "parallel",
   "zoo", "R.utils", "processx", "tools",
-  "ggplot2", "readr", "tibble", "rstudioapi"
+  "ggplot2", "readr", "tibble", "rstudioapi", "pbapply"
 ))
 
 # DSSAT R interface
 install.packages("DSSAT")
 # If not on CRAN: remotes::install_github("palderman/DSSAT")
 
-# Soil packages
+# Soil
 install.packages("soilDB")                           # SSURGO
 install.packages(c("terra", "httr", "jsonlite"))     # SoilGrids online / VRT
+install.packages(c("terra", "DBI", "RSQLite"))       # HWSD
 
-# Weather — install the package(s) matching your WEATHER_SOURCE
+# Weather (match your WEATHER_SOURCE)
 install.packages("daymetr")                          # DAYMET
-install.packages("nasapower")                        # NASA_POWER
+install.packages("nasapower")                        # NASA_POWER / NASA_POWER_CHIRPS
 install.packages(c("terra", "ncdf4", "httr"))        # GRIDMET
-
-# Optional
-install.packages("pbapply")                          # progress bars
+install.packages(c("httr", "jsonlite"))              # OPEN_METEO
+install.packages(c("nasapower", "terra"))            # NASA_POWER_CHIRPS
+install.packages(c("ecmwfr", "terra"))               # AGERA5 (+ a Copernicus CDS key)
 ```
 
 ---

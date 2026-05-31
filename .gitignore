@@ -5,3 +5,11 @@
 /SoilGrids
 /gridpoints
 /gridmet_netcdf_cache
+/chirps_netcdf_cache
+/agera5_netcdf_cache
+/soil_cache
+/weather_cache
+/HWSD
+/__pycache__
+/python_scripts/__pycache__
+/tests/__pycache__

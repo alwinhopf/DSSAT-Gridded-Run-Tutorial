@@ -1,0 +1,28 @@
+# Conda/mamba environment for the DSSAT gridded pipeline.
+#
+#   mamba env create -f environment.yml      # or: conda env create -f environment.yml
+#   conda activate dssat_grid
+#
+# HPC note: mpi4py is intentionally left to pip so it can be built against the
+# cluster's MPI. After activating, run:
+#   pip install --no-cache-dir --no-binary :all: mpi4py==3.1.6
+name: dssat_grid
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy=1.26.4
+  - pandas=2.2.2
+  - geopandas=0.14.4
+  - shapely=2.0.4
+  - pyproj=3.6.1
+  - fiona=1.9.6
+  - rasterio=1.3.10
+  - xarray=2024.6.0
+  - netcdf4=1.6.5
+  - requests=2.32.3
+  - tqdm=4.66.4
+  - pyyaml=6.0.1
+  - pip
+  # mpi4py via pip on HPC (see note above); uncomment for a local conda MPI:
+  # - mpi4py=3.1.6

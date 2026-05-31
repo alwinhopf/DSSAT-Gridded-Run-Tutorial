@@ -125,24 +125,35 @@ if (os_system == "Windows") {
 #   Sys.setenv(DSSAT_BASE = "/path/to/DSSAT48")          # overrides base folder only
 DSSAT_BASE <- Sys.getenv("DSSAT_BASE", unset = DSSAT_BASE)
 
+# --- Shared config overlay (config.yml) ---
+# Loads config.yml (if present) so R and Python share one set of settings.
+# cfg_get(key, default) returns the YAML value or the default below.
+local({
+  loader_dir <- tryCatch(dirname(this.path::this.path()), error = function(e) getwd())
+  for (cand in c(file.path(loader_dir, "config_loader.R"), "config_loader.R")) {
+    if (file.exists(cand)) { source(cand); break }
+  }
+})
+if (!exists("cfg_get")) cfg_get <- function(key, default) default
+
 # --- 2. Project Settings ---
 # PROJECT_NAME: short label used in folder/file naming. No spaces.
-PROJECT_NAME      <- "dssat_spatial_demo"
+PROJECT_NAME      <- cfg_get("project_name", "dssat_spatial_demo")
 # Grid spacing in meters. Larger = fewer points = faster demo.
 # Suggested: 50000 (50 km) for a first test; 5000–10000 for production runs.
-GRID_SPACING_METERS <- 50000
+GRID_SPACING_METERS <- cfg_get("grid_spacing_meters", 50000)
 # Crop module extension — "MZ" = maize, "WH" = wheat, "SB" = soybean, etc.
-CROP_EXTENSION    <- "MZ"
+CROP_EXTENSION    <- cfg_get("crop_extension", "MZ")
 
 # --- 2b. Optional: Run folder naming (decouple inputs vs runs) ---
 # Keep weather/soil/gridpoint folder names tied to PROJECT_NAME/RESOLUTION/SOURCE,
 # but allow the DSSAT run folder name (under dssat_runs/) to be anything you want.
-RUN_TAG <- ""            # e.g. "run1", "calibA"; set "" to keep default naming
-RUN_NAME_STYLE <- "grid"     # "grid"     => <GRID_BASE_NAME>_<RUN_TAG>
+RUN_TAG <- cfg_get("run_tag", "")            # e.g. "run1", "calibA"; set "" to keep default naming
+RUN_NAME_STYLE <- cfg_get("run_name_style", "grid")  # "grid"     => <GRID_BASE_NAME>_<RUN_TAG>
                              #              e.g., dssat_spatial_demo_50km_run1
                              # "scenario" => <GRID_BASE_NAME>_<WEATHER>_<SOIL>_<RUN_TAG>
                              #              e.g., dssat_spatial_demo_50km_DAYMET_SSURGO_run1
-RUN_NAME_OVERRIDE <- ""      # if non-empty, this exact name is used for the run folder
+RUN_NAME_OVERRIDE <- cfg_get("run_name_override", "")  # if non-empty, this exact name is used for the run folder
 
 
 # --- 2a. Spatial domain: choose ONE of the three modes (A / B / C) ---
@@ -166,21 +177,22 @@ RUN_NAME_OVERRIDE <- ""      # if non-empty, this exact name is used for the run
 #   Run r_scripts/landcover_raster.R then r_scripts/landcover_raster_to_gridpoints.R
 #   to build a cropland point shapefile, then use MODE B to feed it here.
 #   See README → "Optional: run only on cropland" for the full walkthrough.
-USE_EXISTING_POINT_SHAPEFILE  <- FALSE   # TRUE = MODE B/C; FALSE = MODE A (demo default)
-EXISTING_POINT_SHAPEFILE_PATH <- file.path(MAIN_PROJECT_DIR, "gridpoints", "my_points.shp")  # MODE B/C only
+USE_EXISTING_POINT_SHAPEFILE  <- cfg_get("use_existing_point_shapefile", FALSE)   # TRUE = MODE B/C; FALSE = MODE A (demo default)
+EXISTING_POINT_SHAPEFILE_PATH <- cfg_get("existing_point_shapefile_path",
+                                         file.path(MAIN_PROJECT_DIR, "gridpoints", "my_points.shp"))  # MODE B/C only
 
 # --- 2b. Boundary settings (MODE A only — ignored when USE_EXISTING_POINT_SHAPEFILE = TRUE) ---
 # BOUNDARY_SHAPEFILE_NAME: path relative to shapefile/ folder.
 #   Default uses the US Census TIGER/Line state boundaries (download instructions in README).
-BOUNDARY_SHAPEFILE_NAME  <- "tl_2024_us_state.shp"
+BOUNDARY_SHAPEFILE_NAME  <- cfg_get("boundary_shapefile_name", "tl_2024_us_state.shp")
 # Set ENABLE_BOUNDARY_FILTER = TRUE to restrict the grid to one or more states/regions.
 # BOUNDARY_FILTER_COLUMN: the attribute column to filter on (e.g., "NAME" for state name,
 #                         "STUSPS" for two-letter abbreviation).
-ENABLE_BOUNDARY_FILTER   <- TRUE
-BOUNDARY_FILTER_COLUMN   <- "NAME"
+ENABLE_BOUNDARY_FILTER   <- cfg_get("enable_boundary_filter", TRUE)
+BOUNDARY_FILTER_COLUMN   <- cfg_get("boundary_filter_column", "NAME")
 # STATE_NAME_FILTER: one or more values to keep. Must match BOUNDARY_FILTER_COLUMN exactly.
 # Demo: Montana at 50 km spacing yields ~60 grid points — fast for a first test.
-STATE_NAME_FILTER        <- c("Iowa")
+STATE_NAME_FILTER        <- as.character(cfg_get("state_name_filter", c("Iowa")))
 
 # --- 2c. Auto-Names & Naming Convention ---
 if (GRID_SPACING_METERS < 1000) { 
@@ -196,23 +208,35 @@ BOUNDARY_FILTER_VALUE <- STATE_NAME_FILTER
 # 2. Weather Settings
 # WEATHER_SOURCE: "DAYMET" (North America, best for US), "NASA_POWER" (global),
 #                 "GRIDMET" (US, high-res; requires extra packages)
-WEATHER_SOURCE     <- "GRIDMET"
+WEATHER_SOURCE     <- cfg_get("weather_source", "DAYMET")
 # Keep the date range short for a first test (longer ranges = more downloads).
-WEATHER_START_YEAR <- 1982 #note: nasa_power not suitable/available before 1984
-WEATHER_END_YEAR   <- 1983
+WEATHER_START_YEAR <- cfg_get("weather_start_year", 1982) #note: nasa_power not suitable/available before 1984
+WEATHER_END_YEAR   <- cfg_get("weather_end_year", 1983)
+# NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p05" (~5.5km) or "p25" (~28km).
+CHIRPS_RESOLUTION  <- as.character(cfg_get("chirps_resolution", "p05"))
 
 # 3. Soil Settings
 # SOIL_SOURCE: "SSURGO"          — US only, queries USDA SDA web service per point
 #              "SOILGRIDS_10K"   — global, reads a pre-downloaded master .SOL file
 #              "SOILGRIDS_ONLINE"— global, queries SoilGrids REST API per point
-SOIL_SOURCE        <- "SSURGO"
+SOIL_SOURCE        <- cfg_get("soil_source", "SOILGRIDS_10K")
 # EXTERNAL_SOIL_FILE: only needed when SOIL_SOURCE is "SOILGRIDS_10K".
 # Pre-formatted DSSAT-ready .SOL files at 10 km resolution (by country):
 #   Harvard Dataverse: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/1PEEY0
 # Based on: Folberth et al. (2019) Environ. Model. Softw. 111:218-228
 #   https://www.sciencedirect.com/science/article/pii/S1364815218313033
 # Download the country file you need, place it under SoilGrids/, and adjust the path below.
-EXTERNAL_SOIL_FILE <- file.path(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL")
+EXTERNAL_SOIL_FILE <- cfg_get("external_soil_file",
+                              file.path(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL"))
+# SOILGRIDS_ONLINE only: "REST" (JSON API, rate-limited) or "VRT" (GDAL virtual
+# rasters via terra; batch-friendly, better coverage). Drives USE_REST_API.
+SOILGRIDS_MODE     <- toupper(cfg_get("soilgrids_mode", "REST"))
+# HWSD only: paths to the FAO HWSD v2.0 raster (SMU IDs) + SQLite database,
+# downloaded once from FAO (blank = script defaults under HWSD/).
+HWSD_RASTER_FILE   <- cfg_get("hwsd_raster_file",
+                              file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.bil"))
+HWSD_DB_FILE       <- cfg_get("hwsd_db_file",
+                              file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.sqlite"))
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
@@ -248,6 +272,8 @@ CENTRAL_SOIL_DIR <- SOIL_ROOT_DIR
 CENTRAL_WEATHER_DIR <- WEATHER_ROOT_DIR
 RESULTS_SUBDIR <- "results"
 GRIDMET_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
+AGERA5_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
 
 # Input Paths
 GRIDPOINTS_OUTPUT_DIR <- file.path(MAIN_PROJECT_DIR, GRIDPOINTS_SUBDIR)
@@ -275,18 +301,18 @@ TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID"
 DSSAT_EXE_PATH <- file.path(DSSAT_BASE, DSSAT_EXE_NAME)
 DSSAT_EXE_PATH <- Sys.getenv("DSSAT_EXE", unset = DSSAT_EXE_PATH)
 TEMPLATE_DIR <- file.path(MAIN_PROJECT_DIR, "dssat_templates")
-TEMPLATE_FILE_NAME <- "UFGA8201.MZX"  # DEMO PLACEHOLDER — replace with your own experiment file
+TEMPLATE_FILE_NAME <- cfg_get("template_file_name", "UFGA8201.MZX")  # DEMO PLACEHOLDER — replace with your own experiment file
                                        # UFGA8201.MZX is a maize file bundled with DSSAT for testing only.
                                        # Any valid DSSAT experiment file works (.MZX, .WHX, .SBX, etc.)
                                        # Match the extension to your CROP_EXTENSION setting above.
 TEMPLATE_FILE_PATH <- file.path(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 
 # --- 6. Run Mode ---
-RUN_MODE <- "experiment" #experiment or sequence
-TREATMENT_START <- 1
-TREATMENT_END <- 4
-SEQUENCE_START <- 1
-SEQUENCE_END <- 1
+RUN_MODE <- cfg_get("run_mode", "experiment") #experiment or sequence
+TREATMENT_START <- cfg_get("treatment_start", 1)
+TREATMENT_END <- cfg_get("treatment_end", 4)
+SEQUENCE_START <- cfg_get("sequence_start", 1)
+SEQUENCE_END <- cfg_get("sequence_end", 1)
 
 # --- 6b. HPC Settings ---
 # Set to TRUE to zip the run folder and delete the original (for cloud upload)
@@ -299,6 +325,16 @@ RUN_DSSAT_EXECUTION <- TRUE # Set to FALSE for HPC preparation
 CLEANUP_RUN_FOLDERS <- FALSE # Set to TRUE to delete all simulation folders after run
 RESUME_DSSAT_RUNS <- FALSE # Set to TRUE to skip creation of new folders
 
+# Performance: when DSSATPRO.V48 sits next to the executable, DSSAT resolves
+# genotype/SDA/CO2 files from the install dir, so they need not be copied into
+# every run folder (big metadata saving at scale). Copy them only when shipping
+# folders elsewhere (ZIP_FOR_HPC), when forced, or when no DSSATPRO is present.
+BUNDLE_GENOTYPE_FILES <- isTRUE(as.logical(cfg_get("bundle_genotype_files", FALSE)))
+COPY_SUPPORT_FILES <- BUNDLE_GENOTYPE_FILES || ZIP_FOR_HPC ||
+  !file.exists(file.path(dirname(DSSAT_EXE_PATH), "DSSATPRO.V48"))
+if (!COPY_SUPPORT_FILES)
+  message("Genotype files resolved via DSSATPRO.V48 (not copied per point — faster).")
+
 # --- 8. Parallel ---
 N_CORES_TO_USE <- max(1, parallel::detectCores() - 4)
 SOIL_CORES <- N_CORES_TO_USE
@@ -310,18 +346,78 @@ DSSAT_CORES <- N_CORES_TO_USE
 # SECTION 1: LOAD LIBRARIES & HELPERS
 #-----------------------------------------------------------------------
 message("Loading libraries...")
-packages_needed <- c("sf", "lubridate", "foreach", "doParallel", "parallel", "DSSAT", "stringr", "dplyr", "tidyverse", "R.utils", "processx", "soilDB", "pbapply", "tools", "rstudioapi", "zoo", "nasapower")
 
-if (WEATHER_SOURCE == "DAYMET") packages_needed <- c(packages_needed, "daymetr")
-if (WEATHER_SOURCE == "NASA_POWER") packages_needed <- c(packages_needed, "nasapower")
-if (WEATHER_SOURCE == "GRIDMET") packages_needed <- c(packages_needed, "terra", "ncdf4", "httr")
+# Every CRAN package the pipeline attaches when it sources its helper modules.
+# All helper modules are sourced at startup (some share helper functions), so
+# the FULL set must be present for `source()` to succeed — that is why we check
+# them all up front rather than only the selected weather/soil source's deps.
+packages_needed <- c(
+  # --- core pipeline ---
+  "sf", "lubridate", "foreach", "doParallel", "parallel", "DSSAT", "stringr",
+  "dplyr", "tidyverse", "R.utils", "processx", "pbapply", "tools",
+  "rstudioapi", "zoo",
+  # --- weather / soil helper modules (attached at source time) ---
+  "nasapower", "daymetr", "terra", "ncdf4", "httr", "jsonlite", "tidyr",
+  "readr", "soilDB"
+)
+# Source-specific packages that are loaded LAZILY inside their module (so
+# sourcing the file never needs them) — require them only when that source is
+# actually selected, so e.g. a Daymet user is never asked to install RSQLite.
+if (WEATHER_SOURCE == "AGERA5") packages_needed <- c(packages_needed, "ecmwfr")
+if (SOIL_SOURCE == "HWSD")      packages_needed <- c(packages_needed, "DBI", "RSQLite")
 
-for (pkg in packages_needed) {
-  if (!require(pkg, character.only = TRUE)) {
-    if (pkg == "climateR") remotes::install_github("mikejohnson51/climateR") else install.packages(pkg)
-    library(pkg, character.only = TRUE)
+# Packages installed from GitHub rather than CRAN (name -> repo).
+github_pkgs <- list(climateR = "mikejohnson51/climateR")
+
+# ---------------------------------------------------------------------------
+# ensure_packages(): install any missing packages (prompting first in an
+# interactive session, auto-installing in batch/Rscript), then attach them all.
+# This makes "Source" in RStudio self-bootstrapping instead of erroring on the
+# first missing dependency.
+# ---------------------------------------------------------------------------
+ensure_packages <- function(pkgs, github = list()) {
+  pkgs    <- unique(pkgs)
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+
+  if (length(missing) > 0) {
+    message("\nThe following required R package(s) are not installed:\n  ",
+            paste(missing, collapse = ", "), "\n")
+    do_install <- TRUE
+    if (interactive()) {
+      ans <- readline(sprintf(
+        "Install these %d package(s) now? [Y/n]: ", length(missing)))
+      do_install <- !nzchar(ans) || tolower(substr(ans, 1, 1)) == "y"
+    }
+    if (!do_install)
+      stop("Required packages are missing and installation was declined. ",
+           "Install them manually, then re-run.", call. = FALSE)
+
+    if (length(intersect(missing, names(github))) > 0 &&
+        !requireNamespace("remotes", quietly = TRUE)) {
+      install.packages("remotes")
+    }
+    for (pkg in missing) {
+      message(sprintf("Installing '%s' ...", pkg))
+      if (!is.null(github[[pkg]])) {
+        remotes::install_github(github[[pkg]])
+      } else {
+        install.packages(pkg)
+      }
+    }
   }
+
+  # Attach everything; collect (don't stop on) any that still won't load.
+  failed <- pkgs[!vapply(pkgs, function(p)
+    suppressWarnings(suppressMessages(
+      require(p, character.only = TRUE, quietly = TRUE))), logical(1))]
+  if (length(failed) > 0)
+    stop("These package(s) could not be installed/loaded automatically:\n  ",
+         paste(failed, collapse = ", "),
+         "\nInstall them manually (e.g. install.packages()), then re-run.",
+         call. = FALSE)
 }
+
+ensure_packages(packages_needed, github = github_pkgs)
 
 options(DSSAT.CSM = DSSAT_EXE_PATH)
 sf_use_s2(FALSE)
@@ -355,9 +451,13 @@ message(sprintf("Sourcing helper scripts from: %s", SCRIPT_DIR))
 source(file.path(SCRIPT_DIR, "weather_daymet.R"))
 source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
 source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
+source(file.path(SCRIPT_DIR, "weather_openmeteo.R"))
+source(file.path(SCRIPT_DIR, "weather_nasapower_chirps.R"))
+source(file.path(SCRIPT_DIR, "weather_agera5.R"))
 source(file.path(SCRIPT_DIR, "soil_ssurgo.R"))
 source(file.path(SCRIPT_DIR, "soil_soilgrids.R"))
 source(file.path(SCRIPT_DIR, "soil_soilgrids_online.R"))
+source(file.path(SCRIPT_DIR, "soil_hwsd.R"))
 
 # --- Helper: format_SQL_in_statement ---
 format_SQL_in_statement <- function(x) {
@@ -396,8 +496,13 @@ if (!file.exists(TEMPLATE_FILE_PATH)) {
   stop(sprintf("CRITICAL: DSSAT Template file not found: %s", TEMPLATE_FILE_PATH))
 }
 
-# 3. Check External Soil File (if not SSURGO)
-if (SOIL_SOURCE != "SSURGO" && SOIL_SOURCE != "SOILGRIDS_ONLINE" && !file.exists(EXTERNAL_SOIL_FILE)) {
+# 3. Check soil input files
+if (SOIL_SOURCE == "HWSD") {
+  for (f in c(HWSD_RASTER_FILE, HWSD_DB_FILE)) {
+    if (!file.exists(f))
+      stop(sprintf("CRITICAL: HWSD file not found: %s\nDownload HWSD v2.0 from FAO and set hwsd_raster_file / hwsd_db_file in config.yml.", f))
+  }
+} else if (SOIL_SOURCE != "SSURGO" && SOIL_SOURCE != "SOILGRIDS_ONLINE" && !file.exists(EXTERNAL_SOIL_FILE)) {
   stop(sprintf("CRITICAL: External soil file needed for %s but not found at: %s", SOIL_SOURCE, EXTERNAL_SOIL_FILE))
 }
 
@@ -1069,9 +1174,21 @@ if (RUN_STEP_1_SOILS) {
                             output_sol_dir = individual_sol_output_folder,
                             id_col = POINT_ID_COLUMN)
   } else if (SOIL_SOURCE == "SOILGRIDS_ONLINE") {
-    process_soils_soilgrids_online(gridfile, soilfile_CSV, 
+    # REST (one request per point, rate-limited) vs VRT (GDAL virtual rasters
+    # via terra; reads each global raster once, better coverage). Set via the
+    # `soilgrids_mode` config key. USE_REST_API is read inside the function.
+    USE_REST_API <<- (SOILGRIDS_MODE != "VRT")
+    message(sprintf("SoilGrids online mode: %s",
+                    if (SOILGRIDS_MODE == "VRT") "VRT" else "REST API"))
+    process_soils_soilgrids_online(gridfile, soilfile_CSV,
                                    output_sol_dir = individual_sol_output_folder,
                                    id_col = POINT_ID_COLUMN)
+  } else if (SOIL_SOURCE == "HWSD") {
+    process_soils_hwsd(gridfile, HWSD_RASTER_FILE, HWSD_DB_FILE,
+                       output_csv_path = soilfile_CSV,
+                       output_sol_dir = individual_sol_output_folder,
+                       id_col = POINT_ID_COLUMN,
+                       lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
   } else { stop("Unknown SOIL_SOURCE") }
 }
 
@@ -1112,6 +1229,14 @@ if (RUN_STEP_2_WEATHER) {
     if (WEATHER_SOURCE == "DAYMET") do.call(process_weather_daymet, common_args)
     else if (WEATHER_SOURCE == "NASA_POWER") do.call(process_weather_nasapower, common_args)
     else if (WEATHER_SOURCE == "GRIDMET") do.call(process_weather_gridmet, c(common_args, list(gridmet_cache_dir = GRIDMET_CACHE_DIR)))
+    else if (WEATHER_SOURCE == "OPEN_METEO") do.call(process_weather_openmeteo, common_args)
+    else if (WEATHER_SOURCE == "NASA_POWER_CHIRPS") {
+      CHIRPS_RESOLUTION <<- if (exists("CHIRPS_RESOLUTION")) CHIRPS_RESOLUTION else "p05"
+      do.call(process_weather_nasapower_chirps,
+              c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR)))
+    }
+    else if (WEATHER_SOURCE == "AGERA5")
+      do.call(process_weather_agera5, c(common_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
   }
   
   # === WEATHER EXTENSION LOGIC (PARALLEL) ===
@@ -1269,16 +1394,19 @@ create_folders_and_files <- function(i) {
   wth <- file.path(weather_repo, paste0(ID, ".WTH"))
   if (file.exists(wth)) file.copy(wth, file.path(ID, basename(wth)))
   
-  # 4. EXTRAS
-  files_to_copy <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = TRUE)
-  if (length(files_to_copy) > 0) file.copy(files_to_copy, ID)
+  # 4. EXTRAS — genotype/SDA/CO2 files. Skipped when DSSATPRO.V48 (next to the
+  # executable) can resolve them from the install dir; see COPY_SUPPORT_FILES.
+  if (COPY_SUPPORT_FILES) {
+    files_to_copy <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = TRUE)
+    if (length(files_to_copy) > 0) file.copy(files_to_copy, ID)
+  }
 }
 
 # --- 3.4. Execute Folder Creation ---
 if (!RESUME_DSSAT_RUNS) {
   message("Creating simulation folders...")
   cl <- makeCluster(DSSAT_CORES)
-  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR"), envir = environment())
+  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES"), envir = environment())
   parLapply(cl, 1:nrow(points), create_folders_and_files)
   stopCluster(cl)
 }

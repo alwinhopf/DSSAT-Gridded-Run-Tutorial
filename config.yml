@@ -1,0 +1,60 @@
+# =============================================================================
+# config.yml — single source of truth for the DSSAT gridded pipeline.
+#
+# Both the R pipeline (dssat_main_pipeline.R) and the Python port
+# (dssat_main_pipeline.py) read this file at the top of SECTION 0. Any key
+# present here OVERRIDES the in-script default; any key you delete falls back
+# to the script default, so this file is fully optional.
+#
+# This prevents the R-vs-Python SECTION-0 settings from drifting apart: edit
+# once here and both pipelines pick it up.
+# =============================================================================
+
+# --- Project / grid ---
+project_name:         "dssat_spatial_demo"
+grid_spacing_meters:  40000          # 50 km demo; 5000-10000 for production
+crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
+
+# --- Run-folder naming ---
+run_tag:              ""             # e.g. "run1"; "" = default naming
+run_name_style:       "grid"         # "grid" or "scenario"
+run_name_override:    ""             # exact run-folder name if non-empty
+
+# --- Spatial domain ---
+use_existing_point_shapefile: false  # false = MODE A grid; true = MODE B/C
+existing_point_shapefile_path: ""    # MODE B/C: path to your .shp (blank = script default)
+boundary_shapefile_name: "tl_2024_us_state.shp"
+enable_boundary_filter:  true
+boundary_filter_column:  "NAME"
+state_name_filter:    ["Iowa"]       # list; matched against boundary_filter_column
+
+# --- Weather ---
+# DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
+# | NASA_POWER_CHIRPS (global, NASA POWER + high-res CHIRPS rainfall, 50S-50N)
+# | AGERA5 (global 0.1deg, ag-tuned; needs a free Copernicus CDS API key)
+weather_source:       "DAYMET"
+weather_start_year:   1982           # NASA_POWER not available before 1984
+weather_end_year:     1983
+chirps_resolution:    "p05"          # NASA_POWER_CHIRPS only: p05 (~5.5km) | p25 (~28km, lighter)
+
+# --- Soil ---
+soil_source:          "SSURGO"  # SSURGO | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD
+external_soil_file:   ""                # SOILGRIDS_10K only; blank = script default (SoilGrids/US.SOL)
+soilgrids_mode:       "REST"            # SOILGRIDS_ONLINE only: REST (keyless, rate-limited) | VRT (needs rasterio; batch-friendly, better coverage)
+hwsd_raster_file:     ""                # HWSD only: FAO HWSD2 raster of mapping-unit IDs (blank = HWSD/HWSD2.bil)
+hwsd_db_file:         ""                # HWSD only: FAO HWSD2 SQLite database (blank = HWSD/HWSD2.sqlite)
+
+# --- DSSAT template / run mode ---
+template_file_name:   "UFGA8201.MZX"
+run_mode:             "experiment"   # experiment | sequence
+treatment_start:      1
+treatment_end:        4
+sequence_start:       1
+sequence_end:         1
+
+# --- Performance ---
+# false (default): rely on DSSATPRO.V48 next to the executable to resolve
+#   genotype/species/SDA/CO2 files — run folders stay tiny (big metadata saving
+#   at scale). true: copy those ~27 files into every folder for self-contained
+#   runs (auto-forced when ZIP_FOR_HPC is set, since folders move to another host).
+bundle_genotype_files: false
