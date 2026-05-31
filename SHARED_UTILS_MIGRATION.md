@@ -57,6 +57,21 @@ R internal helpers (keep in package namespace, do NOT export): `robust_SDA_query
 Same 10 names as above: `process_weather_{daymet,gridmet,nasapower,agera5,openmeteo,nasapower_chirps}`,
 `process_soils_{soilgrids,soilgrids_online,ssurgo,hwsd}`.
 
+### ⚠️ CRITICAL — Python cross-module imports MUST be fixed when packaging
+Two modules import private helpers from sibling modules using FLAT imports that
+only work when all files sit in one directory on `sys.path`. Inside a package
+these break with `ModuleNotFoundError`. Convert to RELATIVE imports during the copy:
+- `soil_hwsd.py`:
+  `from soil_soilgrids_online import _calculate_soil_physics, _format_dssat_sol_file`
+  → `from .soil_soilgrids_online import _calculate_soil_physics, _format_dssat_sol_file`
+- `weather_nasapower_chirps.py`:
+  `from weather_nasapower import _fetch_nasa_power, _calc_tav, _calc_amp`
+  → `from .weather_nasapower import _fetch_nasa_power, _calc_tav, _calc_amp`
+(Implication: CHIRPS reuses NASA-POWER internals; HWSD reuses SoilGrids-online
+internals — so even a "weather only" or "soil only" partial move is not possible;
+move all 10 together.) Re-grep for any other `from (weather_|soil_)` flat imports
+before finalizing.
+
 ### R library deps to put in DESCRIPTION Imports
 daymetr, nasapower, soilDB, sf, terra, ncdf4, httr, jsonlite, dplyr, tidyr,
 lubridate, doParallel, foreach, pbapply, DSSAT
@@ -142,9 +157,185 @@ weather_nasapower_chirps.R, and all Python files.
 
 ---
 
-## Open questions for the user
-1. **Landcover** (`landcover_raster.*`, `landcover_raster_to_gridpoints.*`) is ALSO
-   duplicated across both repos but is out of the stated "weather + soil" scope.
-   Move it into the shared package too, or leave it?
-2. **Package name:** `dssatutils` (R+Python importable name) under repo
-   `dssat-spatial-utils` — OK, or prefer a different name?
+## Resolved decisions (user-confirmed 2026-05-31)
+1. **Landcover stays put** — `landcover_raster.*` and
+   `landcover_raster_to_gridpoints.*` remain in the Gridded model pipeline's
+   `r_scripts/` + `python_scripts/`. Do NOT move them into the shared package.
+   (The R pipeline sources them at `dssat_main_pipeline.R:252-253` — leave those
+   two `source()` lines intact; only the weather/soil `source()` lines 242-251
+   get replaced by `library(dssatutils)`.)
+2. **Repo name = `dssatutils`** (NOT `dssat-spatial-utils`). Importable name in
+   both R and Python is also `dssatutils`. Install URLs:
+   - R: `remotes::install_github("alwinhopf/dssatutils@v0.1.0")`
+   - Python: `dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0`
+
+## Pipeline wiring facts
+**Rewire by CONTENT MATCH, not line number** (line numbers reported inconsistently
+this session due to corruption — do not trust them; match the actual text).
+- `dssat_main_pipeline.R`: there is a block of 10 consecutive
+  `source(file.path(SCRIPT_DIR, "weather_*.R" / "soil_*.R"))` calls, immediately
+  FOLLOWED by 2 `source(... "landcover_raster.R")` /
+  `"landcover_raster_to_gridpoints.R"` calls. Replace ONLY the 10 weather/soil
+  `source()` lines with a single `library(dssatutils)`. KEEP the 2 landcover
+  `source()` lines (landcover stays local). Also keep the SCRIPT_DIR bootstrap
+  block earlier in the file (it uses `source(cand)` for config detection).
+- `dssat_main_pipeline.py`: a block of 10 `from <module> import process_*`
+  (weather_daymet, weather_nasapower, weather_gridmet, weather_openmeteo,
+  weather_nasapower_chirps, weather_agera5, soil_ssurgo, soil_soilgrids,
+  soil_soilgrids_online, soil_hwsd). Replace with `from dssatutils import (...)`.
+  NOTE: there are ALSO two lazy/local imports deeper in the file —
+  `import soil_soilgrids_online as _sg_mod` and
+  `import weather_nasapower_chirps as _wc` — update these to
+  `from dssatutils import soil_soilgrids_online as _sg_mod` etc.
+  (i.e. `import dssatutils.soil_soilgrids_online as _sg_mod`).
+- Landcover imports in the Python pipeline (if any) stay as-is.
+
+## ✅ DONE so far (local, no remote yet)
+- Package built at `/Users/alwinhopf/Documents/GitHub/dssatutils` and VERIFIED while
+  display was working: R/ has 10 files, python/dssatutils/ has 10 + __init__.py,
+  relative cross-imports confirmed (`from .soil_soilgrids_online`,
+  `from .weather_nasapower`), no flat cross-imports remain, smoke.yml present,
+  `python3 -c "import dssatutils"` returns all 10 process_* in __all__.
+- `git init` + 2 commits made locally (commit 1 = package; commit 2 = migrate/
+  scripts). Tag `v0.1.0` created locally. NO remote yet (user chose skip-for-now).
+- Ready-to-run migration scripts written under `dssatutils/migrate/`:
+  - `00_create_remote.sh` (gh OR manual; creates PRIVATE repo, pushes code+tag)
+  - `01_local_install_check.sh` (python import + R sys.source smoke test)
+  - `02_phase2_ml_phenology.sh` (idempotent rewire + backups; USE_LOCAL=1 supported)
+  - `03_phase3_gridded.sh` (idempotent rewire, keeps landcover, adds pins; USE_LOCAL=1)
+  - `migrate/README.md` (run order + rollback)
+
+## Verification results (TIER 1, while display worked)
+- Python byte-compile of all 10 modules: PASS
+- `import dssatutils` (lazy) exposes all 10 process_* in __all__: PASS
+- R `parse()` of all 10 R files: PASS
+- TIER 2 (real per-module Python import) needs numpy/pandas/geopandas/rasterio/
+  xarray etc. The conda *base* env lacks them, so deep import is opt-in
+  (`DEEP=1 ./migrate/01_local_install_check.sh`) — run it inside the project's
+  env (the Gridded repo's environment.yml / requirements.txt) to exercise fully.
+- Two bugs were found & fixed in the CHECK SCRIPT itself (not the package):
+  R regex `\\.R$` -> `[.]R$`; and split syntax-check from heavy real-import.
+
+## TO RUN when ready (needs the remote, or USE_LOCAL=1)
+1. `cd dssatutils && ./migrate/01_local_install_check.sh`  (sanity)
+2. `./migrate/00_create_remote.sh`  (after `brew install gh && gh auth login`, or make empty private repo in UI)
+3. `./migrate/02_phase2_ml_phenology.sh` then review `git -C "../DSSAT ML Phenology Prediction" diff`; then `renv::init(); renv::snapshot()`
+4. `./migrate/03_phase3_gridded.sh` then review `git -C "../DSSAT Gridded Run Tutorial" diff`
+Each script backs up touched files to `<repo>/.migration_backup_<ts>/`.
+
+## Code review — COMPLETE for R; Python partial
+All 10 R files reviewed clean. Final two:
+- `weather_nasapower_chirps.R`: solid. NASA-POWER fetched per point, RAIN replaced
+  by CHIRPS within |lat|<=50 with per-day match + graceful fallback to NASA rain
+  outside coverage / no-data cells. Notes: (a) serial loop — the `n_cores`
+  argument is accepted for interface parity but UNUSED (get_power is the
+  bottleneck & self-throttles); fine, just document. (b) relies on global
+  `CHIRPS_RESOLUTION` via exists() — same pattern as soilgrids USE_REST_API;
+  candidate to convert to a function arg later.
+- `soil_hwsd.R`: solid. Tolerant SQLite column matching, dominant-component pick,
+  lazy DBI/RSQLite load, points over no-data skipped with warning. IMPORTANT
+  packaging note: it calls `calculate_soil_physics()` + `format_dssat_sol_file()`
+  defined in soil_soilgrids_online.R — in an R PACKAGE all R/ files share one
+  namespace so this resolves automatically (NO import fix needed, unlike the
+  Python side). Minor: mapping CSV writes a row for every ID incl. skipped ones
+  (SOIL_ID==ID) though skipped points have no .SOL — could mislead downstream.
+
+Python: byte-compile PASS for all 10 (TIER 1a) and lazy `import dssatutils` PASS;
+a deeper line-by-line Python read is the only remaining nice-to-have (blocked by
+intermittent blind-tool display this session). Known structural facts already
+captured: CHIRPS py reuses `_fetch_nasa_power/_calc_tav/_calc_amp` and HWSD py
+reuses `_calculate_soil_physics/_format_dssat_sol_file` — both converted to
+relative imports and byte-compile-verified.
+
+## BUILD STATE — Phase 1 executed (2026-05-31)
+The package was created at `/Users/alwinhopf/Documents/GitHub/dssatutils`.
+Operations were issued while the tool DISPLAY was intermittently blind, so the
+fresh session MUST verify the following actually landed (the file ops themselves
+succeed even when output doesn't render):
+
+Created / expected to exist:
+- `dssatutils/R/` — 10 files (weather_{daymet,gridmet,nasapower,agera5,openmeteo,
+  nasapower_chirps}.R, soil_{soilgrids,soilgrids_online,ssurgo,hwsd}.R)
+- `dssatutils/python/dssatutils/` — same 10 as .py + `__init__.py` (lazy PEP-562
+  re-export of the 10 process_* functions)
+- `dssatutils/tests/` — test_global_sources.py, test_smoke.py
+- `dssatutils/` root — DESCRIPTION, NAMESPACE (10 explicit export()),
+  pyproject.toml (packages.find where=["python"]; extras: agera5/all/dev),
+  requirements.txt, README.md, LICENSE (MIT), .gitignore
+- `dssatutils/.github/workflows/` — dir created; smoke.yml copy NOT yet confirmed
+  (re-copy from Gridded repo `.github/workflows/smoke.yml` if missing).
+
+Python cross-import fixes applied via `sed -i ''`:
+- soil_hwsd.py: `from soil_soilgrids_online import` -> `from .soil_soilgrids_online import`
+- weather_nasapower_chirps.py: `from weather_nasapower import` -> `from .weather_nasapower import`
+VERIFY both took (grep '^from \.'); if not, apply manually.
+
+### VERIFY checklist (run first in fresh session)
+```
+PKG=/Users/alwinhopf/Documents/GitHub/dssatutils
+ls "$PKG" "$PKG/R" "$PKG/python/dssatutils" "$PKG/tests" "$PKG/.github/workflows"
+grep -n '^from \.' "$PKG/python/dssatutils/soil_hwsd.py" "$PKG/python/dssatutils/weather_nasapower_chirps.py"
+python3 -c "import sys; sys.path.insert(0,'$PKG/python'); import dssatutils; print(dssatutils.__all__)"
+Rscript -e 'cat(readLines(file.path("'"$PKG"'","NAMESPACE")), sep="\n")'
+```
+Also re-copy smoke.yml if missing; consider `pip install -e "$PKG"` and
+`R CMD INSTALL "$PKG"` (or devtools::load_all) as smoke tests.
+
+### REMAINING WORK (needs working display; do NOT do blind)
+1. smoke.yml present? else copy it.
+2. `cd dssatutils && git init && git add -A && git commit` (first commit).
+3. Create PRIVATE GitHub repo `alwinhopf/dssatutils`. `gh` NOT installed:
+   `brew install gh && gh auth login && gh repo create alwinhopf/dssatutils --private --source=. --push`
+   OR create empty private repo in UI then `git remote add origin ... && git push -u origin main`.
+4. `git tag v0.1.0 && git push --tags`.
+5. Phase 2 (ML Phenology repo): delete its duplicated r_scripts/weather_*.R &
+   soil_*.R; add guarded remotes::install_github(".../dssatutils@v0.1.0")+library;
+   replace any source() of those; `renv::init(); renv::snapshot()`.
+6. Phase 3 (Gridded repo): replace the 10 weather/soil `source()` lines in
+   dssat_main_pipeline.R with `library(dssatutils)` (KEEP 2 landcover source()
+   lines); in dssat_main_pipeline.py replace the 10 `from <mod> import process_*`
+   with `from dssatutils import (...)` AND fix the 2 lazy imports
+   (`import dssatutils.soil_soilgrids_online as _sg_mod`,
+   `import dssatutils.weather_nasapower_chirps as _wc`); delete the moved
+   weather/soil files from r_scripts/ & python_scripts/ (KEEP landcover_*);
+   add the pip pin to requirements.txt + install line to setup_renv.R.
+   NOTE: Gridded pipeline sets `USE_REST_API` in global env before calling
+   soilgrids_online — that still works with the packaged function.
+7. Finish code review: weather_nasapower_chirps.R, soil_hwsd.R, all Python.
+8. Optional polish: convert bare library() in R files to @importFrom; unify
+   TAV/AMP into one shared helper (R + Python); make soilgrids mode an arg.
+
+## ⚠️ Session status / WARNING for whoever resumes
+Implementation was NOT executed. The tool layer (Read AND Bash) returned corrupted/
+truncated results in this session (the harness itself flagged results as unreliable;
+e.g. `wc -l` duplicated a filename with two different counts; Read line numbers
+jumped non-monotonically). Do the real work in a FRESH session.
+
+**FALSE ALARMS — RESOLVED.** Earlier suspected soil "bugs" were display artifacts
+from the corruption, now DISPROVEN by two consistent channels (clean Read + Bash
+grep). The soil R files are fine:
+- `soil_ssurgo.R`: correctly calls `calculate_soil_properties()` (defined L35,
+  called L210). NO undefined function. SSURGO SQL is REAL (full queries L167,
+  L196-200). Smart-resume + Saxton-Rawls physics all present.
+- `soil_soilgrids_online.R`: `format_dssat_sol_file()` (L78) and
+  `fetch_soilgrids_vrt()` (L242) are FULLY implemented; REST mode writes .SOL
+  files in a tryCatch loop with error logging (L380-394). Not stubs.
+
+**Code review status:** cleanly reviewed = all weather R EXCEPT
+weather_nasapower_chirps.R, plus soil_soilgrids.R, soil_ssurgo.R,
+soil_soilgrids_online.R. STILL TO REVIEW in a clean session:
+weather_nasapower_chirps.R, soil_hwsd.R, and ALL Python modules.
+
+Confirmed weather findings stand (see weather section above): GridMET RH2M/TDEW
+proxies, Open-Meteo -99 TDEW/RH, NASA-POWER leftover "FIX" comments, inconsistent
+TAV/AMP (gridmet uses DSSAT::calc_TAV/AMP; others hand-roll), bare library() calls
+to convert to Imports.
+
+Verified-clean soil findings (minor, optional):
+- `soil_soilgrids_online.R` hardcodes `USE_REST_API <- TRUE` at top and reads it
+  via `exists()`. As a package this becomes a package-level binding; the pipeline
+  overrides by assigning `USE_REST_API` in the global env before the call. Works,
+  but a cleaner API would make it a function argument (`mode = "REST"|"VRT"`).
+- SSURGO `process_soils_ssurgo` only parallelizes on Windows (`makeCluster`);
+  on macOS/Linux `cl <- n_cores` is passed to `pblapply`, which treats an integer
+  as fork-based cores — fine, just asymmetric. Worth a comment.
