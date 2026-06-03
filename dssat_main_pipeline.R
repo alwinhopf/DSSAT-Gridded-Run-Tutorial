@@ -435,29 +435,32 @@ possible_script_dirs <- c(
   MAIN_PROJECT_DIR
 )
 
+# Weather/soil helpers now come from the dssatutils package (loaded below); only
+# the landcover helpers remain in r_scripts/, so detect the dir via one of those.
 SCRIPT_DIR <- NA
 for (dir in possible_script_dirs) {
-  if (!is.na(dir) && dir != "" && file.exists(file.path(dir, "soil_ssurgo.R"))) {
+  if (!is.na(dir) && dir != "" && file.exists(file.path(dir, "landcover_raster.R"))) {
     SCRIPT_DIR <- dir
     break
   }
 }
 
 if (is.na(SCRIPT_DIR)) {
-  stop("Helper scripts (soil_ssurgo.R, etc.) not found. Expected them under <repo_root>/r_scripts/. Please check your folder layout and paths.")
+  stop("Landcover helper scripts (landcover_raster.R, etc.) not found. Expected them under <repo_root>/r_scripts/. Please check your folder layout and paths.")
 }
-message(sprintf("Sourcing helper scripts from: %s", SCRIPT_DIR))
+message(sprintf("Using landcover helper scripts from: %s", SCRIPT_DIR))
 
-source(file.path(SCRIPT_DIR, "weather_daymet.R"))
-source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
-source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
-source(file.path(SCRIPT_DIR, "weather_openmeteo.R"))
-source(file.path(SCRIPT_DIR, "weather_nasapower_chirps.R"))
-source(file.path(SCRIPT_DIR, "weather_agera5.R"))
-source(file.path(SCRIPT_DIR, "soil_ssurgo.R"))
-source(file.path(SCRIPT_DIR, "soil_soilgrids.R"))
-source(file.path(SCRIPT_DIR, "soil_soilgrids_online.R"))
-source(file.path(SCRIPT_DIR, "soil_hwsd.R"))
+library(dssatutils)  # [dssatutils] shared weather/soil sources
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_openmeteo.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower_chirps.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "weather_agera5.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "soil_ssurgo.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "soil_soilgrids.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "soil_soilgrids_online.R"))
+# [dssatutils] source(file.path(SCRIPT_DIR, "soil_hwsd.R"))
 
 # --- Helper: format_SQL_in_statement ---
 format_SQL_in_statement <- function(x) {

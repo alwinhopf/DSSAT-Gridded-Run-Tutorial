@@ -26,6 +26,8 @@ This repository provides an end-to-end, beginner-friendly workflow for **spatial
   - [Mode C — Cropland-only points (CDL / NLCD)](#mode-c--cropland-only-points-cdl--nlcd)
 - [Soil data sources](#soil-data-sources)
 - [Weather data sources](#weather-data-sources)
+- [Sensitivity experiments: sweep weather × soil combinations](#sensitivity-experiments-sweep-weather--soil-combinations)
+- [Validation against observed data](#validation-against-observed-data)
 - [Repository layout](#repository-layout)
 - [Background: DSSAT inputs and run-folder anatomy](#background-dssat-inputs-and-run-folder-anatomy)
   - [Regular vs crop-sequence runs](#regular-vs-crop-sequence-runs)
@@ -516,6 +518,272 @@ Then `pip install cdsapi` (Python) or `install.packages("ecmwfr")` (R) and set `
 
 ---
 
+## Sensitivity experiments: sweep weather × soil combinations
+
+`config.yml` runs **one** `weather_source` × `soil_source` at a time. To study how
+much the choice of input data drives your results, you often want to run the *same*
+simulation under **every** combination of weather and soil and compare. Two files
+on top of the pipeline do this — you never edit the pipeline itself:
+
+| File | Role |
+|------|------|
+| **`experiment.yml`** | Single source of truth for the study: the constant *base* simulation (region, crop, template, grid) plus the *factor lists* to sweep — `weather_source`, `soil_source`, and an optional `period` (weather-year window). |
+| **`run_experiment.R`** | Orchestrator: builds the full factorial, runs `dssat_main_pipeline.R` once per combination (optionally in parallel), then aggregates everything into one tidy table, plus a summary, ANOVA variance decomposition, and boxplot **per response variable**. |
+
+### Run the whole workflow in one go (`run_all.R`)
+
+The stages below (sweep → analysis → validation) can be chained with a single
+command:
+
+```bash
+Rscript run_all.R                       # sweep (experiment.yml) + analysis
+Rscript run_all.R --experiment my.yml   # use a different experiment file
+Rscript run_all.R --validate            # also run the observed-data validation
+Rscript run_all.R --validate-only       # just the validation stage
+Rscript run_all.R --no-analysis         # sweep only
+```
+
+`run_all.R` reads the experiment file to locate the sweep's `combined.csv` and
+response variable(s), runs `analyze_experiment.R` on each, and (with
+`--validate`) finishes with `validate_against_observed.R`. It stops at the first
+failing stage. The individual scripts below are still there if you want to run a
+single stage or re-run just the analysis on an existing sweep.
+
+### How it works
+
+Each combination needs its own settings without disturbing your `config.yml`.
+The loaders (`config_loader.R` / `config_loader.py`) honour a **`DSSAT_CONFIG_FILE`**
+environment variable that, when set, overrides the usual `config.yml` lookup. So
+for every combination the orchestrator:
+
+1. merges settings — `config.yml < experiment.yml:base < the combination's factor values`,
+2. writes that to a **private temp config file** under `.experiment_configs/`,
+3. runs the pipeline as a fresh `Rscript` subprocess with `DSSAT_CONFIG_FILE`
+   pointing at it.
+
+Your real `config.yml` is **never modified**, and parallel workers never share a
+config — so nothing can clobber anything. Each combination's results land in its
+own `results/<scenario>_results.csv`, tagged on read with the factor values.
+
+### Define the experiment (`experiment.yml`)
+
+```yaml
+experiment_name: "wx_soil_sensitivity"
+
+base:                         # held constant across every combination (config.yml keys)
+  project_name:        "dssat_spatial_demo"
+  grid_spacing_meters: 40000
+  crop_extension:      "MZ"
+  state_name_filter:   ["Iowa"]    # region of interest
+  weather_start_year:  1982        # must cover the template's planting year (UFGA8201 = 1982)
+  weather_end_year:    1983
+  template_file_name:  "UFGA8201.MZX"
+  treatment_start:     1
+  treatment_end:       4
+
+factors:                      # the full factorial of these lists is run
+  weather_source: ["DAYMET", "OPEN_METEO"]   # keyless, both cover 1982
+  soil_source:    ["SSURGO", "SOILGRIDS_10K"]
+  # period:       ["1982-1983", "1984-1985"]   # OPTIONAL 3rd factor: weather-year windows
+
+exclude: []                   # optional: drop specific (weather, soil) pairs
+
+options:
+  stop_on_error:  false       # continue past a failed combination
+  reuse_existing: true        # skip combos already computed (resumable)
+  dry_run:        false       # true = print the plan and exit, run nothing
+  validate:       true        # pre-flight checks: drop impossible combos, warn on risky ones
+  max_parallel:   1           # >1 runs combinations concurrently (see below)
+  response_vars:              # one or many; each gets its own summary/variance/plot
+    - "final_grain_kg_ha"
+    # - "soil_organic_carbon_delta_kg_C_ha"
+    # - "nitrate_leaching_kg_ha"
+```
+
+**Period as a third factor.** Inter-annual weather variability often rivals the
+choice of dataset. Adding `period:` reruns each weather × soil pair over several
+year windows so the ANOVA can separate "*which dataset*" from "*which years*".
+Note that the pipeline does **not** rebase the template's planting year, so each
+window must cover the planting year in your FileX — the `UFGA8201` demo template
+is fixed to 1982. Use a multi-year experiment file (or per-window templates) to
+sweep periods meaningfully.
+
+**Multiple response variables.** Inputs that barely move yield can still strongly
+move the water or nitrogen balance, so `response_vars` accepts a list — each is
+summarised, decomposed, and plotted separately (`response_var` still works for a
+single one). Any numeric column of the results CSV is valid (e.g.
+`final_grain_kg_ha`, `soil_organic_carbon_delta_kg_C_ha`, `nitrate_leaching_kg_ha`,
+`final_irrigation_amount_mm`).
+
+### Run it
+
+```bash
+Rscript run_experiment.R                     # uses experiment.yml
+Rscript run_experiment.R my_other.yml        # or any experiment file
+```
+
+(or open `run_experiment.R` in RStudio and click **Source**.) Tip: set
+`dry_run: true` first to preview the combinations, validation results, and output
+paths without running DSSAT.
+
+### Pre-flight validation (`validate: true`)
+
+Before running, the orchestrator screens every combination and prints the plan:
+
+- **Drops impossible combinations** — `AGERA5` without a Copernicus key
+  (`~/.cdsapirc`), or `NASA_POWER` with a period starting before 1984.
+- **Warns on risky ones** — `GRIDMET`/`SSURGO` are US-only; `SOILGRIDS_ONLINE`
+  (REST) is rate-limited and may throttle under high `max_parallel`.
+
+### Parallel execution (`max_parallel > 1`)
+
+Combinations are independent, so they can run concurrently
+(`parallel::mclapply`; Windows falls back to serial). Because combinations that
+share a weather or soil source also share the framework's download caches, the
+orchestrator first runs a short **serial warm-up pass** that touches each
+weather/soil source once to populate those caches, then runs the rest in
+parallel so workers only *read* them — avoiding cold-download races. Parallel (or
+period-swept) runs also give each combination a unique `project_name` so their
+weather/soil/run folders never collide.
+
+### Outputs
+
+| Output | Contents |
+|--------|----------|
+| `results/EXPERIMENT_<name>_combined.csv` | Every combination's point-level results stacked into one tidy long table, tagged with `weather_source`, `soil_source`, `period`, `scenario_id`. |
+| `results/EXPERIMENT_<name>[_<var>]_summary.csv` | Mean / sd / min / max of the response variable per combination. |
+| `results/EXPERIMENT_<name>[_<var>]_variance.csv` | ANOVA share of variance attributable to each factor. |
+| `results/EXPERIMENT_<name>[_<var>]_boxplot.png` | Response distribution, weather on the x-axis, soil as colour (faceted by period when swept). |
+| `results/experiment_logs/<scenario>.log` | Full pipeline stdout/stderr for each combination (where to look if one fails). |
+
+(The `_<var>` infix appears only when you request more than one response variable.)
+The `*_variance.csv` / console output is a **Type-I ANOVA variance decomposition** —
+the share of variance in the response attributable to each factor — a quick read
+on which input matters more, e.g.:
+
+```
+share of variance in final_grain_kg_ha explained:
+  weather_source  81.30%
+  soil_source      7.00%
+  residual        11.70%
+```
+
+> **Notes.** The default factors (`DAYMET`, `OPEN_METEO` × `SSURGO`,
+> `SOILGRIDS_10K`) are all keyless and valid for the 1982 US demo, so the
+> experiment runs as-is. With `reuse_existing: true` the sweep is fully
+> resumable — rerun after a crash and it picks up where it left off.
+
+### Deeper analysis of a sweep (`analyze_experiment.R`)
+
+`run_experiment.R` emits a boxplot + variance CSV; for the richer views, run the
+companion analyser on any sweep's `combined.csv`:
+
+```bash
+Rscript analyze_experiment.R results/EXPERIMENT_<name>_combined.csv
+Rscript analyze_experiment.R <combined.csv> final_grain_kg_ha --treatment 1 --out analysis/run1
+Rscript analyze_experiment.R <combined.csv> --boundary shapefile/world.shp   # custom outline
+```
+
+The maps draw a **boundary outline underneath the points** (state/country
+borders, via `coord_sf`) — by default the bundled US states
+(`shapefile/tl_2024_us_state.shp`), cropped to your grid. Pass `--boundary
+<file.shp>` for another region (e.g. a world/country layer for non-US studies),
+or `--boundary none` to disable it.
+
+It averages each grid point over treatments/years per combination (or restrict to
+one treatment with `--treatment`) and writes, under `analysis/<name>/`:
+
+| Output | What it shows |
+|--------|---------------|
+| `fig_yield_maps.png` | Small-multiple maps, one panel per combination — eyeball where combos agree/diverge. |
+| `fig_sensitivity_cv_map.png` + `sensitivity_by_point.csv` | Per-point **coefficient of variation across combinations** — *where* the input choice moves the result most. |
+| `fig_variance_decomposition.png` + `variance_decomposition.csv` | Share of variance attributable to weather / soil / period / residual. |
+| `fig_pairwise_rmsd.png` + `pairwise_rmsd.csv` | RMSD between every pair of combinations — how interchangeable two inputs are. |
+| `fig_rank_stability.png` + `rank_stability.csv` | Spearman correlation of the spatial yield pattern between combinations ("does good land stay good?"). |
+| `summary_by_combo.csv` | mean / sd / CV / range per combination. |
+
+The two complementary signals: the **ANOVA** shares how much of the *total* spread
+each factor explains (spatial variation usually dominates the residual), while the
+**per-point CV** isolates input sensitivity after removing the spatial gradient.
+
+---
+
+## Validation against observed data
+
+Many DSSAT example experiments ship with **measured** end-of-season data (a
+"FileA", e.g. `DSSAT48/Maize/UFGA8201.MZA` holds observed grain yield `HWAM` per
+treatment). `validate_against_observed.R` uses them to benchmark the pipeline by
+comparing three pathways of yield **at each experiment's own location**:
+
+| Pathway | Inputs | Meaning |
+|---------|--------|---------|
+| **observed** | — | Measured `HWAM` per treatment, read from the FileA. |
+| **original** | the experiment's *local* `.WTH` weather + its soil | The calibrated "textbook" DSSAT run (run via the `DSSAT` R package). |
+| **pipeline** | this pipeline's *gridded* weather × soil sweep | The same experiment, but with downloaded inputs — so you also see *which gridded input best reproduces the observed / locally-simulated yield*. |
+
+```bash
+Rscript validate_against_observed.R               # all configured experiments
+Rscript validate_against_observed.R UFGA8201      # one or more by name
+Rscript validate_against_observed.R --dry-run     # resolve metadata only, run nothing
+```
+
+For each experiment the script parses the FileX (treatments, planting year,
+weather station, soil id, **coordinates from the weather-file header**), then:
+runs the original experiment with its native inputs; runs the pipeline at the
+experiment's coordinates via a single-point MODE B shapefile, **delegating the
+weather × soil sweep to `run_experiment.R`**; and reads the observed FileA.
+
+It is **location- and coverage-aware**. With `ALL_SOURCES <- TRUE` (the default,
+in the config block) every site is run against *all* gridded sources that are
+geographically and temporally feasible for it — e.g. a contiguous-US 2002 site
+gets `DAYMET`+`GRIDMET`+`OPEN_METEO`+`NASA_POWER`+`NASA_POWER_CHIRPS`(+`AGERA5`
+if a CDS key is present) × `SSURGO`+`SOILGRIDS_10K`+`SOILGRIDS_ONLINE`, while a
+global pre-1984 site drops the US-only and post-1984-only sources automatically.
+Set `ALL_SOURCES <- FALSE` for a single recommended pair per site (far fewer
+runs). Combinations that can't run (missing key/files, transient source errors)
+are skipped, and whatever succeeds is reported.
+
+**Preflight your sources first.** Before launching the long sweep, check which
+sources are actually runnable on your machine (R packages installed, keys/files
+present):
+
+```bash
+Rscript validate_against_observed.R --check
+```
+
+```
+=== Source preflight (this machine) ===
+ source            runnable note
+ AGERA5            NO       install R pkg(s): ecmwfr
+ DAYMET            yes
+ GRIDMET           yes
+ ...
+```
+
+With `PRUNE_UNRUNNABLE <- TRUE` (default) un-runnable sources are dropped from
+every site's matrix automatically, so you never waste runs on guaranteed
+failures. The check is deterministic (deps/keys/files) — it can't predict a
+transient API timeout, but it catches the common "source X never works here"
+case up front. Results are also written to `validation/source_preflight.csv`.
+
+**Outputs** (under `validation/`): `validation_long.csv` (tidy obs/original/
+pipeline yields per treatment), `validation_metrics.csv` (RMSE, nRMSE, mean bias,
+Willmott's *d*, modelling efficiency `EF`, `R²` of every simulated source vs.
+observed), and figures `fig_obs_vs_sim.png` (observed-vs-simulated scatter with a
+1:1 line) and `fig_metrics_rmse.png` (error by input source).
+
+A typical reading: the **original** local run tracks observed best; among gridded
+inputs the closest combination quantifies how much accuracy you trade for global
+coverage, and a poor soil/weather source stands out immediately (negative `EF`).
+
+> **Notes.** Configure paths / crop / experiment list in the block at the top of
+> the script (defaults: maize, `../DSSAT48`). Raw DSSAT FileX templates are
+> auto-adapted with the pipeline's placeholders (`SOIL_ID`, `00000000`); the
+> bundled demo template is reused untouched. The full 10-site run with global
+> SoilGrids/Open-Meteo fetches is long but resumable (`reuse_existing`).
+
+---
+
 ## Repository layout
 
 ```text
@@ -525,6 +793,11 @@ Then `pip install cdsapi` (Python) or `install.packages("ecmwfr")` (R) and set `
 ├── config_loader.py                   # loads config.yml into the Python pipeline
 ├── dssat_main_pipeline.R              # MAIN entrypoint (R) — start here
 ├── dssat_main_pipeline.py             # Python port of the R pipeline (serial/multiprocessing)
+├── experiment.yml                     # weather × soil sensitivity experiment definition
+├── run_all.R                          # one-command runner: sweep → analysis → (validation)
+├── run_experiment.R                   # orchestrator: sweeps combinations, aggregates results
+├── analyze_experiment.R               # sweep analysis: maps, variance, pairwise/stability tables
+├── validate_against_observed.R        # observed vs original-DSSAT vs pipeline yield validation
 ├── r_scripts/
 │   ├── soil_ssurgo.R
 │   ├── soil_soilgrids.R

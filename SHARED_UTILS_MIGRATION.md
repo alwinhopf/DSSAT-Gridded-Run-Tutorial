@@ -190,6 +190,95 @@ this session due to corruption — do not trust them; match the actual text).
   (i.e. `import dssatutils.soil_soilgrids_online as _sg_mod`).
 - Landcover imports in the Python pipeline (if any) stay as-is.
 
+## ✅ PHASE 2 + 3 EXECUTED (2026-06-01)
+Both consumer repos rewired to the local dssatutils package. Staged (NOT committed)
+so you can review/adjust. Backups in each repo's `.migration_backup_<ts>/`.
+
+PHASE 2 — DSSAT ML Phenology Prediction:
+- 6 dup files deleted from r_scripts/ (weather_{daymet,gridmet,nasapower}.R,
+  soil_{soilgrids,soilgrids_online,ssurgo}.R); landcover kept.
+- 4 source() sites rewired to suppressMessages(library(dssatutils)): utils.R (x2,
+  inside local=TRUE blocks), 01_particle_filter.R, 04_cohesive_calibration.R,
+  scratch/run_g29_debug.R.
+- Guarded install+library prepended to pipeline/config.R (install_local, USE_LOCAL).
+- dssatutils 0.1.0 built & installed (R CMD: * DONE), loads with both soil fns.
+- renv::init() => INIT_OK; renv.lock has 131 pkgs incl dssatutils 0.1.0 (Source
+  Local). .Rprofile + renv/ created. Separate snapshot() unnecessary (init captured
+  everything incl dssatutils).
+
+PHASE 3 — DSSAT Gridded Run Tutorial:
+- 20 dup files deleted (10 r_scripts/ + 10 python_scripts/); landcover_* kept.
+- R: 10 weather/soil source() lines commented, library(dssatutils) inserted.
+- Py: 10 `from <mod> import` -> `from dssatutils.<mod> import`; 2 lazy imports ->
+  `import dssatutils.soil_soilgrids_online as _sg_mod` / `...weather_nasapower_chirps as _wc`.
+- requirements.txt += `-e /Users/.../dssatutils`; setup_renv.R += install_local.
+
+### ⚠️ TWO BUGS FOUND IN PHASE 3 SCRIPT & FIXED BY HAND (also fixed in the scripts)
+1. Regex `(weather|soil)_[a-z_]*\.R` did NOT match the DIGIT in "agera5", so
+   `source(... "weather_agera5.R")` stayed ACTIVE while the file was deleted ->
+   would crash. Fixed the orphaned line by hand; fixed sed in BOTH 02 & 03 scripts
+   to `[a-z0-9_]*`.
+2. SCRIPT_DIR auto-detection probed `file.exists(file.path(dir, "soil_ssurgo.R"))`
+   — that file is now deleted, so detection would hit stop(). Repointed the
+   sentinel to the still-present `landcover_raster.R` (and updated the error msg).
+
+### Verification after fixes (all PASS)
+- Rscript parse: dssat_main_pipeline.R + all 5 modified ML files = PARSE_OK.
+- python3 -m py_compile dssat_main_pipeline.py = OK.
+- All 10 `dssatutils.*` submodule specs resolve via find_spec.
+- ML repo: no orphaned source()/file.exists() of deleted files (only backups match).
+- Gridded: 20 deletions confirmed; landcover kept; all weather/soil sources commented.
+
+### REMAINING (your call)
+- Review diffs, then COMMIT in each repo (changes are staged, not committed).
+- When the GitHub remote exists, change the local-path pins to the tag:
+  config.R/setup_renv.R install_github("alwinhopf/dssatutils@v0.1.0");
+  requirements.txt `dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0`.
+- Optional: `pip install -e /…/dssatutils` (or into the project env) so the Python
+  pipeline import works at runtime; deep-run renv::restore() on another machine.
+- The migrate/ scripts now have the corrected regex for any re-runs.
+
+## PHASE 2/3 ATTEMPT (2026-05-31) — superseded by the EXECUTED section above
+Display went blind mid-run; stopped before any destructive edits. NO changes were
+made to either consumer repo. Findings that REQUIRED fixing the pre-written scripts:
+
+- ML Phenology does NOT use literal `source("r_scripts/...")`. It sources via a
+  variable, from multiple files, some with `local = TRUE`:
+    01_particle_filter.R:36   source(file.path(R_SCRIPTS_DIR, "soil_soilgrids_online.R"))
+    04_cohesive_calibration.R:23  source(file.path(R_SCRIPTS_DIR, "soil_soilgrids_online.R"))
+    pipeline/utils.R:577      source(file.path(R_SCRIPTS_DIR, "soil_soilgrids.R"), local = TRUE)
+    pipeline/utils.R:601      source(file.path(R_SCRIPTS_DIR, "soil_soilgrids_online.R"), local = TRUE)
+    scratch/run_g29_debug.R:10  source(file.path(PROJECT_ROOT, "r_scripts/soil_soilgrids_online.R"))
+  Only SOIL functions are used in the ML pipeline (process_soils_soilgrids,
+  process_soils_soilgrids_online). The 3 weather scripts in its r_scripts/ appear
+  unused by the pipeline but are duplicates -> still safe to delete in Phase 2.
+  ML r_scripts/ has only 6 dup files (weather_{daymet,gridmet,nasapower}.R,
+  soil_{soilgrids,soilgrids_online,ssurgo}.R) + landcover (keep).
+- `02_phase2_ml_phenology.sh` was REWRITTEN to match these real patterns: it now
+  replaces every weather_/soil_ source() line (R_SCRIPTS_DIR or r_scripts/ form,
+  with/without `, local = TRUE`) with `suppressMessages(library(dssatutils))`,
+  prepends a guarded install+library to pipeline/config.R, and deletes the 6 dup
+  files (keeps landcover). Also fixed a portability bug: replaced `mapfile`
+  (bash 4+) with a `while read` loop since macOS /bin/bash is 3.2.
+- Both repos were essentially clean before stopping (ML had only an untracked
+  scratch/dssat-csm-os/, unrelated; Gridded clean).
+- `03_phase3_gridded.sh` was NOT changed this session; the Gridded pipeline uses
+  the clean literal `source(file.path(SCRIPT_DIR, "weather_*.R"))` form that its
+  sed already matches. Still review its diff after running.
+
+### How to RUN phase 2/3 yourself (you can see output; tool display was glitching)
+```
+cd /Users/alwinhopf/Documents/GitHub/dssatutils
+USE_LOCAL=1 ./migrate/02_phase2_ml_phenology.sh
+git -C "/Users/alwinhopf/Documents/GitHub/DSSAT ML Phenology Prediction" diff   # review
+# then in R, from the ML repo root:
+#   renv::init(); renv::snapshot()
+USE_LOCAL=1 ./migrate/03_phase3_gridded.sh
+git -C "/Users/alwinhopf/Documents/GitHub/DSSAT Gridded Run Tutorial" diff      # review
+```
+Each script backs up touched files to `<repo>/.migration_backup_<ts>/`. To undo:
+restore from there or `git checkout -- <file>` (edits are staged, not committed).
+
 ## ✅ DONE so far (local, no remote yet)
 - Package built at `/Users/alwinhopf/Documents/GitHub/dssatutils` and VERIFIED while
   display was working: R/ has 10 files, python/dssatutils/ has 10 + __init__.py,

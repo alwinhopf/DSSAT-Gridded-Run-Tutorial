@@ -40,3 +40,4 @@ renv::install(pkgs)
 renv::snapshot(packages = pkgs, prompt = FALSE)
 
 message("renv.lock written. Commit it. Collaborators run: renv::restore()")
+remotes::install_local("/Users/alwinhopf/Documents/GitHub/dssatutils", force = FALSE)

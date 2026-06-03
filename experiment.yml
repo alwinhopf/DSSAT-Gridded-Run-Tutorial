@@ -1,0 +1,105 @@
+# =============================================================================
+# experiment.yml — single source of truth for a WEATHER x SOIL sensitivity run.
+#
+# This is the *only* file you edit to design the experiment. It is consumed by
+# run_experiment.R, which runs dssat_main_pipeline.R once for every combination
+# of weather_source x soil_source and then aggregates the results so you can
+# study how much each input choice moves the simulated outcome.
+#
+# It does NOT replace config.yml — it sits on top of it. For each combination
+# the orchestrator merges (in increasing priority):
+#     config.yml  <  experiment.yml:base  <  the combination's factor values
+# writes the merged result to config.yml, runs the pipeline, then restores your
+# original config.yml. So anything you don't mention here keeps its config.yml
+# value, and anything you don't mention there keeps the in-script default.
+# =============================================================================
+
+experiment_name: "wx_soil_sensitivity"
+
+# --- Base simulation -------------------------------------------------------
+# Everything that is held CONSTANT across all combinations. Keys are exactly
+# the config.yml keys (see config.yml for the full list and allowed values).
+# This is "the example simulation" you want to repeat under every input combo.
+base:
+  project_name:            "dssat_spatial_demo"
+  grid_spacing_meters:     20000          # 40 km demo grid; shrink for production
+  crop_extension:          "MZ"
+  boundary_shapefile_name: "tl_2024_us_state.shp"
+  enable_boundary_filter:  true
+  boundary_filter_column:  "NAME"
+  state_name_filter:       ["Iowa"]       # region of interest
+  weather_start_year:      1982           # must cover the template's planting year (UFGA8201 = 1982)
+  weather_end_year:        1983
+  template_file_name:      "UFGA8201.MZX" # the example experiment file
+  run_mode:                "experiment"
+  treatment_start:         1
+  treatment_end:           4
+
+# --- Factors to sweep ------------------------------------------------------
+# The experiment is the FULL FACTORIAL of these lists: every weather_source is
+# paired with every soil_source (and every period, if given). Add/remove entries
+# to grow or shrink it.
+#
+# weather_source: DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | AGERA5
+#   The defaults below (DAYMET, OPEN_METEO) are keyless and cover 1982. NASA_POWER
+#   has no data before 1984, so it is only valid once you move the window to 1984+
+#   AND use a template whose planting year matches (see the period note below).
+# soil_source:    SSURGO | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD
+# period (OPTIONAL): list of "START-END" weather-year windows. Each entry
+#   overrides weather_start_year/weather_end_year for that run, letting you
+#   separate "which dataset" from "which years". NOTE: the pipeline does not
+#   rebase the template's planting year, so every window must cover the planting
+#   year in your FileX (the UFGA8201 demo template is fixed to 1982). Use a
+#   multi-year experiment file, or per-window templates, to sweep periods for real.
+factors:
+  # FULL FACTORIAL — all weather × soil sources available in dssatutils
+  # (6 weather × 4 soil = 24 combinations). Some need extra setup and are dropped
+  # automatically when unavailable: AGERA5 needs a Copernicus CDS key; HWSD needs
+  # the FAO HWSD raster+db files; SOILGRIDS_ONLINE (VRT) needs python rasterio;
+  # NASA_POWER/NASA_POWER_CHIRPS need years ≥ 1984. SSURGO/GRIDMET/SOILGRIDS_10K
+  # are US-only — fine for the southern-US region. Trim this list for a faster run.
+  weather_source: ["DAYMET", "GRIDMET", "OPEN_METEO", "NASA_POWER", "NASA_POWER_CHIRPS", "AGERA5"]
+  soil_source:    ["SSURGO", "SOILGRIDS_10K", "SOILGRIDS_ONLINE", "HWSD"]
+  # Minimal keyless set (out-of-box, 1982 demo): comment the lines above & use:
+  # weather_source: ["DAYMET", "OPEN_METEO"]
+  # soil_source:    ["SSURGO", "SOILGRIDS_10K"]
+  # period:        ["1982-1983", "1984-1985"]   # optional third factor (see note above)
+
+# --- Exclusions (optional) -------------------------------------------------
+# Drop specific (weather, soil) pairs from the factorial, e.g. combinations
+# that are redundant or that you know will not have coverage in your region.
+exclude: []
+  # - { weather_source: "NASA_POWER", soil_source: "SOILGRIDS_10K" }
+
+# --- Outputs ---------------------------------------------------------------
+# A single combined table is always written. The per-combination summary, plot
+# and variance files are written ONCE PER response variable, with the variable
+# name inserted before the suffix (e.g. ..._final_grain_kg_ha_summary.csv).
+output:
+  combined_csv: "results/EXPERIMENT_wx_soil_sensitivity_combined.csv" # tidy long table: one row per point/treatment/year/combo
+  summary_csv:  "results/EXPERIMENT_wx_soil_sensitivity_summary.csv"  # mean/sd per combination (per response var)
+  plot_png:     "results/EXPERIMENT_wx_soil_sensitivity_boxplot.png"  # distribution per combination (per response var)
+  variance_csv: "results/EXPERIMENT_wx_soil_sensitivity_variance.csv" # ANOVA variance share per factor (per response var)
+
+# --- Orchestration behaviour ----------------------------------------------
+options:
+  stop_on_error:  false   # false = log the failure and continue with the next combo
+  reuse_existing: true    # true = skip a combo whose results CSV already exists (resumable)
+  dry_run:        false   # true = print the plan (combinations + paths) and exit, run nothing
+  validate:       true    # true = pre-flight coverage checks; drop impossible combos, warn on risky ones
+
+  # Number of combinations to run concurrently. 1 = serial. >1 forks workers
+  # (parallel::mclapply; Windows falls back to serial). The orchestrator first
+  # runs a serial "warm-up" pass that touches each weather/soil source once to
+  # populate the shared download caches, then parallelises the rest so the
+  # workers only READ those caches (no cold-download races).
+  max_parallel:   1
+
+  # Response variable(s) summarised/plotted. Give a list to analyse several at
+  # once — inputs that barely move yield can still strongly move the water or
+  # nitrogen balance. `response_var` (single string) is still accepted.
+  response_vars:
+    - "final_grain_kg_ha"
+    # - "soil_organic_carbon_delta_kg_C_ha"
+    # - "nitrate_leaching_kg_ha"
+    # - "final_irrigation_amount_mm"
