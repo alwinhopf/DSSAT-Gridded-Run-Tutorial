@@ -1,5 +1,9 @@
 name: smoke
 
+# Force JS actions to Node.js 24 on the runner (opt-in)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Offline smoke test: no internet APIs, no DSSAT executable required.
 # Validates config loading, helper-module imports, and the DSSAT .WTH writer.
 

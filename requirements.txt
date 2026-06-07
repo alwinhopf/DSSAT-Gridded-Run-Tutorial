@@ -32,4 +32,5 @@ PyYAML==6.0.1           # unified config.yml loader
 
 # --- HPC only (build against cluster MPI; see note above) ---
 mpi4py==3.1.6
-dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@main
+# Pin dssatutils to a specific commit for deterministic CI
+dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@08c9810a472ff2cad9ac1220386810c1a9c890a6
