@@ -44,13 +44,13 @@ def test_config_loader_weather_source():
 
 def test_module_imports():
     # These may pull optional heavy deps at import time; skip if absent.
-    optional_modules = {"weather_gridmet",          # xarray
-                        "weather_nasapower_chirps",  # imports weather_nasapower; xarray lazy
-                        "weather_agera5",            # numpy/pandas; cdsapi+xarray lazy
-                        "soil_hwsd"}                 # imports soil_soilgrids_online
-    for mod in ["weather_daymet", "weather_nasapower", "weather_gridmet",
-                "weather_openmeteo", "weather_nasapower_chirps",
-                "weather_agera5", "soil_hwsd"]:
+    optional_modules = {"dssatutils.weather_gridmet",          # xarray
+                        "dssatutils.weather_nasapower_chirps",  # imports weather_nasapower; xarray lazy
+                        "dssatutils.weather_agera5",            # numpy/pandas; cdsapi+xarray lazy
+                        "dssatutils.soil_hwsd"}                 # imports soil_soilgrids_online
+    for mod in ["dssatutils.weather_daymet", "dssatutils.weather_nasapower", "dssatutils.weather_gridmet",
+                "dssatutils.weather_openmeteo", "dssatutils.weather_nasapower_chirps",
+                "dssatutils.weather_agera5", "dssatutils.soil_hwsd"]:
         try:
             __import__(mod)
         except ModuleNotFoundError:
@@ -83,7 +83,7 @@ def _make_fake_fetch():
 
 
 def test_wth_writer_synthetic():
-    import weather_openmeteo as om
+    import dssatutils.weather_openmeteo as om
     om._fetch_open_meteo = _make_fake_fetch()
 
     with tempfile.TemporaryDirectory() as work:
@@ -141,7 +141,7 @@ def _run_standalone():
             check(False, f"import {mod}: {exc}")
 
     print("\n[3/3] Open-Meteo .WTH writer (synthetic, no network)...")
-    import weather_openmeteo as om
+    import dssatutils.weather_openmeteo as om
     om._fetch_open_meteo = _make_fake_fetch()
 
     with tempfile.TemporaryDirectory() as work:

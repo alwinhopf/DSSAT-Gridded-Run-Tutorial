@@ -32,4 +32,4 @@ PyYAML==6.0.1           # unified config.yml loader
 
 # --- HPC only (build against cluster MPI; see note above) ---
 mpi4py==3.1.6
--e /Users/alwinhopf/Documents/GitHub/dssatutils
+dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@main
