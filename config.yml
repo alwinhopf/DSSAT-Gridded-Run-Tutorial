@@ -58,3 +58,11 @@ sequence_end:         1
 #   at scale). true: copy those ~27 files into every folder for self-contained
 #   runs (auto-forced when ZIP_FOR_HPC is set, since folders move to another host).
 bundle_genotype_files: false
+
+# --- Stop & Resume / Download validation ---
+resume_dssat_runs:        false  # set to true to resume incomplete runs
+check_weather_downloads:  false  # set to true to validate weather file contents and retry failures
+weather_download_retries: 3      # max retries for failed weather downloads
+check_soil_downloads:     false  # set to true to validate soil profile files (.SOL) and retry failures
+soil_download_retries:    3      # max retries for failed soil downloads
+

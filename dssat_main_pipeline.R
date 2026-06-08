@@ -319,11 +319,18 @@ SEQUENCE_END <- cfg_get("sequence_end", 1)
 ZIP_FOR_HPC <- FALSE 
 
 # --- 7. Switches ---
-RUN_STEP_1_SOILS <- TRUE # Set to FALSE to only use already downloaded soil files
-RUN_STEP_2_WEATHER <- TRUE  # Set to FALSE to only use already downloaded weather files
-RUN_DSSAT_EXECUTION <- TRUE # Set to FALSE for HPC preparation
-CLEANUP_RUN_FOLDERS <- FALSE # Set to TRUE to delete all simulation folders after run
-RESUME_DSSAT_RUNS <- FALSE # Set to TRUE to skip creation of new folders
+RUN_STEP_1_SOILS <- isTRUE(as.logical(cfg_get("run_step_1_soils", TRUE))) # Set to FALSE to only use already downloaded soil files
+RUN_STEP_2_WEATHER <- isTRUE(as.logical(cfg_get("run_step_2_weather", TRUE)))  # Set to FALSE to only use already downloaded weather files
+RUN_DSSAT_EXECUTION <- isTRUE(as.logical(cfg_get("run_dssat_execution", TRUE))) # Set to FALSE for HPC preparation
+CLEANUP_RUN_FOLDERS <- isTRUE(as.logical(cfg_get("cleanup_run_folders", FALSE))) # Set to TRUE to delete all simulation folders after run
+RESUME_DSSAT_RUNS <- isTRUE(as.logical(cfg_get("resume_dssat_runs", FALSE))) # Set to TRUE to skip creation of new folders
+
+# Validation and retry controls
+CHECK_WEATHER_DOWNLOADS <- isTRUE(as.logical(cfg_get("check_weather_downloads", FALSE)))
+WEATHER_DOWNLOAD_RETRIES <- as.integer(cfg_get("weather_download_retries", 3))
+CHECK_SOIL_DOWNLOADS <- isTRUE(as.logical(cfg_get("check_soil_downloads", FALSE)))
+SOIL_DOWNLOAD_RETRIES <- as.integer(cfg_get("soil_download_retries", 3))
+
 
 # Performance: when DSSATPRO.V48 sits next to the executable, DSSAT resolves
 # genotype/SDA/CO2 files from the install dir, so they need not be copied into
@@ -479,6 +486,57 @@ delete_numbered_folders <- function(ids) {
     sapply(numbered_dirs, unlink, recursive = TRUE)
   }
 }
+
+# --- Helper: Validate Weather File ---
+is_wth_valid <- function(id, dir, end_yr) {
+  f <- file.path(dir, paste0(id, ".WTH"))
+  if (!file.exists(f)) return(FALSE)
+  if (file.info(f)$size == 0) return(FALSE)
+  
+  tryCatch({
+    lines <- tail(readLines(f, warn = FALSE), 50)
+    if (length(lines) == 0) return(FALSE)
+    data_lines <- grep("^\\s*[0-9]{5,7}\\b", lines, value = TRUE)
+    if (length(data_lines) == 0) return(FALSE)
+    last_line <- tail(data_lines, 1)
+    last_date_str <- regmatches(last_line, regexpr("^\\s*\\d+", last_line))
+    if (length(last_date_str) == 0) return(FALSE)
+    last_date_num <- as.numeric(last_date_str)
+    if (last_date_num > 99999) {
+      last_year <- floor(last_date_num / 1000)
+    } else {
+      yr_short <- floor(last_date_num / 1000)
+      last_year <- ifelse(yr_short < 80, 2000 + yr_short, 1900 + yr_short)
+    }
+    return(last_year >= end_yr)
+  }, error = function(e) FALSE)
+}
+
+# --- Helper: Clean Invalid Soil Files ---
+clean_invalid_soils <- function(dir, ids) {
+  if (!dir.exists(dir)) return()
+  for (id in ids) {
+    f <- file.path(dir, paste0(id, ".SOL"))
+    if (file.exists(f)) {
+      is_valid <- tryCatch({
+        if (file.info(f)$size == 0) FALSE
+        else {
+          lines <- readLines(f, n = 5, warn = FALSE)
+          if (length(lines) == 0) FALSE
+          else if (any(grepl("ERROR", lines, ignore.case = TRUE))) FALSE
+          else if (!any(grepl("^\\s*\\*", lines))) FALSE
+          else TRUE
+        }
+      }, error = function(e) FALSE)
+      
+      if (!is_valid) {
+        message(sprintf("Deleting invalid/empty soil file: %s", f))
+        unlink(f)
+      }
+    }
+  }
+}
+
 
 # --- VALIDATION BLOCK (Place after Section 1) ---
 message("Running Pre-flight Checks...")
@@ -1153,23 +1211,49 @@ if (RUN_STEP_1_SOILS) {
   dir.create(individual_sol_output_folder, recursive = TRUE, showWarnings = FALSE)
   
   if (SOIL_SOURCE == "SSURGO") {
-    process_soils_ssurgo(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES, 
-                         POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
+    if (CHECK_SOIL_DOWNLOADS) {
+      ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+      clean_invalid_soils(individual_sol_output_folder, ids)
+    }
     
-    # Optional Combine for Master File
+    max_retries <- if (CHECK_SOIL_DOWNLOADS) SOIL_DOWNLOAD_RETRIES else 1
+    retry_count <- 0
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    
+    # Define combine helper
     combine_sol_files_local <- function(input_folder, output_file_path) {
       sol_files <- list.files(path = input_folder, pattern = "\\.SOL$", full.names = TRUE)
       out_con <- file(output_file_path, open = "wt")
       cat("*SOILS: Combined\n", file = out_con)
       for (f in sol_files) {
         lines <- readLines(f, warn = FALSE)
-        # Profile header lines start with "*" regardless of source (SSURGO, SoilGrids, custom)
         start <- grep("^\\*", lines)[1]
         if(!is.na(start)) writeLines(lines[start:length(lines)], out_con)
       }
       close(out_con)
     }
-    combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
+
+    repeat {
+      process_soils_ssurgo(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES, 
+                           POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
+      
+      combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
+      
+      retry_count <- retry_count + 1
+      
+      if (CHECK_SOIL_DOWNLOADS && retry_count < max_retries) {
+        clean_invalid_soils(individual_sol_output_folder, ids)
+        existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+        missing_count <- sum(!ids %in% existing_files)
+        if (missing_count == 0) {
+          break
+        } else {
+          message(sprintf("SSURGO: %d profiles missing/invalid. Retrying...", missing_count))
+        }
+      } else {
+        break
+      }
+    }
     
   } else if (SOIL_SOURCE == "SOILGRIDS_10K") {
     if (!file.exists(EXTERNAL_SOIL_FILE)) stop("External soil file not found.")
@@ -1177,15 +1261,58 @@ if (RUN_STEP_1_SOILS) {
                             output_sol_dir = individual_sol_output_folder,
                             id_col = POINT_ID_COLUMN)
   } else if (SOIL_SOURCE == "SOILGRIDS_ONLINE") {
-    # REST (one request per point, rate-limited) vs VRT (GDAL virtual rasters
-    # via terra; reads each global raster once, better coverage). Set via the
-    # `soilgrids_mode` config key. USE_REST_API is read inside the function.
-    USE_REST_API <<- (SOILGRIDS_MODE != "VRT")
-    message(sprintf("SoilGrids online mode: %s",
-                    if (SOILGRIDS_MODE == "VRT") "VRT" else "REST API"))
-    process_soils_soilgrids_online(gridfile, soilfile_CSV,
-                                   output_sol_dir = individual_sol_output_folder,
-                                   id_col = POINT_ID_COLUMN)
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    if (CHECK_SOIL_DOWNLOADS) {
+      clean_invalid_soils(individual_sol_output_folder, ids)
+    }
+    existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+    missing_mask <- ! (ids %in% existing_files)
+    points_to_process <- gridfile[missing_mask, ]
+    
+    if (nrow(points_to_process) == 0) {
+      message("All online soil profiles already exist. Skipping SoilGrids processing.")
+    } else {
+      USE_REST_API <<- (SOILGRIDS_MODE != "VRT")
+      message(sprintf("SoilGrids online mode: %s. Processing %d missing points...",
+                      if (SOILGRIDS_MODE == "VRT") "VRT" else "REST API", nrow(points_to_process)))
+                      
+      max_retries <- if (CHECK_SOIL_DOWNLOADS) SOIL_DOWNLOAD_RETRIES else 1
+      retry_count <- 0
+      
+      while (nrow(points_to_process) > 0 && retry_count < max_retries) {
+        if (retry_count > 0) {
+          message(sprintf("Retry %d/%d: Fetching %d failed online soil points...",
+                          retry_count, max_retries, nrow(points_to_process)))
+        }
+        
+        process_soils_soilgrids_online(points_to_process, soilfile_CSV,
+                                       output_sol_dir = individual_sol_output_folder,
+                                       id_col = POINT_ID_COLUMN)
+        
+        retry_count <- retry_count + 1
+        
+        if (CHECK_SOIL_DOWNLOADS) {
+          ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
+          clean_invalid_soils(individual_sol_output_folder, ids_left)
+          existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+          missing_left_mask <- ! (ids_left %in% existing_left)
+          points_to_process <- points_to_process[missing_left_mask, ]
+        } else {
+          break
+        }
+      }
+      
+      if (nrow(points_to_process) > 0) {
+        warning(sprintf("Failed to successfully download soil data for %d points after %d retries.",
+                        nrow(points_to_process), max_retries))
+      }
+    }
+    
+    # Always write/rebuild the complete CSV mapping since we might have run a subset
+    mapping_df <- data.frame(ID = gridfile[[POINT_ID_COLUMN]], SOIL_ID = gridfile[[POINT_ID_COLUMN]])
+    colnames(mapping_df)[1] <- POINT_ID_COLUMN
+    write.csv(mapping_df, soilfile_CSV, row.names = FALSE)
+    
   } else if (SOIL_SOURCE == "HWSD") {
     process_soils_hwsd(gridfile, HWSD_RASTER_FILE, HWSD_DB_FILE,
                        output_csv_path = soilfile_CSV,
@@ -1208,38 +1335,70 @@ if (RUN_STEP_2_WEATHER) {
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   
   # --- SMART RESUME BLOCK ---
-  existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
-  missing_mask <- ! (as.character(gridfile[[POINT_ID_COLUMN]]) %in% existing_files)
+  ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+  if (CHECK_WEATHER_DOWNLOADS) {
+    message("Verifying existing weather files for validity...")
+    valid_mask <- vapply(ids, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
+    missing_mask <- !valid_mask
+  } else {
+    existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
+    missing_mask <- ! (ids %in% existing_files)
+  }
   points_to_process <- gridfile[missing_mask, ]
   
   if (nrow(points_to_process) == 0) {
-    message("All weather files already exist. Skipping processing.")
+    message("All weather files already exist and are valid. Skipping processing.")
   } else {
-    message(sprintf("Resuming: Processing %d remaining points...", nrow(points_to_process)))
-    
     log_file <- file.path(output_dir, "download_errors.log")
     
-    common_args <- list(shapefile = points_to_process, 
-                        start_year = WEATHER_START_YEAR, 
-                        end_year = WEATHER_END_YEAR, 
-                        output_dir = output_dir, 
-                        id_col = POINT_ID_COLUMN, 
-                        lat_col = LAT_COLUMN, 
-                        lon_col = LONG_COLUMN, 
-                        n_cores = WEATHER_CORES, 
-                        log_file = log_file)
+    max_retries <- if (CHECK_WEATHER_DOWNLOADS) WEATHER_DOWNLOAD_RETRIES else 1
+    retry_count <- 0
     
-    if (WEATHER_SOURCE == "DAYMET") do.call(process_weather_daymet, common_args)
-    else if (WEATHER_SOURCE == "NASA_POWER") do.call(process_weather_nasapower, common_args)
-    else if (WEATHER_SOURCE == "GRIDMET") do.call(process_weather_gridmet, c(common_args, list(gridmet_cache_dir = GRIDMET_CACHE_DIR)))
-    else if (WEATHER_SOURCE == "OPEN_METEO") do.call(process_weather_openmeteo, common_args)
-    else if (WEATHER_SOURCE == "NASA_POWER_CHIRPS") {
-      CHIRPS_RESOLUTION <<- if (exists("CHIRPS_RESOLUTION")) CHIRPS_RESOLUTION else "p05"
-      do.call(process_weather_nasapower_chirps,
-              c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR)))
+    while (nrow(points_to_process) > 0 && retry_count < max_retries) {
+      if (retry_count > 0) {
+        message(sprintf("Retry %d/%d: Downloading %d failed/incomplete weather points...", 
+                        retry_count, max_retries, nrow(points_to_process)))
+      } else {
+        message(sprintf("Processing %d weather points...", nrow(points_to_process)))
+      }
+      
+      common_args <- list(shapefile = points_to_process, 
+                          start_year = WEATHER_START_YEAR, 
+                          end_year = WEATHER_END_YEAR, 
+                          output_dir = output_dir, 
+                          id_col = POINT_ID_COLUMN, 
+                          lat_col = LAT_COLUMN, 
+                          lon_col = LONG_COLUMN, 
+                          n_cores = WEATHER_CORES, 
+                          log_file = log_file)
+      
+      if (WEATHER_SOURCE == "DAYMET") do.call(process_weather_daymet, common_args)
+      else if (WEATHER_SOURCE == "NASA_POWER") do.call(process_weather_nasapower, common_args)
+      else if (WEATHER_SOURCE == "GRIDMET") do.call(process_weather_gridmet, c(common_args, list(gridmet_cache_dir = GRIDMET_CACHE_DIR)))
+      else if (WEATHER_SOURCE == "OPEN_METEO") do.call(process_weather_openmeteo, common_args)
+      else if (WEATHER_SOURCE == "NASA_POWER_CHIRPS") {
+        CHIRPS_RESOLUTION <<- if (exists("CHIRPS_RESOLUTION")) CHIRPS_RESOLUTION else "p05"
+        do.call(process_weather_nasapower_chirps,
+                c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR)))
+      }
+      else if (WEATHER_SOURCE == "AGERA5")
+        do.call(process_weather_agera5, c(common_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+        
+      retry_count <- retry_count + 1
+      
+      if (CHECK_WEATHER_DOWNLOADS) {
+        ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
+        valid_mask <- vapply(ids_left, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
+        points_to_process <- points_to_process[!valid_mask, ]
+      } else {
+        break
+      }
     }
-    else if (WEATHER_SOURCE == "AGERA5")
-      do.call(process_weather_agera5, c(common_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+    
+    if (nrow(points_to_process) > 0) {
+      warning(sprintf("Failed to successfully download weather data for %d points after %d retries.", 
+                      nrow(points_to_process), max_retries))
+    }
   }
   
   # === WEATHER EXTENSION LOGIC (PARALLEL) ===
@@ -1406,11 +1565,16 @@ create_folders_and_files <- function(i) {
 }
 
 # --- 3.4. Execute Folder Creation ---
-if (!RESUME_DSSAT_RUNS) {
-  message("Creating simulation folders...")
+message("Creating/verifying simulation folders...")
+ids_to_create_indices <- 1:nrow(points)
+if (RESUME_DSSAT_RUNS) {
+  completed_mask <- file.exists(file.path(points[[POINT_ID_COLUMN]], paste0("results_", points[[POINT_ID_COLUMN]], ".csv")))
+  ids_to_create_indices <- which(!completed_mask)
+}
+if (length(ids_to_create_indices) > 0) {
   cl <- makeCluster(DSSAT_CORES)
   clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES"), envir = environment())
-  parLapply(cl, 1:nrow(points), create_folders_and_files)
+  parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
 }
 
