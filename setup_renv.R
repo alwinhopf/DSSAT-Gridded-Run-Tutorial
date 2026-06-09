@@ -16,8 +16,8 @@ if (!requireNamespace("renv", quietly = TRUE)) {
   install.packages("renv", repos = "https://cloud.r-project.org")
 }
 
-# Pin the CRAN snapshot date for byte-stable restores (Posit Public Package Mgr).
-options(repos = c(CRAN = "https://packagemanager.posit.co/cran/2025-05-01"))
+# Use CRAN cloud to get precompiled Windows binaries for R 4.6.0.
+options(repos = c(CRAN = "https://cloud.r-project.org"))
 
 renv::init(bare = TRUE, restart = FALSE)
 
