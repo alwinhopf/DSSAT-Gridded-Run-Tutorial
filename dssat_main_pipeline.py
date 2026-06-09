@@ -888,6 +888,15 @@ def _run_simulation(ID: str,
         return None
 
 
+def _run_one_point(args: dict) -> Optional[pd.DataFrame]:
+    """Top-level helper to execute a single point simulation in multiprocessing context."""
+    ID = args["ID"]
+    row_dict = args["row_dict"]
+    dssat_run_dir = args["dssat_run_dir"]
+    row = pd.Series(row_dict)
+    return _run_simulation(ID, row, dssat_run_dir)
+
+
 if __name__ == '__main__':
     # =============================================================================
     # STEP 0 — CREATE / LOAD GRID POINTS
@@ -1266,22 +1275,38 @@ if __name__ == '__main__':
 
         print(f"Starting DSSAT execution for {len(ids_to_run)} point(s)...")
 
-        def _run_one(ID: str) -> Optional[pd.DataFrame]:
-            row = points[points[POINT_ID_COLUMN] == ID].iloc[0]
-            return _run_simulation(ID, row, DSSAT_RUN_DIR)
-
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         # On macOS/Windows the default start method is 'spawn', which re-imports
         # this module in each worker and triggers the pool submission code again.
         # Using 'fork' avoids that for a pure command-line pipeline.
         import multiprocessing as _mp
-        _mp_ctx = _mp.get_context("fork") if hasattr(_mp, "get_context") else None
+        import platform
+        _mp_ctx = None
+        if hasattr(_mp, "get_context"):
+            if platform.system() == "Windows":
+                _mp_ctx = _mp.get_context("spawn")
+            else:
+                try:
+                    _mp_ctx = _mp.get_context("fork")
+                except ValueError:
+                    _mp_ctx = _mp.get_context("spawn")
+
+        # Package the task arguments for the top-level helper
+        tasks = []
+        for ID in ids_to_run:
+            row = points[points[POINT_ID_COLUMN] == ID].iloc[0]
+            row_dict = row.to_dict()
+            tasks.append({
+                "ID": ID,
+                "row_dict": row_dict,
+                "dssat_run_dir": DSSAT_RUN_DIR
+            })
 
         all_results = []
         with ProcessPoolExecutor(max_workers=DSSAT_CORES,
                                  mp_context=_mp_ctx) as pool:
-            futures = {pool.submit(_run_one, ID): ID for ID in ids_to_run}
+            futures = {pool.submit(_run_one_point, t): t["ID"] for t in tasks}
             for fut in as_completed(futures):
                 ID = futures[fut]
                 try:
@@ -1295,7 +1320,7 @@ if __name__ == '__main__':
         if all_results:
             final_data = pd.concat(all_results, ignore_index=True)
             final_data.to_csv(FINAL_RESULTS_PATH, index=False, na_rep="")
-            print(f"Results combined → {FINAL_RESULTS_PATH}")
+            print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
             print("WARNING: No results produced.")
 
@@ -1339,7 +1364,7 @@ if __name__ == '__main__':
             fh.write(f"Template File:   {TEMPLATE_FILE_NAME}\n")
             fh.write("\n--- PATHS ---\n")
             fh.write(f"Soil Map CSV:    {soil_mapping_file}\n")
-        print(f"Metadata written → {metadata_path}")
+        print(f"Metadata written -> {metadata_path}")
 
         if ZIP_FOR_HPC:
             print(f"Zipping run directory: {DSSAT_RUN_NAME}")
@@ -1403,7 +1428,7 @@ if __name__ == '__main__':
                 os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
                 fig.savefig(FINAL_PLOT_PATH, dpi=150)
                 plt.close(fig)
-                print(f"Yield map saved → {FINAL_PLOT_PATH}")
+                print(f"Yield map saved -> {FINAL_PLOT_PATH}")
 
         except Exception as exc:
             print(f"Step 4 visualization failed: {exc}")

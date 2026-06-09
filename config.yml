@@ -12,7 +12,7 @@
 
 # --- Project / grid ---
 project_name:         "dssat_spatial_demo"
-grid_spacing_meters:  40000          # 50 km demo; 5000-10000 for production
+grid_spacing_meters:  100000          # 50 km demo; 5000-10000 for production
 crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
 
 # --- Run-folder naming ---
@@ -32,9 +32,10 @@ state_name_filter:    ["Iowa"]       # list; matched against boundary_filter_col
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
 # | NASA_POWER_CHIRPS (global, NASA POWER + high-res CHIRPS rainfall, 50S-50N)
 # | AGERA5 (global 0.1deg, ag-tuned; needs a free Copernicus CDS API key)
+# | gridpoints_weather (offline/cached or pre-generated)
 weather_source:       "DAYMET"
 weather_start_year:   1982           # NASA_POWER not available before 1984
-weather_end_year:     1983
+weather_end_year:     1982
 chirps_resolution:    "p05"          # NASA_POWER_CHIRPS only: p05 (~5.5km) | p25 (~28km, lighter)
 
 # --- Soil ---
@@ -48,7 +49,7 @@ hwsd_db_file:         ""                # HWSD only: FAO HWSD2 SQLite database (
 template_file_name:   "UFGA8201.MZX"
 run_mode:             "experiment"   # experiment | sequence
 treatment_start:      1
-treatment_end:        4
+treatment_end:        1
 sequence_start:       1
 sequence_end:         1
 
