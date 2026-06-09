@@ -33,4 +33,9 @@ PyYAML==6.0.1           # unified config.yml loader
 # --- HPC only (build against cluster MPI; see note above) ---
 mpi4py==3.1.6
 # Pin dssatutils to a specific commit for deterministic CI
-dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@08c9810a472ff2cad9ac1220386810c1a9c890a6
+dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0
+# dssatengine — shared gridded run engine (see CONVENTIONS.md P1).
+# Editable local install for now; TODO: switch to a tag pin once the package is
+# committed, pushed, and tagged (run pip from the repo root so ../ resolves):
+#   dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@vX.Y.Z
+-e ../dssatengine

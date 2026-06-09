@@ -63,6 +63,7 @@ renv::snapshot(packages = pkgs, prompt = FALSE)
   getwd()
 }
 
-dssatutils_path <- normalizePath(file.path(.script_dir(), "../dssatutils"), winslash = "/", mustWork = FALSE)
-renv::install(dssatutils_path)
+renv::install("git::https://github.com/alwinhopf/dssatutils.git@v0.1.0")
+renv::install("../dssatengine")
+
 

@@ -29,7 +29,7 @@ engine**, and **specialized applications** that consume them.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  APPLICATIONS (specialized studies)                              │
-│  Bioenergy Input Comparison · camelina_lca · DSSAT Calibration  │
+│  Bioenergy Input Comparison · dssat_lca_tea · DSSAT Calibration  │
 │  ML Phenology Prediction · SubField MILP · DSSAT_acceleration   │
 │  (DSSAT LAI Assimilation — empty placeholder)                   │
 └───────────────┬─────────────────────────────────────────────────┘
@@ -130,7 +130,7 @@ Key capabilities:
 | Repo | Language | What it adds on top of the engine |
 |---|---|---|
 | **Bioenergy Model Input Comparison** | Python + R | Compares how weather × soil data-source choices (DAYMET / NASA_POWER / GridMET × SSURGO / SoilGrids) change carinata outputs. Outputs per-combination run dirs and comparison heatmaps. |
-| **camelina_lca** | Python **and** R (full parity) | Numbered **LCA/TEA pipeline** (`pipeline_01`…`07`, `pipeline_99_run_master`) on DSSAT yields: ISO-14044 LCA + bottom-up HEFA techno-economic analysis for camelina/carinata SAF. `test_excel_parity` validates against client Excel workbooks; see `PIPELINE_REVIEW.md`. |
+| **dssat_lca_tea** | Python **and** R (full parity) | Numbered **LCA/TEA pipeline** (`pipeline_01`…`07`, `pipeline_99_run_master`) on DSSAT yields: ISO-14044 LCA + bottom-up HEFA techno-economic analysis for camelina/carinata SAF. `test_excel_parity` validates against client Excel workbooks; see `PIPELINE_REVIEW.md`. |
 | **DSSAT Calibration** | R (`dssatcal`) | AgMIP-protocol genotype calibration: Morris→Sobol screening → stepwise AICc/BIC selection → optional DREAM-zs Bayesian UQ. CroptimizR-compatible wrapper (`wrapper.R`); `.CUL` free, `.ECO` gated, `.SPE` blocked by default. |
 | **DSSAT ML Phenology Prediction** | R (`torch`, xgboost, lightgbm) | **22-model hybrid phenology pipeline** (`pipeline/00`…`13`) — DSSAT physics, SMC-MCMC assimilation, GBMs, sequence DL (LSTM/CNN/Transformer/PINN), Worrall model-guided LSTMs. `features.R` is the single feature source; `MODELS_AND_FEATURES.md` is authoritative. |
 | **DSSAT SubField MILP Analysis** | Python (+R companion) | Subfield (50 m) cover-crop bioenergy modeling + **MILP optimization** for spatial placement. Two tracks (single-season vs corn-soy rotation). Forked `dssat_main_pipeline.py`; `README_bioenergy.md` documents FileX/soil column-alignment fixes. |
@@ -166,7 +166,7 @@ shapefile / boundary / CDL-NLCD raster
 |---|:--:|:--:|:--:|
 | DSSAT Gridded Run Tutorial | ✓ | ✓ | — (is the engine) |
 | Bioenergy Model Input Comparison | ✓ | ✓ | ✓ |
-| camelina_lca | ✓ (via yields) | ✓ | ✓ |
+| dssat_lca_tea | ✓ (via yields) | — (reads DSSAT output CSVs) | ✓ |
 | DSSAT Calibration | ✓ | — | — (own wrapper) |
 | DSSAT ML Phenology Prediction | ✓ | ✓ | partial |
 | DSSAT SubField MILP Analysis | ✓ | ✓ | ✓ |
@@ -185,9 +185,9 @@ workspace — **silent drift between hand-copied forks**.
 | 1 | **Extract the engine into a versioned package**, the way `dssatutils` was extracted. `dssat_main_pipeline.{R,py}` is currently copied into ≥4 repos and edited in place. | A bug fixed in one fork (e.g. the SubField `IPSOIL` / FileX column fixes) never reaches the others. Drift is invisible. | High |
 | 2 | **Pin and record the dependency versions each consumer uses** — one line per repo (`dssatutils@v0.1.0`, engine tag, DSSAT48 build). Add a `DEPENDENCIES.md` or a row in each README. | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low |
 | 3 | **Centralize `dssat_templates/` genotype files.** The same `.CUL/.ECO/.SPE/.CDE` are duplicated across most repos. Ship them from `DSSAT48` (resolved via `DSSATPRO.V48`) or a small shared `dssat-templates` package; keep only project-specific FileX locally. | Genotype edits (e.g. the cereal-rye `TKFH = -25°C` ecotype) must currently be hand-synced. | Medium |
-| 4 | **Standardize repo naming.** Folder names mix spaces (`DSSAT Gridded Run Tutorial`) and underscores (`camelina_lca`, `DSSAT_acceleration`). Spaces break shell globs, `cd`, and many scripts. Pick `kebab-case` or `snake_case` and rename. | Removes a whole class of quoting bugs and makes automation across repos uniform. | Low–Medium |
+| 4 | **Standardize repo naming.** Folder names mix spaces (`DSSAT Gridded Run Tutorial`) and underscores (`dssat_lca_tea`, `DSSAT_acceleration`). Spaces break shell globs, `cd`, and many scripts. Pick `kebab-case` or `snake_case` and rename. | Removes a whole class of quoting bugs and makes automation across repos uniform. | Low–Medium |
 | 5 | **Add a workspace-level index README** at the GitHub root linking to every repo with a one-line purpose and its maturity (engine / app / library / empty). | New contributors currently have to open each folder to learn what it is. | Low |
-| 6 | **Decide an R↔Python parity policy.** `dssatutils`, `camelina_lca`, and the engine all maintain mirrored implementations by hand. Either (a) declare one language canonical and generate/wrap the other, or (b) add cross-language parity tests (camelina already has `test_excel_parity` — extend the idea). | Halves maintenance and prevents the two implementations from quietly diverging. | Medium |
+| 6 | **Decide an R↔Python parity policy.** `dssatutils`, `dssat_lca_tea`, and the engine all maintain mirrored implementations by hand. Either (a) declare one language canonical and generate/wrap the other, or (b) add cross-language parity tests (camelina already has `test_excel_parity` — extend the idea). | Halves maintenance and prevents the two implementations from quietly diverging. | Medium |
 | 7 | **Repository hygiene.** Commit-ignore and purge transient state: `*_cache/`, `dssat_runs/`, `.RData`, `.Rhistory`, `.DS_Store`, and leftover `.migration_backup_*/` dirs. Verify each repo's `.gitignore` covers them. | Shrinks repos, removes machine-specific noise from diffs, prevents accidental cache commits. | Low |
 | 8 | **Scaffold or remove `DSSAT LAI Assimilation`.** It is an empty directory. Either add a README + skeleton describing the intended LAI assimilation design, or drop it until work starts. | An empty repo in the stack is ambiguous — planned vs abandoned is unclear. | Low |
 | 9 | **Promote shared parsing/output logic.** The DSSAT output parser (keeps `Summary.OUT`, merges to one CSV) is reimplemented per fork. Fold it into the extracted engine package (#1) so the I/O-suppression work in `DSSAT_acceleration` can be shared rather than re-derived. | Stops every consumer from re-solving the same I/O-bound bottleneck. | Medium |
