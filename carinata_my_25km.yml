@@ -1,0 +1,24 @@
+# Multi-year (2018-2023) carinata run on 25km NLCD-cropland points, 7 southern states
+project_name: "carinata_my_25km"
+grid_spacing_meters: 25000
+crop_extension: "BC"
+use_existing_point_shapefile: true
+existing_point_shapefile_path: "gridpoints/cropland_carinata_southus_25km.shp"
+boundary_shapefile_name: "tl_2024_us_state.shp"
+enable_boundary_filter: false
+weather_source: "DAYMET"
+weather_start_year: 2009
+weather_end_year: 2020
+soil_source: "SSURGO"
+template_file_name: "UFJA0910.BCX"
+run_mode: "experiment"
+treatment_start: 1
+treatment_end: 5
+bundle_genotype_files: false
+soil_cores: "auto"
+weather_cores: "auto"
+dssat_cores: "auto"
+resume_dssat_runs: true
+check_weather_downloads: true
+weather_download_retries: 3
+cleanup_run_folders: true

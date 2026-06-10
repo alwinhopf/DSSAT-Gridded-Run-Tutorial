@@ -53,17 +53,39 @@ treatment_end:        1
 sequence_start:       1
 sequence_end:         1
 
-# --- Performance ---
+# --- Performance / parallelism ---
+# "auto" (default) = use all logical CPUs minus 1.
+# Set an integer to fix the count (e.g. 4 for a 4-core laptop, or 64 on HPC).
+# Soil and weather steps are API/IO-bound so more goroutines than CPUs is fine.
+# DSSAT is CPU+disk-bound; set dssat_cores <= n_physical_cores for best throughput.
+soil_cores:           "auto"
+weather_cores:        "auto"
+dssat_cores:          "auto"
+
+# --- Support file bundling ---
 # false (default): rely on DSSATPRO.V48 next to the executable to resolve
 #   genotype/species/SDA/CO2 files — run folders stay tiny (big metadata saving
 #   at scale). true: copy those ~27 files into every folder for self-contained
 #   runs (auto-forced when ZIP_FOR_HPC is set, since folders move to another host).
 bundle_genotype_files: false
 
-# --- Stop & Resume / Download validation ---
-resume_dssat_runs:        false  # set to true to resume incomplete runs
+# --- Pipeline step switches ---
+# Set individual steps to false to skip them (e.g. when re-running on cached data).
+run_step_1_soils:    true   # false = skip soil download/processing; use cached files
+run_step_2_weather:  true   # false = skip weather download/processing; use cached files
+run_dssat_execution: true   # false = HPC prep mode (creates folders but does not run DSSAT)
+
+# --- Weather extension ---
+extend_weather_data:     false  # set to true to fill partial years by climatological repeat
+weather_reference_year:  2025  # the historic year used as the repeat source
+
+# --- Stop / Resume / HPC ---
+resume_dssat_runs:    false  # set to true to skip points whose results_{ID}.csv already exists
+zip_for_hpc:          false  # set to true to zip the run folder after creation (HPC upload)
+cleanup_run_folders:  false  # set to true to delete all per-point simulation folders after combining results
+
+# --- Download validation and retries ---
 check_weather_downloads:  false  # set to true to validate weather file contents and retry failures
 weather_download_retries: 3      # max retries for failed weather downloads
 check_soil_downloads:     false  # set to true to validate soil profile files (.SOL) and retry failures
 soil_download_retries:    3      # max retries for failed soil downloads
-

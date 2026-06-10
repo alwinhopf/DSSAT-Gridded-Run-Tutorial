@@ -1,0 +1,503 @@
+*EXP.DETAILS: CC000000SQ AAAA1
+
+*GENERAL
+@PEOPLE
+-99
+@ADDRESS
+-99
+@SITE
+-99
+@ PAREA  PRNO  PLEN  PLDR  PLSP  PLAY HAREA  HRNO  HLEN  HARM.........
+    -99   -99   -99   -99   -99   -99   -99   -99   -99   -99
+
+*TREATMENTS                        -------------FACTOR LEVELS------------
+@N R O C TNAME.................... CU FL SA IC MP MI MF MR MC MT ME MH SM
+ 1 1 1 0 S1 Maize 0% rem 0N CT      1  1  0  1  1  0  0  0  0  1  0  1  1
+ 1 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 1 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 1 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 2 1 1 0 S1 Maize 0% rem 50N CT     1  1  0  1  1  0  1  0  0  1  0  1  1
+ 2 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 2 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 2 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 3 1 1 0 S1 Maize 0% rem 100N CT    1  1  0  1  1  0  2  0  0  1  0  1  1
+ 3 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 3 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 3 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 4 1 1 0 S1 Maize 0% rem 150N CT    1  1  0  1  1  0  3  0  0  1  0  1  1
+ 4 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 4 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 4 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 5 1 1 0 S1 Maize 0% rem 200N CT    1  1  0  1  1  0  4  0  0  1  0  1  1
+ 5 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 5 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 5 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 6 1 1 0 S1 Maize 0% rem 250N CT    1  1  0  1  1  0  5  0  0  1  0  1  1
+ 6 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 6 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 6 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 7 1 1 0 S1 Maize 0% rem 300N CT    1  1  0  1  1  0  6  0  0  1  0  1  1
+ 7 2 1 0 W1 Fallow 0N CT            6  1  0  1  6  0  0  0  0  3  0  3  3
+ 7 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+ 7 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+ 8 1 1 0 S1 Maize 0% rem 0N NT      1  1  0  1  1  0  0  0  0  0  0  1  1
+ 8 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+ 8 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+ 8 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+ 9 1 1 0 S1 Maize 0% rem 50N NT     1  1  0  1  1  0  1  0  0  0  0  1  1
+ 9 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+ 9 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+ 9 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+10 1 1 0 S1 Maize 0% rem 100N NT    1  1  0  1  1  0  2  0  0  0  0  1  1
+10 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+10 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+10 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+11 1 1 0 S1 Maize 0% rem 150N NT    1  1  0  1  1  0  3  0  0  0  0  1  1
+11 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+11 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+11 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+12 1 1 0 S1 Maize 0% rem 200N NT    1  1  0  1  1  0  4  0  0  0  0  1  1
+12 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+12 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+12 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+13 1 1 0 S1 Maize 0% rem 250N NT    1  1  0  1  1  0  5  0  0  0  0  1  1
+13 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+13 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+13 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+14 1 1 0 S1 Maize 0% rem 300N NT    1  1  0  1  1  0  6  0  0  0  0  1  1
+14 2 1 0 W1 Fallow 0N NT            6  1  0  1  6  0  0  0  0  0  0  3  3
+14 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+14 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+15 1 1 0 S1 Maize 0% rem 0N CT      1  1  0  1  1  0  0  0  0  1  0  1  1
+15 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+15 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+15 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+16 1 1 0 S1 Maize 0% rem 50N CT     1  1  0  1  1  0  1  0  0  1  0  1  1
+16 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+16 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+16 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+17 1 1 0 S1 Maize 0% rem 100N CT    1  1  0  1  1  0  2  0  0  1  0  1  1
+17 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+17 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+17 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+18 1 1 0 S1 Maize 0% rem 150N CT    1  1  0  1  1  0  3  0  0  1  0  1  1
+18 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+18 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+18 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+19 1 1 0 S1 Maize 0% rem 200N CT    1  1  0  1  1  0  4  0  0  1  0  1  1
+19 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+19 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+19 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+20 1 1 0 S1 Maize 0% rem 250N CT    1  1  0  1  1  0  5  0  0  1  0  1  1
+20 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+20 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+20 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+21 1 1 0 S1 Maize 0% rem 300N CT    1  1  0  1  1  0  6  0  0  1  0  1  1
+21 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+21 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+21 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+22 1 1 0 S1 Maize 0% rem 0N NT      1  1  0  1  1  0  0  0  0  0  0  1  1
+22 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+22 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+22 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+23 1 1 0 S1 Maize 0% rem 50N NT     1  1  0  1  1  0  1  0  0  0  0  1  1
+23 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+23 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+23 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+24 1 1 0 S1 Maize 0% rem 100N NT    1  1  0  1  1  0  2  0  0  0  0  1  1
+24 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+24 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+24 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+25 1 1 0 S1 Maize 0% rem 150N NT    1  1  0  1  1  0  3  0  0  0  0  1  1
+25 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+25 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+25 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+26 1 1 0 S1 Maize 0% rem 200N NT    1  1  0  1  1  0  4  0  0  0  0  1  1
+26 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+26 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+26 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+27 1 1 0 S1 Maize 0% rem 250N NT    1  1  0  1  1  0  5  0  0  0  0  1  1
+27 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+27 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+27 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+28 1 1 0 S1 Maize 0% rem 300N NT    1  1  0  1  1  0  6  0  0  0  0  1  1
+28 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+28 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+28 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+29 1 1 0 S1 Maize 0% rem 0N CT      1  1  0  1  1  0  0  0  0  1  0  1  1
+29 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+29 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+29 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+30 1 1 0 S1 Maize 0% rem 50N CT     1  1  0  1  1  0  1  0  0  1  0  1  1
+30 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+30 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+30 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+31 1 1 0 S1 Maize 0% rem 100N CT    1  1  0  1  1  0  2  0  0  1  0  1  1
+31 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+31 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+31 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+32 1 1 0 S1 Maize 0% rem 150N CT    1  1  0  1  1  0  3  0  0  1  0  1  1
+32 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+32 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+32 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+33 1 1 0 S1 Maize 0% rem 200N CT    1  1  0  1  1  0  4  0  0  1  0  1  1
+33 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+33 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+33 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+34 1 1 0 S1 Maize 0% rem 250N CT    1  1  0  1  1  0  5  0  0  1  0  1  1
+34 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+34 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+34 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+35 1 1 0 S1 Maize 0% rem 300N CT    1  1  0  1  1  0  6  0  0  1  0  1  1
+35 2 1 0 W1 WWheat 0N CT            4  1  0  1  6  0  0  0  0  3  0  3  3
+35 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+35 4 1 0 W2 WWheat 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  4
+36 1 1 0 S1 Maize 0% rem 0N NT      1  1  0  1  1  0  0  0  0  0  0  1  1
+36 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+36 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+36 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+37 1 1 0 S1 Maize 0% rem 50N NT     1  1  0  1  1  0  1  0  0  0  0  1  1
+37 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+37 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+37 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+38 1 1 0 S1 Maize 0% rem 100N NT    1  1  0  1  1  0  2  0  0  0  0  1  1
+38 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+38 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+38 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+39 1 1 0 S1 Maize 0% rem 150N NT    1  1  0  1  1  0  3  0  0  0  0  1  1
+39 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+39 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+39 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+40 1 1 0 S1 Maize 0% rem 200N NT    1  1  0  1  1  0  4  0  0  0  0  1  1
+40 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+40 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+40 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+41 1 1 0 S1 Maize 0% rem 250N NT    1  1  0  1  1  0  5  0  0  0  0  1  1
+41 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+41 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+41 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+42 1 1 0 S1 Maize 0% rem 300N NT    1  1  0  1  1  0  6  0  0  0  0  1  1
+42 2 1 0 W1 WWheat 0N NT            4  1  0  1  6  0  0  0  0  0  0  3  3
+42 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+42 4 1 0 W2 WWheat 0N NT            4  1  0  1  7  0  0  0  0  0  0  4  4
+43 1 1 0 S1 Maize 0% rem 0N CT      1  1  0  1  1  0  0  0  0  1  0  1  1
+43 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+43 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+43 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+44 1 1 0 S1 Maize 0% rem 50N CT     1  1  0  1  1  0  1  0  0  1  0  1  1
+44 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+44 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+44 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+45 1 1 0 S1 Maize 0% rem 100N CT    1  1  0  1  1  0  2  0  0  1  0  1  1
+45 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+45 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+45 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+46 1 1 0 S1 Maize 0% rem 150N CT    1  1  0  1  1  0  3  0  0  1  0  1  1
+46 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+46 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+46 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+47 1 1 0 S1 Maize 0% rem 200N CT    1  1  0  1  1  0  4  0  0  1  0  1  1
+47 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+47 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+47 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+48 1 1 0 S1 Maize 0% rem 250N CT    1  1  0  1  1  0  5  0  0  1  0  1  1
+48 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+48 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+48 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+49 1 1 0 S1 Maize 0% rem 300N CT    1  1  0  1  1  0  6  0  0  1  0  1  1
+49 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+49 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+49 4 1 0 W2 Fallow 0N CT            6  1  0  1  7  0  0  0  0  4  0  4  4
+50 1 1 0 S1 Maize 0% rem 0N NT      1  1  0  1  1  0  0  0  0  0  0  1  1
+50 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+50 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+50 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+51 1 1 0 S1 Maize 0% rem 50N NT     1  1  0  1  1  0  1  0  0  0  0  1  1
+51 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+51 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+51 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+52 1 1 0 S1 Maize 0% rem 100N NT    1  1  0  1  1  0  2  0  0  0  0  1  1
+52 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+52 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+52 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+53 1 1 0 S1 Maize 0% rem 150N NT    1  1  0  1  1  0  3  0  0  0  0  1  1
+53 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+53 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+53 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+54 1 1 0 S1 Maize 0% rem 200N NT    1  1  0  1  1  0  4  0  0  0  0  1  1
+54 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+54 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+54 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  4
+55 1 1 0 S1 Maize 0% rem 250N NT    1  1  0  1  1  0  5  0  0  0  0  1  1
+55 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+55 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+55 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  6
+56 1 1 0 S1 Maize 0% rem 300N NT    1  1  0  1  1  0  6  0  0  0  0  1  1
+56 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+56 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+56 4 1 0 W2 Fallow 0N NT            6  1  0  1  7  0  0  0  0  0  0  4  6
+57 1 1 0 S1 Maize 0% rem 0N CT      1  1  0  1  1  0  0  0  0  1  0  1  1
+57 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+57 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+57 4 1 0 W2 FaBean 0N CT            4  1  0  1  7  0  0  0  0  4  0  4  6
+58 1 1 0 S1 Maize 0% rem 50N CT     1  1  0  1  1  0  1  0  0  1  0  1  1
+58 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+58 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+58 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+59 1 1 0 S1 Maize 0% rem 100N CT    1  1  0  1  1  0  2  0  0  1  0  1  1
+59 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+59 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+59 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+60 1 1 0 S1 Maize 0% rem 150N CT    1  1  0  1  1  0  3  0  0  1  0  1  1
+60 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+60 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+60 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+61 1 1 0 S1 Maize 0% rem 200N CT    1  1  0  1  1  0  4  0  0  1  0  1  1
+61 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+61 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+61 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+62 1 1 0 S1 Maize 0% rem 250N CT    1  1  0  1  1  0  5  0  0  1  0  1  1
+62 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+62 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+62 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+63 1 1 0 S1 Maize 0% rem 300N CT    1  1  0  1  1  0  6  0  0  1  0  1  1
+63 2 1 0 W1 FaBean 0N CT            7  1  0  1  6  0  0  0  0  3  0  3  5
+63 3 1 0 S2 Soybean 0N CT           3  1  0  1  2  0  0  0  0  2  0  2  2
+63 4 1 0 W2 FaBean 0N CT            7  1  0  1  7  0  0  0  0  4  0  4  6
+64 1 1 0 S1 Maize 0% rem 0N NT      1  1  0  1  1  0  0  0  0  0  0  1  1
+64 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+64 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+64 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+65 1 1 0 S1 Maize 0% rem 50N NT     1  1  0  1  1  0  1  0  0  0  0  1  1
+65 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+65 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+65 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+66 1 1 0 S1 Maize 0% rem 100N NT    1  1  0  1  1  0  2  0  0  0  0  1  1
+66 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+66 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+66 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+67 1 1 0 S1 Maize 0% rem 150N NT    1  1  0  1  1  0  3  0  0  0  0  1  1
+67 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+67 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+67 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+68 1 1 0 S1 Maize 0% rem 200N NT    1  1  0  1  1  0  4  0  0  0  0  1  1
+68 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+68 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+68 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+69 1 1 0 S1 Maize 0% rem 250N NT    1  1  0  1  1  0  5  0  0  0  0  1  1
+69 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+69 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+69 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+70 1 1 0 S1 Maize 0% rem 300N NT    1  1  0  1  1  0  6  0  0  0  0  1  1
+70 2 1 0 W1 FaBean 0N NT            7  1  0  1  6  0  0  0  0  0  0  3  5
+70 3 1 0 S2 Soybean 0N NT           3  1  0  1  2  0  0  0  0  0  0  2  2
+70 4 1 0 W2 FaBean 0N NT            7  1  0  1  7  0  0  0  0  0  0  4  6
+
+*CULTIVARS
+@C CR INGENO CNAME
+ 1 MZ IB0035 McCurdy 84aa 
+ 2 CN 999992 MAXIMA
+ 3 SB ST3660 STIN3660
+ 4 WH IB0488 NEWTON
+ 5 WH DFAULT DEFAULT
+ 6 FA IB0001 FALLOW
+ 7 FB CORD02 BROCAL
+ 8 CN CA0001 Invigor5440
+ 9 CP CP0014 349
+
+*FIELDS
+@L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
+ 1 00000000 00000000   -99   -99   -99   -99   -99   -99  -99   -99  00000000      -99
+@L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
+ 1        LATITUDE       LONGITUDE      ELEV                 0     0     0     0 FH201   100
+
+*INITIAL CONDITIONS
+@C   PCR ICDAT  ICRT  ICND  ICRN  ICRE  ICWD ICRES ICREN ICREP ICRIP ICRID ICNAME
+ 1    SB 84122  1000   -99     1     1   -99   -99     1   -99   100    10 at planting
+@C  ICBL  SH2O  SNH4  SNO3
+ 1     5  .189   -99   -99
+ 1    15  .189   -99   -99
+ 1    30   .21   -99   -99
+ 1    60  .222   -99   -99
+ 1    90  .233   -99   -99
+ 1   120  .233   -99   -99
+ 1   150  .208   -99   -99
+
+*PLANTING DETAILS
+@P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP  PLWT  PAGE  PENV  PLPH  SPRL                        PLNAME
+ 1 84122 84130     9     9     S     R    10    90     1   -99   -99   -99   -99   -99                        S1 - Maize May 1st
+ 2 85130 85134    40    40     S     R    10    90     1   -99   -99   -99   -99   -99                        S2 - Soybean May 15th
+ 3 84120 84128    50   -99     S     R    10    90     1   -99   -99   -99   -99   -99                        W1 - Fallow
+ 4 84274 84280   200   -99     S     R    10    90     1   -99   -99   -99   -99   -99                        W1 - Winter Wheat Oct 1st
+ 5 84265 84270    50   -99     S     R    10    90     1   -99   -99   -99   -99   -99                        W1 - Canola
+ 6 84274 84280   200   -99     S     R    10    90     1   -99   -99   -99   -99   -99                        W1 - Winter Wheat Oct 1st
+ 7 85274 85280   200   -99     S     R    10    90     1   -99   -99   -99   -99   -99                        W2 - Winter Wheat Oct 1st
+ 8 84274 84280    30   -99     S     R    10    90     2   -99   -99   -99   -99   -99                        W1 - Faba Bean Oct 1st
+ 9 85274 85280    30   -99     S     R    10    90     2   -99   -99   -99   -99   -99                         W2 - Faba Bean Oct 1st
+
+*FERTILIZERS (INORGANIC)
+@F FDATE  FMCD  FACD  FDEP  FAMN  FAMP  FAMK  FAMC  FAMO  FOCD FERNAME
+ 1     0 FE005 AP002     1    50   -99   -99   -99   -99   -99 50kg N at planting
+ 2     0 FE005 AP002     1   100   -99   -99   -99   -99   -99 100kg N at planting
+ 3     0 FE005 AP002     1   100   -99   -99   -99   -99   -99 100kg N at planting + 50 at 30DAP
+ 3    30 FE005 AP002     1    50   -99   -99   -99   -99   -99 100kg N at planting + 50 at 30DAP
+ 4     0 FE005 AP002     1   100   -99   -99   -99   -99   -99 100kg N at planting + 100 at 30DAP
+ 4    30 FE005 AP002     1   100   -99   -99   -99   -99   -99 100kg N at planting + 100 at 30DAP
+ 5     0 FE005 AP002     1   150   -99   -99   -99   -99   -99 150kg N at planting + 100 at 30DAP
+ 5    30 FE005 AP002     1   100   -99   -99   -99   -99   -99 150kg N at planting + 100 at 30DAP
+ 6     0 FE005 AP002     1   150   -99   -99   -99   -99   -99 150kg N at planting + 150 at 30DAP
+ 6    30 FE005 AP002     1   150   -99   -99   -99   -99   -99 150kg N at planting + 150 at 30DAP
+
+*TILLAGE AND ROTATIONS
+@T TDATE TIMPL  TDEP TNAME
+ 1 84122 TI005    20 S1 - tillage on day of planting
+ 2 85130 TI005    20 S2 - tillage on day of planting
+ 3 84274 TI005    20 W1 - tillage on day of planting
+ 4 85274 TI005    20 W2 - tillage on day of planting
+
+*HARVEST DETAILS
+@H HDATE  HSTG  HCOM HSIZE   HPC  HBPC HNAME
+ 1 84269 GS000   -99   -99   100     0 S1 - harvest 5 days before next crop
+ 2 85269 GS000   -99   -99   100     0 S2 - harvest 5 days before next crop
+ 3 85125 GS000   -99   -99   100     0 W1 - harvest 5 days before next crop
+ 4 86117 GS000   -99   -99   100     0 W2 - harvest 5 days before next crop
+ 5 85117 GS000   -99   -99   100     0 W1 - harvest 5 days before next crop
+
+*SIMULATION CONTROLS
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 1 GE            115     1     S 84092  2150 S1 - Corn
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 1 OP              Y     Y     N     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 1 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 1 MA              R     N     D     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 1 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 1 PL          84120 84120    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 1 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 1 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 1 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 1 HA              0 84275   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 2 GE            115     1     S 85091  2150 S2-Soybean Symbiosis ON
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 2 OP              Y     Y     Y     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 2 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 2 MA              R     N     D     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 2 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 2 PL          85120 85120    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 2 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 2 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 2 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 2 HA              0 85275   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 3 GE            115     1     S 84160  2150 W1 - Symbiosis OFF
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 3 OP              Y     Y     N     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 3 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 3 MA              R     N     N     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 3 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 3 PL          84275 84275    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 3 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 3 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 3 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 3 HA              0 85150   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 4 GE            115     1     S 85160  2150 W2 - Symbiosis OFF
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 4 OP              Y     Y     N     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 4 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 4 MA              R     N     N     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 4 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 4 PL          85275 85275    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 4 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 4 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 4 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 4 HA              0 86125   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 5 GE            115     1     S 84160  2150 W1 - Symbiosis ON
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 5 OP              Y     Y     N     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 5 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 5 MA              R     N     N     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 5 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 5 PL          84275 84275    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 5 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 5 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 5 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 5 HA              0 85150   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 6 GE            115     1     S 85160  2150 W2 - Symbiosis ON
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 6 OP              Y     Y     N     N     N     N     N     Y     D
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 6 ME              M     M     E     R     S     L     R     1     P     R     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 6 MA              R     N     N     N     R
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 6 OU              Y     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 6 PL          85275 85275    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 6 IR             30    50   100 IB001 IB001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 6 NI             30    50    25 IB001 IB001
+@N RESIDUES    RIPCN RTIME RIDEP
+ 6 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 6 HA              0 86125   100     0

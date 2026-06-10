@@ -88,11 +88,11 @@ options:
   dry_run:        false   # true = print the plan (combinations + paths) and exit, run nothing
   validate:       true    # true = pre-flight coverage checks; drop impossible combos, warn on risky ones
 
-  # Number of combinations to run concurrently. 1 = serial. >1 forks workers
-  # (parallel::mclapply; Windows falls back to serial). The orchestrator first
-  # runs a serial "warm-up" pass that touches each weather/soil source once to
-  # populate the shared download caches, then parallelises the rest so the
-  # workers only READ those caches (no cold-download races).
+  # Number of combinations to run concurrently. 1 = serial. >1 uses parallel
+  # workers (mclapply on Unix; PSOCK clusters on Windows). The orchestrator
+  # first runs a serial "warm-up" pass that touches each weather/soil source
+  # once to populate the shared download caches, then parallelises the rest so
+  # the workers only READ those caches (no cold-download races).
   max_parallel:   1
 
   # Response variable(s) summarised/plotted. Give a list to analyse several at

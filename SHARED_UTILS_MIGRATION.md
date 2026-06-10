@@ -1,7 +1,7 @@
 # Shared Utilities Migration — Playbook & State
 
 **Goal:** Extract the duplicated weather + soil download functions out of
-`DSSAT Gridded Run Tutorial` (source of truth) and `DSSAT ML Phenology Prediction`
+`DSSAT_Gridded_Run_Tutorial` (source of truth) and `DSSAT_ML_Phenology_Prediction`
 into a dedicated **private** shared package `dssat-spatial-utils`, then have both
 repos depend on a pinned version.
 
@@ -12,7 +12,7 @@ once migration is complete.
 ---
 
 ## Decisions locked in
-- **Source of truth:** `DSSAT Gridded Run Tutorial` (it's the superset — more
+- **Source of truth:** `DSSAT_Gridded_Run_Tutorial` (it's the superset — more
   sources, R+Python parity). Copy FROM here.
 - **Shared repo:** `dssat-spatial-utils`, **private**, owner `alwinhopf`.
 - **Scope:** weather + soil only (NOT landcover — see open question below).
@@ -88,7 +88,7 @@ requests, tqdm, PyYAML; optional: cdsapi (AgERA5)
 ### Phase 1 — Build `dssat-spatial-utils` (additive, low risk)
 ```
 ROOT=/Users/alwinhopf/Documents/GitHub
-SRC="$ROOT/DSSAT Gridded Run Tutorial"
+SRC="$ROOT/DSSAT_Gridded_Run_Tutorial"
 PKG="$ROOT/dssat-spatial-utils"
 
 mkdir -p "$PKG/R" "$PKG/python/dssatutils" "$PKG/tests" "$PKG/.github/workflows"
@@ -194,7 +194,7 @@ this session due to corruption — do not trust them; match the actual text).
 Both consumer repos rewired to the local dssatutils package. Staged (NOT committed)
 so you can review/adjust. Backups in each repo's `.migration_backup_<ts>/`.
 
-PHASE 2 — DSSAT ML Phenology Prediction:
+PHASE 2 — DSSAT_ML_Phenology_Prediction:
 - 6 dup files deleted from r_scripts/ (weather_{daymet,gridmet,nasapower}.R,
   soil_{soilgrids,soilgrids_online,ssurgo}.R); landcover kept.
 - 4 source() sites rewired to suppressMessages(library(dssatutils)): utils.R (x2,
@@ -206,7 +206,7 @@ PHASE 2 — DSSAT ML Phenology Prediction:
   Local). .Rprofile + renv/ created. Separate snapshot() unnecessary (init captured
   everything incl dssatutils).
 
-PHASE 3 — DSSAT Gridded Run Tutorial:
+PHASE 3 — DSSAT_Gridded_Run_Tutorial:
 - 20 dup files deleted (10 r_scripts/ + 10 python_scripts/); landcover_* kept.
 - R: 10 weather/soil source() lines commented, library(dssatutils) inserted.
 - Py: 10 `from <mod> import` -> `from dssatutils.<mod> import`; 2 lazy imports ->
@@ -270,11 +270,11 @@ made to either consumer repo. Findings that REQUIRED fixing the pre-written scri
 ```
 cd /Users/alwinhopf/Documents/GitHub/dssatutils
 USE_LOCAL=1 ./migrate/02_phase2_ml_phenology.sh
-git -C "/Users/alwinhopf/Documents/GitHub/DSSAT ML Phenology Prediction" diff   # review
+git -C "/Users/alwinhopf/Documents/GitHub/DSSAT_ML_Phenology_Prediction" diff   # review
 # then in R, from the ML repo root:
 #   renv::init(); renv::snapshot()
 USE_LOCAL=1 ./migrate/03_phase3_gridded.sh
-git -C "/Users/alwinhopf/Documents/GitHub/DSSAT Gridded Run Tutorial" diff      # review
+git -C "/Users/alwinhopf/Documents/GitHub/DSSAT_Gridded_Run_Tutorial" diff      # review
 ```
 Each script backs up touched files to `<repo>/.migration_backup_<ts>/`. To undo:
 restore from there or `git checkout -- <file>` (edits are staged, not committed).
@@ -308,8 +308,8 @@ restore from there or `git checkout -- <file>` (edits are staged, not committed)
 ## TO RUN when ready (needs the remote, or USE_LOCAL=1)
 1. `cd dssatutils && ./migrate/01_local_install_check.sh`  (sanity)
 2. `./migrate/00_create_remote.sh`  (after `brew install gh && gh auth login`, or make empty private repo in UI)
-3. `./migrate/02_phase2_ml_phenology.sh` then review `git -C "../DSSAT ML Phenology Prediction" diff`; then `renv::init(); renv::snapshot()`
-4. `./migrate/03_phase3_gridded.sh` then review `git -C "../DSSAT Gridded Run Tutorial" diff`
+3. `./migrate/02_phase2_ml_phenology.sh` then review `git -C "../DSSAT_ML_Phenology_Prediction" diff`; then `renv::init(); renv::snapshot()`
+4. `./migrate/03_phase3_gridded.sh` then review `git -C "../DSSAT_Gridded_Run_Tutorial" diff`
 Each script backs up touched files to `<repo>/.migration_backup_<ts>/`.
 
 ## Code review — COMPLETE for R; Python partial

@@ -343,10 +343,25 @@ if (!COPY_SUPPORT_FILES)
   message("Genotype files resolved via DSSATPRO.V48 (not copied per point — faster).")
 
 # --- 8. Parallel ---
-N_CORES_TO_USE <- max(1, parallel::detectCores() - 4)
-SOIL_CORES <- N_CORES_TO_USE
-WEATHER_CORES <- N_CORES_TO_USE
-DSSAT_CORES <- N_CORES_TO_USE
+# Core counts are read from config.yml (soil_cores / weather_cores / dssat_cores).
+# "auto" (the default) = all logical CPUs minus 1, which is appropriate for most
+# workloads. Set an explicit integer in config.yml to tune per stage:
+#   - soil/weather steps are API/IO-bound  → can benefit from MORE than n_physical_cores
+#   - DSSAT step is CPU+disk-bound          → stay at or below n_physical_cores
+# makeCluster/parLapply (PSOCK, not fork) is used throughout the main pipeline,
+# so all core counts work correctly on Windows, Linux, and macOS.
+resolve_cores <- function(key, default_n) {
+  v <- cfg_get(key, "auto")
+  if (identical(v, "auto") || is.null(v) || !nzchar(as.character(v)))
+    return(max(1L, default_n))
+  max(1L, as.integer(v))
+}
+default_cores <- max(1L, parallel::detectCores(logical = TRUE) - 1L)
+SOIL_CORES    <- resolve_cores("soil_cores",    default_cores)
+WEATHER_CORES <- resolve_cores("weather_cores", default_cores)
+DSSAT_CORES   <- resolve_cores("dssat_cores",   default_cores)
+message(sprintf("Parallelism: soil=%d  weather=%d  dssat=%d core(s)",
+                SOIL_CORES, WEATHER_CORES, DSSAT_CORES))
 
 
 #-----------------------------------------------------------------------
@@ -1131,10 +1146,12 @@ if (RESUME_DSSAT_RUNS) {
   ids_to_create_indices <- which(!completed_mask)
 }
 if (length(ids_to_create_indices) > 0) {
-  cl <- makeCluster(DSSAT_CORES)
+  cl <- makeCluster(SOIL_CORES)
+  on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
   clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES"), envir = environment())
   parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
+  on.exit()  # clear the guard — cluster stopped cleanly
 }
 
 # --- 3.5. Run Simulations ---
@@ -1153,6 +1170,7 @@ if (RUN_DSSAT_EXECUTION) {
   
   if(length(ids_to_run) > 0) {
     cl <- makeCluster(DSSAT_CORES)
+    on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
     clusterEvalQ(cl, { library(dssatengine) })
     run_simulation_wrapper <- function(ID) {
       dssatengine::run_simulation(
@@ -1173,37 +1191,39 @@ if (RUN_DSSAT_EXECUTION) {
         points_df = points
       )
     }
-    clusterExport(cl, c("DSSAT_RUN_DIR", "CROP_EXTENSION", "TEMPLATE_FILE_NAME", 
-                        "TEMPLATE_FILE_PATH", "RUN_MODE", "TREATMENT_START", 
-                        "TREATMENT_END", "SEQUENCE_START", "SEQUENCE_END", 
+    clusterExport(cl, c("DSSAT_RUN_DIR", "CROP_EXTENSION", "TEMPLATE_FILE_NAME",
+                        "TEMPLATE_FILE_PATH", "RUN_MODE", "TREATMENT_START",
+                        "TREATMENT_END", "SEQUENCE_START", "SEQUENCE_END",
                         "WEATHER_START_YEAR", "WEATHER_END_YEAR", "DSSAT_EXE_PATH",
-                        "CLEANUP_RUN_FOLDERS", "points"), 
-                  envir = .GlobalEnv)
+                        "CLEANUP_RUN_FOLDERS", "points"),
+                  envir = globalenv())
     parLapply(cl, ids_to_run, run_simulation_wrapper)
     stopCluster(cl)
+    on.exit()  # clear guard — cluster stopped cleanly
   }
   
   # --- 3.7. Combine Results ---
   if (!dir.exists(FINAL_OUTPUT_DIR)) dir.create(FINAL_OUTPUT_DIR, recursive = TRUE)
-  
+
   combine_results <- function(folder_ids) {
-    all_results <- list()
-    for (ID in folder_ids) {
-      f <- file.path(ID, paste0("results_", ID, ".csv"))
-      if (file.exists(f)) {
-        all_results[[ID]] <- read_csv(f, show_col_types = FALSE,
-                                      col_types = cols(point_id = col_character(), soil_profile_id = col_character(),
-                                                       weather_station_id = col_character(), dssat_file_id = col_character(),
-                                                       .default = col_guess()))
-      }
-    }
-    bind_rows(all_results)
+    col_spec <- cols(point_id = col_character(), soil_profile_id = col_character(),
+                     weather_station_id = col_character(), dssat_file_id = col_character(),
+                     .default = col_guess())
+    paths <- file.path(folder_ids, paste0("results_", folder_ids, ".csv"))
+    exists_mask <- file.exists(paths)
+    if (!any(exists_mask)) return(tibble::tibble())
+    bind_rows(lapply(paths[exists_mask], function(p)
+      tryCatch(read_csv(p, show_col_types = FALSE, col_types = col_spec),
+               error = function(e) { message("WARNING: could not read ", p, ": ", e$message); NULL })
+    ))
   }
-  
+
   final_data <- combine_results(all_ids)
-  if(!is.null(final_data) && nrow(final_data) > 0) {
+  if (!is.null(final_data) && nrow(final_data) > 0) {
     write_csv(final_data, FINAL_RESULTS_PATH)
-    message("Results combined.")
+    message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
+  } else {
+    message("WARNING: No results were produced. Check DSSAT logs in the per-point run folders.")
   }
   
 } else {

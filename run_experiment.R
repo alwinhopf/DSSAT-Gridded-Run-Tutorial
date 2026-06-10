@@ -9,6 +9,8 @@
 #   weather_source / soil_source / period), and for each response variable writes
 #   a per-combination summary, an ANOVA variance decomposition, and a boxplot —
 #   so you can see how much each input choice moves the outcome.
+#   For richer post-hoc analysis (spatial sensitivity maps, rank stability, RMSD),
+#   run analyze_experiment.R on the combined CSV produced by this script.
 #
 # HOW TO RUN
 #       Rscript run_experiment.R                 # uses experiment.yml
@@ -24,12 +26,14 @@
 #   parallel workers never share a config — so nothing can clobber anything.
 #
 # PARALLELISM (options.max_parallel > 1)
-#   Combinations sharing a weather or soil source also share the framework's
-#   download caches. To avoid cold-download races, the orchestrator first runs a
-#   serial "warm-up" pass that touches each weather/soil source once, then runs
-#   the remaining combinations concurrently (parallel::mclapply; Windows falls
-#   back to serial). Each combination also gets a unique project_name so its
-#   weather/soil/run folders never collide with a concurrent worker's.
+#   Number of combinations to run concurrently. 1 = serial. >1 uses:
+#   - parallel::mclapply (fork) on Linux/macOS
+#   - parallel::makeCluster + parLapplyLB (PSOCK sockets) on Windows
+#   All platforms get true multi-core parallelism. The orchestrator first
+#   runs a serial "warm-up" pass that touches each weather/soil source once
+#   to populate the shared download caches, then parallelises the rest.
+#   Each combination gets a unique project_name so its weather/soil/run
+#   folders never collide with a concurrent worker's.
 # =============================================================================
 
 suppressWarnings(suppressMessages({
@@ -73,7 +77,8 @@ REUSE_EXISTING <- isTRUE(opts$reuse_existing)
 DRY_RUN        <- isTRUE(opts$dry_run)
 VALIDATE       <- if (is.null(opts$validate)) TRUE else isTRUE(opts$validate)
 MAX_PARALLEL   <- max(1L, as.integer(if (is.null(opts$max_parallel)) 1 else opts$max_parallel))
-if (.Platform$OS.type == "windows") MAX_PARALLEL <- 1L   # mclapply forks => serial on Windows
+# Note: Windows does not support fork(), but we use makeCluster/parLapply on
+# that platform so MAX_PARALLEL is honoured on all operating systems.
 EXP_NAME       <- if (is.null(exp_cfg$experiment_name)) "experiment" else exp_cfg$experiment_name
 
 # Response variable(s): accept response_vars (list) or response_var (single).
@@ -214,6 +219,7 @@ run_one <- function(i) {
   w <- combos$weather_source[i]; s <- combos$soil_source[i]
   tag <- sprintf("[%02d] %s x %s%s", i, w, s,
                  if (PERIODS_SWEPT) paste0(" x ", combos$period_label[i]) else "")
+  log_file <- file.path(LOG_DIR, paste0(combos$scenario_id[i], ".log"))
 
   if (REUSE_EXISTING && file.exists(combos$results_path[i])) {
     cat(sprintf("%s  -> reusing existing results\n", tag)); return(TRUE)
@@ -232,8 +238,7 @@ run_one <- function(i) {
   cfg_file <- file.path(CFG_DIR, paste0(combos$scenario_id[i], ".yml"))
   yaml::write_yaml(cfg, cfg_file)
 
-  log_file <- file.path(LOG_DIR, paste0(combos$scenario_id[i], ".log"))
-  cat(sprintf("%s  -> running...\n", tag))
+  cat(sprintf("%s  -> running... (log: %s)\n", tag, basename(log_file)))
   t0 <- Sys.time()
   status <- system2("Rscript", args = shQuote("dssat_main_pipeline.R"),
                     env = paste0("DSSAT_CONFIG_FILE=", shQuote(cfg_file)),
@@ -241,13 +246,46 @@ run_one <- function(i) {
   dt <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
 
   ok <- (status == 0) && file.exists(combos$results_path[i])
-  cat(sprintf("%s  -> %s (%s min)\n", tag, if (ok) "OK" else "FAILED — see log", dt))
-  if (!ok && STOP_ON_ERROR)
-    stop(sprintf("Combination failed (%s); stop_on_error=true. See %s", tag, log_file))
+  if (ok) {
+    cat(sprintf("%s  -> OK (%s min)\n", tag, dt))
+  } else {
+    cat(sprintf("%s  -> FAILED (%s min) — see log: %s\n", tag, dt, log_file))
+    if (STOP_ON_ERROR)
+      stop(sprintf("Combination failed (%s); stop_on_error=true. See %s", tag, log_file))
+  }
   ok
 }
 
 # --- 6. Execute: serial warm-up of each source, then parallel remainder ----
+# Helper: run a list of combination indices in parallel.
+# On Linux/macOS we fork with mclapply (no serialisation overhead).
+# On Windows we use a PSOCK cluster so all cores are used (Windows has no fork).
+run_parallel <- function(indices, n_workers) {
+  if (length(indices) == 0L) return(list())
+  if (.Platform$OS.type == "windows") {
+    cl <- parallel::makeCluster(n_workers)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    # Export every object that run_one() closes over, including run_one itself.
+    parallel::clusterExport(cl, varlist = c(
+      "combos", "REUSE_EXISTING", "PERIODS_SWEPT",
+      "STOP_ON_ERROR", "existing_cfg", "base_cfg",
+      "CFG_DIR", "LOG_DIR", "merge_over", "run_one"
+    ), envir = globalenv())
+    parallel::clusterEvalQ(cl, {
+      suppressWarnings(suppressMessages({
+        if (!requireNamespace("yaml", quietly = TRUE))
+          install.packages("yaml", repos = "https://cloud.r-project.org")
+        library(yaml)
+      }))
+    })
+    res <- parallel::parLapplyLB(cl, indices, function(i) isTRUE(run_one(i)))
+  } else {
+    res <- parallel::mclapply(indices, function(i) isTRUE(run_one(i)),
+                              mc.cores = n_workers, mc.preschedule = FALSE)
+  }
+  res
+}
+
 results_ok <- setNames(logical(length(run_idx)), run_idx)
 if (MAX_PARALLEL <= 1L) {
   for (i in run_idx) results_ok[as.character(i)] <- isTRUE(run_one(i))
@@ -266,9 +304,10 @@ if (MAX_PARALLEL <= 1L) {
   cat(sprintf("\n-- Warm-up pass (serial, %d combos) --\n", length(warm)))
   for (i in warm) results_ok[as.character(i)] <- isTRUE(run_one(i))
   if (length(rest)) {
-    cat(sprintf("\n-- Parallel pass (%d combos, %d workers) --\n", length(rest), MAX_PARALLEL))
-    res <- parallel::mclapply(rest, function(i) isTRUE(run_one(i)),
-                              mc.cores = MAX_PARALLEL, mc.preschedule = FALSE)
+    cat(sprintf("\n-- Parallel pass (%d combos, %d workers) [%s] --\n",
+                length(rest), MAX_PARALLEL,
+                if (.Platform$OS.type == "windows") "PSOCK/Windows" else "fork/Unix"))
+    res <- run_parallel(rest, MAX_PARALLEL)
     for (k in seq_along(rest)) results_ok[as.character(rest[k])] <- isTRUE(res[[k]])
   }
 }

@@ -1,8 +1,9 @@
 # =============================================================================
 # analyze_experiment.R — post-hoc analysis of a weather x soil sweep.
 #
-# Turns the combined.csv produced by run_experiment.R into the figures and
-# tables that make input differences legible:
+# Consumes the combined CSV (e.g., EXPERIMENT_*_combined.csv) produced by
+# run_experiment.R, turning it into the figures and tables that make input
+# differences legible:
 #
 #   * summary_by_combo.csv          mean / sd / CV / range per input combination
 #   * fig_yield_maps.png            small-multiple maps, one panel per combination

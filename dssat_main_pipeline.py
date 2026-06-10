@@ -201,7 +201,15 @@ TEMPLATE_SOIL_ID_PLACEHOLDER = "SOIL_ID"
 # --- 0.8 DSSAT settings -----------------------------------------------------
 DSSAT_EXE_PATH     = os.environ.get("DSSAT_EXE",
                                     os.path.join(DSSAT_BASE, DSSAT_EXE_NAME))
-TEMPLATE_DIR       = os.path.join(MAIN_PROJECT_DIR, "dssat_templates")
+# Single canonical template dir shared by ALL workflows. Genotype + FileX
+# templates live ONLY in DSSAT_Gridded_Run_Tutorial/dssat_templates (this repo) —
+# runs do NOT fall back to the DSSAT48 install for these, so copy any new
+# .CUL/.ECO/.SPE/.SDA/.WDA/FileX into that folder. Override with the
+# `template_dir` config key or the DSSAT_TEMPLATE_DIR env var.
+_DEFAULT_TEMPLATE_DIR = os.path.join(os.path.dirname(MAIN_PROJECT_DIR),
+                                     "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
+TEMPLATE_DIR       = os.environ.get("DSSAT_TEMPLATE_DIR",
+                                    cfg_get("template_dir", _DEFAULT_TEMPLATE_DIR))
 TEMPLATE_FILE_NAME = cfg_get("template_file_name", "UFGA8201.MZX")   # DEMO PLACEHOLDER — replace with your own
 TEMPLATE_FILE_PATH = os.path.join(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 
@@ -214,11 +222,11 @@ SEQUENCE_END    = cfg_get("sequence_end", 1)
 
 # --- 0.10 HPC & switches ----------------------------------------------------
 ZIP_FOR_HPC         = False
-RUN_STEP_1_SOILS    = True
-RUN_STEP_2_WEATHER  = True
-RUN_DSSAT_EXECUTION = True
-CLEANUP_RUN_FOLDERS = False
-RESUME_DSSAT_RUNS   = False
+RUN_STEP_1_SOILS    = bool(cfg_get("run_step_1_soils", True))
+RUN_STEP_2_WEATHER  = bool(cfg_get("run_step_2_weather", True))
+RUN_DSSAT_EXECUTION = bool(cfg_get("run_dssat_execution", True))
+CLEANUP_RUN_FOLDERS = bool(cfg_get("cleanup_run_folders", False))
+RESUME_DSSAT_RUNS   = bool(cfg_get("resume_dssat_runs", False))
 # When a DSSATPRO.V48 is available next to the executable, DSSAT resolves
 # genotype/species/SDA/CO2 support files from the install directory, so they do
 # NOT need copying into every run folder — a big metadata saving at scale
@@ -226,12 +234,45 @@ RESUME_DSSAT_RUNS   = False
 # copying them anyway, for self-contained folders you zip and ship to a machine
 # whose DSSATPRO does not point at a matching install.
 BUNDLE_GENOTYPE_FILES = bool(cfg_get("bundle_genotype_files", False))
+# Link genotype/FileX support files into each run folder by symlink (cheap, no
+# data copied) instead of copying. Falls back to a real copy automatically when
+# the OS/filesystem does not support symlinks. Set use_symlinks: false to always
+# copy (e.g. for folders you zip and ship elsewhere).
+USE_SYMLINKS = bool(cfg_get("use_symlinks", True))
+
+
+def _link_or_copy(src: str, dst: str, use_symlinks: bool = True) -> None:
+    """Provision a file into a run folder: symlink (cheap) when use_symlinks, with
+    an automatic copy fallback if the OS/filesystem rejects symlinks; otherwise
+    copy. No-op if src is missing or dst already exists."""
+    if not os.path.exists(src) or os.path.exists(dst):
+        return
+    if use_symlinks:
+        try:
+            os.symlink(src, dst)
+            return
+        except (OSError, NotImplementedError):
+            pass
+    try:
+        shutil.copy2(src, dst)
+    except OSError:
+        pass
+
 
 # --- 0.11 Parallelism -------------------------------------------------------
-N_CORES_TO_USE = max(1, multiprocessing.cpu_count() - 4)
-SOIL_CORES     = N_CORES_TO_USE
-WEATHER_CORES  = N_CORES_TO_USE
-DSSAT_CORES    = N_CORES_TO_USE
+# Core counts are read from config.yml (soil_cores / weather_cores / dssat_cores).
+# "auto" (the default) = all logical CPUs minus 1.
+# Soil/weather steps are API/IO-bound; dssat step is CPU+disk-bound.
+def _resolve_cores(key: str) -> int:
+    v = cfg_get(key, "auto")
+    if str(v).lower() == "auto" or not str(v).strip():
+        return max(1, multiprocessing.cpu_count() - 1)
+    return max(1, int(v))
+
+SOIL_CORES     = _resolve_cores("soil_cores")
+WEATHER_CORES  = _resolve_cores("weather_cores")
+DSSAT_CORES    = _resolve_cores("dssat_cores")
+print(f"Parallelism: soil={SOIL_CORES}  weather={WEATHER_CORES}  dssat={DSSAT_CORES} core(s)")
 
 # =============================================================================
 # SECTION 1 — LOAD HELPER MODULES
@@ -555,21 +596,18 @@ if __name__ == '__main__':
     _DSSATPRO_SRC      = os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
     _DSSATPRO_OK       = os.path.exists(_DSSATPRO_SRC)
     _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE"}
-    # Bundle support files when shipping folders elsewhere (ZIP_FOR_HPC) — the local
-    # DSSATPRO paths won't be valid on the target — or when explicitly requested, or
-    # as a fallback when no DSSATPRO is available next to the executable.
-    _COPY_SUPPORT      = BUNDLE_GENOTYPE_FILES or ZIP_FOR_HPC or not _DSSATPRO_OK
-    _SUPPORT_FILES     = (
-        [f for f in os.listdir(TEMPLATE_DIR)
-         if os.path.splitext(f)[1].upper() in _SUPPORT_EXTS]
-        if _COPY_SUPPORT else []
-    )
-    if _DSSATPRO_OK and not BUNDLE_GENOTYPE_FILES:
-        print("Genotype files resolved via DSSATPRO.V48 (not copied per point — "
-              "faster, fewer files).")
-    elif not _DSSATPRO_OK:
-        print(f"DSSATPRO.V48 not found next to executable; bundling "
-              f"{len(_SUPPORT_FILES)} support files into each run folder.")
+    # Genotype/support files ALWAYS come from the shared template dir, never the
+    # DSSAT48 install: every run folder gets the .CUL/.ECO/.SPE/.SDA/.WDA/.CDE that
+    # live in TEMPLATE_DIR, so the local copy overrides whatever DSSATPRO would
+    # otherwise resolve from DSSAT48. Linked by symlink (USE_SYMLINKS, cheap) with
+    # an automatic copy fallback. To add a crop, drop its files into TEMPLATE_DIR.
+    _SUPPORT_FILES     = [f for f in os.listdir(TEMPLATE_DIR)
+                          if os.path.splitext(f)[1].upper() in _SUPPORT_EXTS]
+    # Symlink for local runs; force a real copy when building a portable bundle
+    # (ZIP_FOR_HPC / bundle_genotype_files) — symlinks don't survive the move.
+    _SUPPORT_SYMLINK   = USE_SYMLINKS and not ZIP_FOR_HPC and not BUNDLE_GENOTYPE_FILES
+    print(f"Provisioning {len(_SUPPORT_FILES)} genotype/support file(s) per run "
+          f"from {TEMPLATE_DIR} ({'symlink' if _SUPPORT_SYMLINK else 'copy'}).")
 
 
     def _create_folders_and_files(i: int) -> None:
@@ -653,13 +691,8 @@ if __name__ == '__main__':
         # skipped entirely (precomputed _SUPPORT_FILES is empty). Hard-link to save
         # disk + metadata; fall back to copy across filesystems.
         for fname in _SUPPORT_FILES:
-            src = os.path.join(TEMPLATE_DIR, fname)
-            dst = os.path.join(point_dir, fname)
-            if not os.path.exists(dst):
-                try:
-                    os.link(src, dst)
-                except OSError:
-                    shutil.copy2(src, dst)
+            _link_or_copy(os.path.join(TEMPLATE_DIR, fname),
+                          os.path.join(point_dir, fname), _SUPPORT_SYMLINK)
 
 
     if not RESUME_DSSAT_RUNS:

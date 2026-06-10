@@ -119,7 +119,7 @@ if (requireNamespace("dssatutils", quietly = TRUE)) {
     if (length(sols) > 0) {
       for (s in sols) {
         txt <- tolower(paste(readLines(s), collapse = " "))
-        check(grepl("*soils" , toupper(substr(txt,1,6))) || grepl("*soils", toupper(txt)), paste0(basename(s), ": .SOL header present"))
+        check(grepl("*soils", txt, fixed = TRUE), paste0(basename(s), ": .SOL header present"))
       }
     } else {
       message("No .SOL files produced; SoilGrids REST API skipped or has coverage gaps.")

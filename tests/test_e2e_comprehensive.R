@@ -96,7 +96,7 @@ check_wth <- function(path) {
 check_sol <- function(path) {
   if (!file.exists(path)) return(FALSE)
   txt <- tolower(paste(readLines(path), collapse = " "))
-  if (!grepl("*soils", toupper(substr(txt, 1, 10))) && !grepl("*soils", toupper(txt))) return(FALSE)
+  if (!grepl("*soils", txt, fixed = TRUE)) return(FALSE)
   if (!grepl("slb|layer", txt)) return(FALSE)
   if (grepl("nan", txt)) return(FALSE)
   TRUE
