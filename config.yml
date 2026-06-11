@@ -12,7 +12,7 @@
 
 # --- Project / grid ---
 project_name:         "dssat_spatial_demo"
-grid_spacing_meters:  50000          # 50 km demo; 5000-10000 for production
+grid_spacing_meters:  40000          # 50 km demo; 5000-10000 for production
 crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
 
 # --- Run-folder naming ---
