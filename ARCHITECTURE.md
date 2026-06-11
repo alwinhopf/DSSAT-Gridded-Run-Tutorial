@@ -118,7 +118,9 @@ Key capabilities:
 
 - **Spatial-domain modes:** regular grid from a boundary polygon, a user shapefile, or
   cropland-only points derived from CDL/NLCD rasters (`r_scripts/`, `python_scripts/`).
-- **Sensitivity sweep:** `run_carinata_sweep.R` runs weather × soil source combinations.
+- **Sensitivity sweep:** the weather × soil × resolution sweep driver now lives in the
+  `Bioenergy_Model_Input_Comparison` repo (`run_carinata_sweep.{R,py}`) and references this
+  engine via `ENGINE_DIR`.
 - **Scale-out:** `hpc/dssat_mpi_runner.py` (SLURM + MPI) with dynamic work-stealing,
   streaming per-rank writes, and node-local scratch staging.
 - **Caching:** `*_netcdf_cache/`, `soil_cache/`, `weather_cache/` hold acquired inputs.

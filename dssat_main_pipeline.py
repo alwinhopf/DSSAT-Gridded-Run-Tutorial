@@ -5,11 +5,11 @@ dssat_main_pipeline.py
 Python port of dssat_main_pipeline.R
 
 End-to-end spatial / gridded DSSAT crop modeling pipeline:
-Step 0 — Create or load a grid / point shapefile
-Step 1 — Download and format soil data
-Step 2 — Download and format weather data
-Step 3 — Build DSSAT run folders and (optionally) run simulations
-Step 4 — Combine results and visualize
+Step 0 - Create or load a grid / point shapefile
+Step 1 - Download and format soil data
+Step 2 - Download and format weather data
+Step 3 - Build DSSAT run folders and (optionally) run simulations
+Step 4 - Combine results and visualize
 
 HOW TO USE (beginners)
 1. Edit SECTION 0 below (paths, crop, weather/soil sources, years).
@@ -20,9 +20,9 @@ HOW TO USE (beginners)
    python dssat_main_pipeline.py
 
 THREE SPATIAL DOMAIN MODES (same as R pipeline)
-MODE A — Regular grid from a boundary polygon (default demo)
-MODE B — Your own point / polygon shapefile
-MODE C — Cropland-only points from CDL / NLCD (build with landcover scripts,
+MODE A - Regular grid from a boundary polygon (default demo)
+MODE B - Your own point / polygon shapefile
+MODE C - Cropland-only points from CDL / NLCD (build with landcover scripts,
          then feed shapefile here via MODE B)
 """
 
@@ -52,7 +52,7 @@ try:
     import numpy as np
     import pandas as pd
     from pyproj import CRS, Transformer
-    from shapely.geometry import Point
+    from shapely.geometry import Point, box, mapping
     from shapely.ops import transform as shp_transform
 except ImportError as exc:
     sys.exit(
@@ -61,7 +61,7 @@ except ImportError as exc:
     )
 
 # =============================================================================
-# SECTION 0 — MASTER CONFIGURATION
+# SECTION 0 - MASTER CONFIGURATION
 # =============================================================================
 
 # --- 0.1 Path & platform detection -----------------------------------------
@@ -90,7 +90,7 @@ if _os == "Windows":
     DSSAT_BASE     = r"C:\DSSAT48"
     DSSAT_EXE_NAME = "DSCSM048.EXE"
 else:
-    # macOS / Linux: compile from source — see README
+    # macOS / Linux: compile from source - see README
     DSSAT_BASE     = os.path.expanduser("~/Documents/GitHub/DSSAT48")
     DSSAT_EXE_NAME = "dscsm048"
 
@@ -109,8 +109,8 @@ except Exception:  # noqa: BLE001
 
 # --- 0.3 Project settings ---------------------------------------------------
 PROJECT_NAME        = cfg_get("project_name", "dssat_spatial_demo")
-GRID_SPACING_METERS = cfg_get("grid_spacing_meters", 50_000)   # 50 km test; 5–10 km production
-CROP_EXTENSION      = cfg_get("crop_extension", "MZ")     # MZ=maize  WH=wheat  SB=soybean …
+GRID_SPACING_METERS = cfg_get("grid_spacing_meters", 50_000)   # 50 km test; 5-10 km production
+CROP_EXTENSION      = cfg_get("crop_extension", "MZ")     # MZ=maize  WH=wheat  SB=soybean ...
 
 # --- 0.3b Optional run-folder naming ----------------------------------------
 RUN_TAG           = cfg_get("run_tag", "")        # e.g. "run1" / "calibA"
@@ -127,6 +127,15 @@ BOUNDARY_SHAPEFILE_NAME = cfg_get("boundary_shapefile_name", "tl_2024_us_state.s
 ENABLE_BOUNDARY_FILTER  = cfg_get("enable_boundary_filter", True)
 BOUNDARY_FILTER_COLUMN  = cfg_get("boundary_filter_column", "NAME")
 STATE_NAME_FILTER       = list(cfg_get("state_name_filter", ["Iowa"]))
+
+# Optional cropland mask. Shapefile fields stay <=10 chars:
+# crop_frac [0-1], crop_pct [0-100], crop_ha, cell_ha.
+USE_CROPLAND_MASK     = bool(cfg_get("use_cropland_mask", False))
+CROPLAND_RASTER_FILE  = str(cfg_get("cropland_raster_file", ""))
+CROPLAND_CLASSES      = [int(x) for x in cfg_get("cropland_classes", [82])]
+CROPLAND_MIN_FRACTION = float(cfg_get("cropland_min_fraction", 0))
+CROPLAND_STRICT       = bool(cfg_get("cropland_strict", False))
+REUSE_CROPLAND_GRID   = bool(cfg_get("reuse_cropland_grid", True))
 
 # --- 0.5 Auto-naming convention ---------------------------------------------
 if GRID_SPACING_METERS < 1000:
@@ -181,7 +190,14 @@ GRIDMET_CACHE_DIR     = os.path.join(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
 AGERA5_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
 GRIDPOINTS_OUTPUT_DIR = os.path.join(MAIN_PROJECT_DIR, "gridpoints")
-POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}.shp"
+ALL_LAND_POINT_SHAPEFILE_NAME = f"{GRID_BASE_NAME}.shp"
+CROPLAND_GRID_TAG = ""
+if USE_CROPLAND_MASK:
+    class_tag = "-".join(map(str, CROPLAND_CLASSES))
+    min_tag = f"{CROPLAND_MIN_FRACTION:g}".replace(".", "p")
+    CROPLAND_GRID_TAG = re.sub(r"[^A-Za-z0-9_\-]", "_", f"_cropland_{class_tag}_min{min_tag}")
+POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}{CROPLAND_GRID_TAG}.shp"
+ALL_LAND_POINT_SHAPEFILE_PATH = os.path.join(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH  = os.path.join(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
 DSSAT_RUN_DIR         = os.path.join(MAIN_PROJECT_DIR, "dssat_runs", DSSAT_RUN_NAME)
 FINAL_OUTPUT_DIR      = os.path.join(MAIN_PROJECT_DIR, "results")
@@ -202,7 +218,7 @@ TEMPLATE_SOIL_ID_PLACEHOLDER = "SOIL_ID"
 DSSAT_EXE_PATH     = os.environ.get("DSSAT_EXE",
                                     os.path.join(DSSAT_BASE, DSSAT_EXE_NAME))
 # Single canonical template dir shared by ALL workflows. Genotype + FileX
-# templates live ONLY in DSSAT_Gridded_Run_Tutorial/dssat_templates (this repo) —
+# templates live ONLY in DSSAT_Gridded_Run_Tutorial/dssat_templates (this repo) -
 # runs do NOT fall back to the DSSAT48 install for these, so copy any new
 # .CUL/.ECO/.SPE/.SDA/.WDA/FileX into that folder. Override with the
 # `template_dir` config key or the DSSAT_TEMPLATE_DIR env var.
@@ -210,7 +226,7 @@ _DEFAULT_TEMPLATE_DIR = os.path.join(os.path.dirname(MAIN_PROJECT_DIR),
                                      "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
 TEMPLATE_DIR       = os.environ.get("DSSAT_TEMPLATE_DIR",
                                     cfg_get("template_dir", _DEFAULT_TEMPLATE_DIR))
-TEMPLATE_FILE_NAME = cfg_get("template_file_name", "UFGA8201.MZX")   # DEMO PLACEHOLDER — replace with your own
+TEMPLATE_FILE_NAME = cfg_get("template_file_name", "UFGA8201.MZX")   # DEMO PLACEHOLDER - replace with your own
 TEMPLATE_FILE_PATH = os.path.join(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 
 # --- 0.9 Run mode -----------------------------------------------------------
@@ -229,8 +245,8 @@ CLEANUP_RUN_FOLDERS = bool(cfg_get("cleanup_run_folders", False))
 RESUME_DSSAT_RUNS   = bool(cfg_get("resume_dssat_runs", False))
 # When a DSSATPRO.V48 is available next to the executable, DSSAT resolves
 # genotype/species/SDA/CO2 support files from the install directory, so they do
-# NOT need copying into every run folder — a big metadata saving at scale
-# (thousands of points × ~27 files). Set bundle_genotype_files: true to force
+# NOT need copying into every run folder - a big metadata saving at scale
+# (thousands of points x ~27 files). Set bundle_genotype_files: true to force
 # copying them anyway, for self-contained folders you zip and ship to a machine
 # whose DSSATPRO does not point at a matching install.
 BUNDLE_GENOTYPE_FILES = bool(cfg_get("bundle_genotype_files", False))
@@ -269,13 +285,97 @@ def _resolve_cores(key: str) -> int:
         return max(1, multiprocessing.cpu_count() - 1)
     return max(1, int(v))
 
+
+def _resolve_optional_path(path: str) -> str:
+    path = str(path or "").strip()
+    if not path:
+        return ""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = Path(MAIN_PROJECT_DIR) / p
+    return str(p)
+
+
+def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
+                        classes, min_fraction: float = 0,
+                        strict: bool = False):
+    """Attach cropland fractions and keep only cropland-bearing grid cells."""
+    def fallback(message: str):
+        if strict:
+            raise RuntimeError(message)
+        print(f"WARNING: {message} Continuing with all grid cells.")
+        return points_gdf
+
+    raster_file = _resolve_optional_path(raster_file)
+    if not raster_file or not os.path.exists(raster_file):
+        return fallback(f"Cropland mask enabled, but cropland_raster_file is missing or not found: '{raster_file}'")
+
+    try:
+        import rasterio
+        from rasterio.mask import mask as rio_mask
+    except Exception as exc:  # noqa: BLE001
+        return fallback(f"Cropland mask enabled, but rasterio is not available: {exc}")
+
+    if not classes:
+        return fallback("Cropland mask enabled, but cropland_classes is empty.")
+
+    with rasterio.open(raster_file) as src:
+        if src.crs is None:
+            return fallback(f"Cropland raster has no CRS: {raster_file}")
+        if src.crs.is_geographic:
+            return fallback("Cropland raster is longitude/latitude. Reproject it to a meter-based CRS before grid-cell fraction extraction.")
+
+        print(f"Applying cropland mask from {raster_file} (classes: {', '.join(map(str, classes))})")
+        pts_r = points_gdf.to_crs(src.crs)
+        half = grid_spacing_m / 2.0
+        fractions = []
+        for geom in pts_r.geometry:
+            cell = box(geom.x - half, geom.y - half, geom.x + half, geom.y + half)
+            try:
+                arr, _ = rio_mask(src, [mapping(cell)], crop=True, filled=False)
+                data = arr[0]
+                valid = ~np.ma.getmaskarray(data)
+                if src.nodata is not None:
+                    valid &= np.asarray(data) != src.nodata
+                if not np.any(valid):
+                    fractions.append(np.nan)
+                    continue
+                fractions.append(float(np.isin(np.asarray(data)[valid], classes).mean()))
+            except Exception:  # noqa: BLE001
+                fractions.append(np.nan)
+
+    out = points_gdf.copy()
+    frac = np.clip(np.asarray(fractions, dtype=float), 0, 1)
+    out["crop_frac"] = frac
+    out["crop_pct"] = np.round(frac * 100, 4)
+    out["cell_ha"] = (grid_spacing_m ** 2) / 10000.0
+    out["crop_ha"] = np.round(out["cell_ha"] * out["crop_frac"], 4)
+
+    if min_fraction <= 0:
+        keep = out["crop_frac"].notna() & (out["crop_frac"] > 0)
+    else:
+        keep = out["crop_frac"].notna() & (out["crop_frac"] >= min_fraction)
+    kept = int(keep.sum())
+    pct = 100 * kept / len(out) if len(out) else 0
+    print(f"Cropland mask retained {kept} of {len(out)} grid cells ({pct:.1f}%).")
+    if kept == 0:
+        raise RuntimeError("Cropland mask removed all grid cells. Lower cropland_min_fraction or check cropland raster/classes.")
+
+    out = out.loc[keep].copy()
+    try:
+        out.to_file(POINT_SHAPEFILE_PATH)
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARNING: Could not rewrite cropland-filtered grid shapefile: {exc}")
+    return out
+
+
 SOIL_CORES     = _resolve_cores("soil_cores")
 WEATHER_CORES  = _resolve_cores("weather_cores")
 DSSAT_CORES    = _resolve_cores("dssat_cores")
 print(f"Parallelism: soil={SOIL_CORES}  weather={WEATHER_CORES}  dssat={DSSAT_CORES} core(s)")
 
 # =============================================================================
-# SECTION 1 — LOAD HELPER MODULES
+# SECTION 1 - LOAD HELPER MODULES
 # =============================================================================
 sys.path.insert(0, PY_SCRIPTS_DIR)
 
@@ -310,7 +410,7 @@ from dssatutils.soil_hwsd             import process_soils_hwsd
 print(f"Sourcing helper modules from: {PY_SCRIPTS_DIR}")
 
 # =============================================================================
-# SECTION 1b — PRE-FLIGHT CHECKS
+# SECTION 1b - PRE-FLIGHT CHECKS
 # =============================================================================
 print("Running Pre-flight Checks...")
 
@@ -340,7 +440,7 @@ elif (SOIL_SOURCE not in ("SSURGO", "SOILGRIDS_ONLINE")
 print("All checks passed. Starting pipeline...")
 
 # =============================================================================
-# SECTION 2 — HELPER FUNCTIONS
+# SECTION 2 - HELPER FUNCTIONS
 # =============================================================================
 
 from dssatengine import (
@@ -360,7 +460,7 @@ from dssatengine import (
 
 if __name__ == '__main__':
     # =============================================================================
-    # STEP 0 — CREATE / LOAD GRID POINTS
+    # STEP 0 - CREATE / LOAD GRID POINTS
     # =============================================================================
     print("=" * 60)
     print("STEP 0: PREPARING GRIDFILE / POINTS")
@@ -368,7 +468,11 @@ if __name__ == '__main__':
 
     os.makedirs(GRIDPOINTS_OUTPUT_DIR, exist_ok=True)
 
-    if USE_EXISTING_POINT_SHAPEFILE:
+    if (not USE_EXISTING_POINT_SHAPEFILE and USE_CROPLAND_MASK
+            and REUSE_CROPLAND_GRID and os.path.exists(POINT_SHAPEFILE_PATH)):
+        print(f"Reusing existing cropland grid shapefile: {POINT_SHAPEFILE_PATH}")
+        gridfile = gpd.read_file(POINT_SHAPEFILE_PATH)
+    elif USE_EXISTING_POINT_SHAPEFILE:
         print(f"Using existing point shapefile: {EXISTING_POINT_SHAPEFILE_PATH}")
         gridfile = load_existing_points(EXISTING_POINT_SHAPEFILE_PATH, POINT_SHAPEFILE_PATH)
     else:
@@ -388,12 +492,23 @@ if __name__ == '__main__':
         if boundary_sf.empty:
             sys.exit("Filter resulted in 0 features.")
 
-        gridfile = create_grid_points(boundary_sf, GRID_SPACING_METERS, POINT_SHAPEFILE_PATH)
+        raw_grid_path = ALL_LAND_POINT_SHAPEFILE_PATH if USE_CROPLAND_MASK else POINT_SHAPEFILE_PATH
+        gridfile = create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
+
+    if USE_CROPLAND_MASK and "crop_pct" not in gridfile.columns:
+        gridfile = apply_cropland_mask(
+            gridfile,
+            CROPLAND_RASTER_FILE,
+            GRID_SPACING_METERS,
+            CROPLAND_CLASSES,
+            CROPLAND_MIN_FRACTION,
+            CROPLAND_STRICT,
+        )
 
     print(f"Grid points ready: {len(gridfile)} points")
 
     # =============================================================================
-    # STEP 1 — SOIL DATA
+    # STEP 1 - SOIL DATA
     # =============================================================================
     print("=" * 60)
     print("STEP 1: PROCESSING SOIL DATA")
@@ -472,7 +587,7 @@ if __name__ == '__main__':
             sys.exit(f"Unknown SOIL_SOURCE: {SOIL_SOURCE}")
 
     # =============================================================================
-    # STEP 2 — WEATHER DATA
+    # STEP 2 - WEATHER DATA
     # =============================================================================
     print("=" * 60)
     print("STEP 2: DOWNLOADING WEATHER DATA")
@@ -555,7 +670,7 @@ if __name__ == '__main__':
                 print("All files already extended.")
 
     # =============================================================================
-    # STEP 3 — BUILD DSSAT FOLDERS AND RUN SIMULATIONS
+    # STEP 3 - BUILD DSSAT FOLDERS AND RUN SIMULATIONS
     # =============================================================================
     print("=" * 60)
     print("STEP 3: RUNNING DSSAT SIMULATIONS")
@@ -604,7 +719,7 @@ if __name__ == '__main__':
     _SUPPORT_FILES     = [f for f in os.listdir(TEMPLATE_DIR)
                           if os.path.splitext(f)[1].upper() in _SUPPORT_EXTS]
     # Symlink for local runs; force a real copy when building a portable bundle
-    # (ZIP_FOR_HPC / bundle_genotype_files) — symlinks don't survive the move.
+    # (ZIP_FOR_HPC / bundle_genotype_files) - symlinks don't survive the move.
     _SUPPORT_SYMLINK   = USE_SYMLINKS and not ZIP_FOR_HPC and not BUNDLE_GENOTYPE_FILES
     print(f"Provisioning {len(_SUPPORT_FILES)} genotype/support file(s) per run "
           f"from {TEMPLATE_DIR} ({'symlink' if _SUPPORT_SYMLINK else 'copy'}).")
@@ -657,12 +772,50 @@ if __name__ == '__main__':
                 lambda m: m.group(1) + ID[:8].ljust(8) + m.group(2),
                 content,
             )
-            # NOTE: Do NOT patch the LATITUDE/LONGITUDE/ELEV text placeholders in the
-            # *FIELDS coordinate line. When DSSAT encounters non-numeric text there it
-            # falls back to reading coordinates from the .WTH file header (@ INSI LAT
-            # LONG …), which already has the correct per-point coordinates written by
-            # the weather-download step. Patching with numeric values causes DSSAT to
-            # use those values instead and then the values end up wrong in summary.csv.
+            # Substitute real per-point coordinates into the *FIELDS tier-2 line.
+            # Preserve placeholder widths so DSSAT's fixed-column parser stays aligned.
+            def _fit_field(value, width, digits):
+                try:
+                    value = float(value)
+                except Exception:
+                    return None
+                if not math.isfinite(value):
+                    return None
+                out = f"{value:{width}.0f}" if digits == 0 else f"{value:{width}.{digits}f}"
+                return out if len(out) == width else None
+
+            def _wth_elev_default():
+                wth = os.path.join(weather_repo, f"{ID}.WTH")
+                try:
+                    with open(wth, encoding="utf-8", errors="ignore") as wh:
+                        lines = [next(wh, "") for _ in range(3)]
+                    if len(lines) >= 3 and lines[1].lstrip().startswith("@"):
+                        header = lines[1].split()
+                        values = lines[2].split()
+                        if "ELEV" in header:
+                            idx = header.index("ELEV")
+                            if idx < len(values):
+                                elev = float(values[idx])
+                                if math.isfinite(elev):
+                                    return elev
+                except Exception:
+                    pass
+                return -99.0
+
+            coord_match = re.search(r"(?m)^.*LATITUDE.*LONGITUDE.*$", content)
+            if coord_match:
+                line = coord_match.group(0)
+                s_lat = _fit_field(row.get(LAT_COLUMN), 8, 3)
+                s_lon = _fit_field(row.get(LONG_COLUMN), 9, 3)
+                s_elev = _fit_field(_wth_elev_default(), 4, 0)
+                if s_lat is not None:
+                    line = line.replace("LATITUDE", s_lat, 1)
+                if s_lon is not None:
+                    line = line.replace("LONGITUDE", s_lon, 1)
+                if s_elev is not None:
+                    line = line.replace("ELEV", s_elev, 1)
+                content = content[:coord_match.start()] + line + content[coord_match.end():]
+
             with open(os.path.join(point_dir, TEMPLATE_FILE_NAME), "w") as fh:
                 fh.write(content)
         except Exception as exc:
@@ -686,7 +839,7 @@ if __name__ == '__main__':
             except (OSError, NotImplementedError):
                 shutil.copy2(wth_src, wth_dst)
 
-        # Genotype / support files (cultivar, ecotype, species, SDA, CO2, …). Only
+        # Genotype / support files (cultivar, ecotype, species, SDA, CO2, ...). Only
         # bundled when DSSATPRO can't resolve them or the user forces it; otherwise
         # skipped entirely (precomputed _SUPPORT_FILES is empty). Hard-link to save
         # disk + metadata; fall back to copy across filesystems.
@@ -711,7 +864,7 @@ if __name__ == '__main__':
         _create_folders_and_files(i)
 
     # =============================================================================
-    # STEP 3 (continued) — EXECUTE DSSAT
+    # STEP 3 (continued) - EXECUTE DSSAT
     # =============================================================================
 
     all_ids = points[POINT_ID_COLUMN].tolist()
@@ -783,6 +936,25 @@ if __name__ == '__main__':
         os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
         if all_results:
             final_data = pd.concat(all_results, ignore_index=True)
+            crop_cols = [c for c in ["crop_frac", "crop_pct", "crop_ha", "cell_ha"] if c in gridfile.columns]
+            if crop_cols and POINT_ID_COLUMN in gridfile.columns:
+                point_attrs = gridfile[[POINT_ID_COLUMN] + crop_cols].copy()
+                point_attrs = point_attrs.rename(columns={POINT_ID_COLUMN: "point_id"})
+                point_attrs["point_id"] = point_attrs["point_id"].astype(str)
+                final_data["point_id"] = final_data["point_id"].astype(str)
+                final_data = final_data.merge(point_attrs, on="point_id", how="left")
+                if "cell_ha" in final_data.columns:
+                    final_data["gridcell_area_ha"] = final_data["cell_ha"]
+                if "crop_ha" in final_data.columns:
+                    final_data["cropland_ha"] = final_data["crop_ha"]
+                if {"final_grain_kg_ha", "cropland_ha"}.issubset(final_data.columns):
+                    final_data["final_grain_production_kg"] = (
+                        final_data["final_grain_kg_ha"] * final_data["cropland_ha"]
+                    )
+                if {"top_weight_kg_ha", "cropland_ha"}.issubset(final_data.columns):
+                    final_data["top_weight_production_kg"] = (
+                        final_data["top_weight_kg_ha"] * final_data["cropland_ha"]
+                    )
             final_data.to_csv(FINAL_RESULTS_PATH, index=False, na_rep="")
             print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
@@ -797,7 +969,7 @@ if __name__ == '__main__':
 
     else:
         # ==========================================================================
-        # HPC PREP MODE — folders built, no execution
+        # HPC PREP MODE - folders built, no execution
         # ==========================================================================
         print("=" * 60)
         print("  HPC PREP MODE COMPLETE")
@@ -850,7 +1022,7 @@ if __name__ == '__main__':
             print("DSSAT execution skipped. Transfer this directory to your HPC.")
 
     # =============================================================================
-    # STEP 4 — VISUALIZE RESULTS
+    # STEP 4 - VISUALIZE RESULTS
     # =============================================================================
     if RUN_DSSAT_EXECUTION and os.path.exists(FINAL_RESULTS_PATH):
         print("=" * 60)
@@ -884,7 +1056,7 @@ if __name__ == '__main__':
                     alpha=0.85,
                 )
                 plt.colorbar(sc, ax=ax, label="Mean Grain Yield (kg/ha)")
-                ax.set_title(f"Simulated Yield — {DSSAT_RUN_NAME}", fontsize=13)
+                ax.set_title(f"Simulated Yield - {DSSAT_RUN_NAME}", fontsize=13)
                 ax.set_xlabel("Longitude")
                 ax.set_ylabel("Latitude")
                 ax.set_aspect("equal")

@@ -1,41 +1,13 @@
-# Python dependencies for the DSSAT gridded pipeline (Python port + HPC MPI runner).
+# Deprecated: Python dependencies are managed by environment.yml + conda-lock.
 #
-# Install (local / workstation):
+# Do not install this project with:
 #   pip install -r requirements.txt
 #
-# On HPC, build mpi4py against the cluster MPI AFTER loading the MPI module:
-#   pip install -r requirements.txt           # everything except mpi4py
-#   pip install --no-cache-dir --no-binary :all: mpi4py==3.1.6
+# Use:
+#   conda install -c conda-forge conda-lock
+#   conda-lock -f environment.yml -p win-64 -p linux-64
+#   conda-lock install -n dssat_grid conda-lock.yml
 #
-# Versions below are known-good as of 2025; relax or pin tighter to taste.
-
-# --- Core data / geospatial ---
-numpy==1.26.4
-pandas==2.2.2
-geopandas==0.14.4
-shapely==2.0.4
-pyproj==3.6.1
-fiona==1.9.6
-rasterio==1.3.10
-xarray==2024.6.0
-netCDF4==1.6.5          # GRIDMET / CHIRPS / AgERA5 NetCDF reading
-requests==2.32.3        # SSURGO / SoilGrids / NASA-POWER / CHIRPS REST
-tqdm==4.66.4
-PyYAML==6.0.1           # unified config.yml loader
-
-# --- Optional (only for specific sources) ---
-# rasterio (above) also powers SoilGrids VRT mode and HWSD raster sampling.
-# cdsapi is ONLY needed for the AGERA5 weather source (Copernicus CDS key req'd):
-#   pip install cdsapi
-# cdsapi==0.7.3
-# HWSD soil reads an SQLite DB via Python's stdlib sqlite3 (no extra pip dep).
-
-# --- HPC only (build against cluster MPI; see note above) ---
-mpi4py==3.1.6
-# Pin dssatutils to a specific commit for deterministic CI
-dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0
-# dssatengine — shared gridded run engine (see CONVENTIONS.md P1).
-# Editable local install for now; TODO: switch to a tag pin once the package is
-# committed, pushed, and tagged (run pip from the repo root so ../ resolves):
-#   dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@vX.Y.Z
--e ../dssatengine
+# For HPC systems where mpi4py must be built against the cluster MPI, create the
+# conda-lock environment first, then install mpi4py after loading the MPI module:
+#   pip install --no-cache-dir --no-binary :all: mpi4py==3.1.6

@@ -28,6 +28,18 @@ enable_boundary_filter:  true
 boundary_filter_column:  "NAME"
 state_name_filter:    ["Iowa"]       # list; matched against boundary_filter_column
 
+# --- Optional cropland mask ---
+# Prototype workflow for running only on cropland. When enabled, the pipeline
+# computes the cropland fraction for each generated grid cell from a local
+# categorical raster, keeps only cells with cropland fraction above the threshold,
+# and carries cropland area into the final results CSV.
+use_cropland_mask:      false
+cropland_raster_file:   "data/Annual_NLCD_LndCov_2024_CU_C1V1.tif"  # local NLCD/CDL GeoTIFF; used only when enabled
+cropland_classes:       [82]         # NLCD class 82 = cultivated crops
+cropland_min_fraction:  0            # 0 means keep cells with >0 cropland
+cropland_strict:        false        # true = stop if raster/dependency is missing
+reuse_cropland_grid:    true         # reuse saved cropland grid for same project/res/classes/threshold
+
 # --- Weather ---
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
 # | NASA_POWER_CHIRPS (global, NASA POWER + high-res CHIRPS rainfall, 50S-50N)

@@ -41,8 +41,9 @@ def _find_and_load():
         print("[config_loader] PyYAML not installed - using in-script defaults.")
         return {}
     try:
-        with open(path, "r") as fh:
+        with open(path, "r", encoding="utf-8-sig") as fh:
             cfg = yaml.safe_load(fh) or {}
+        cfg = {str(k).lstrip("\ufeff"): v for k, v in cfg.items()}
         print(f"[config_loader] Loaded {len(cfg)} settings from {path}")
         return cfg
     except Exception as exc:  # noqa: BLE001

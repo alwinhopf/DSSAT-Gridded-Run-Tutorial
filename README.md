@@ -427,19 +427,68 @@ The `load_existing_points()` function handles the rest automatically:
 
 ### Mode C — Cropland-only points (CDL / NLCD)
 
-This is Mode B with a cropland-masked point shapefile that you build first using two helper scripts.
+The preferred workflow is now integrated into `dssat_main_pipeline.R` and
+`dssat_main_pipeline.py`: keep Mode A/Mode B as usual, then enable the optional
+cropland mask in `config.yml`. The pipeline computes cropland percentage for
+each grid cell, keeps only cells with cropland, and carries cropland area into
+the final results CSV.
 
 #### Step 1 — Download a landcover raster
 
 | Dataset | Class code | Coverage | URL |
 |---------|-----------|----------|-----|
-| NLCD | `82` = Cultivated Crops (all crops) | Contiguous US, ~30 m | https://www.mrlc.gov/data |
+| Annual NLCD Land Cover CONUS | `82` = Cultivated Crops (all crops) | Contiguous US, ~30 m | https://www.mrlc.gov/data |
 | CDL | Crop-specific codes (e.g., `1` = corn) | Contiguous US, ~30 m | https://croplandcros.scinet.usda.gov/ |
 | ESA WorldCover | `40` = Cropland | Global, 10 m | https://worldcover2021.esa.int/ |
 
-Place the downloaded `.tif` under `data/landcover/`.
+For Annual NLCD, use the MRLC data portal: open
+https://www.mrlc.gov/data, choose **Annual NLCD → Land Cover → Land Cover
+(CONUS) 2024**, download the bundle, unzip it, and place the `.tif` under
+`data/`. The current direct bundle URL is
+https://www.mrlc.gov/downloads/sciweb1/shared/mrlc/data-bundles/Annual_NLCD_LndCov_2024_CU_C1V1.zip,
+but MRLC may change this URL in future years.
 
-#### Step 2 — Create a binary cropland mask (`r_scripts/landcover_raster.R`)
+#### Step 2 — Enable cropland filtering in `config.yml`
+
+For all cultivated cropland with NLCD, use class `82`:
+
+```yaml
+use_cropland_mask:      true
+cropland_raster_file:   "data/Annual_NLCD_LndCov_2024_CU_C1V1.tif"
+cropland_classes:       [82]
+cropland_min_fraction:  0      # keep grid cells with >0 cropland
+cropland_strict:        false  # warn and continue all-land if raster is missing
+reuse_cropland_grid:    true
+```
+
+The output grid shapefile stores:
+
+- `crop_frac` — cropland fraction from 0 to 1
+- `crop_pct` — cropland percentage from 0 to 100
+- `crop_ha` — cropland hectares inside the grid cell
+- `cell_ha` — total grid-cell hectares
+
+Cropland grids are saved separately from all-land grids and reused on later
+runs with the same project, resolution, class list, and threshold. For example,
+`carinata_sweep_100km.shp` is the all-land grid, while
+`carinata_sweep_100km_cropland_82_min0.shp` is the NLCD class 82 cropland grid.
+Set `reuse_cropland_grid: false` to force regeneration.
+
+The final results CSV also includes `cropland_ha`, `gridcell_area_ha`,
+`final_grain_production_kg`, and `top_weight_production_kg` when crop area is
+available. Downstream bioenergy comparison and LCA/TEA scripts can use these
+columns directly.
+
+Set `use_cropland_mask: false` to run all grid cells. If `cropland_strict:
+false`, a missing raster only prints a warning and the pipeline falls back to
+all-land mode.
+
+#### Legacy helper path — build a cropland shapefile first
+
+The older helper scripts are still useful if you want to inspect or reuse a
+pre-built cropland-only point shapefile outside the main pipeline.
+
+##### Create a binary cropland mask (`r_scripts/landcover_raster.R`)
 
 Edit the USER SETTINGS block at the top of the script:
 
@@ -464,7 +513,7 @@ Rscript r_scripts/landcover_raster.R
 
 Output: `data/landcover/derived/cropland_mask_<state>.tif` — a binary raster (1 = cropland).
 
-#### Step 3 — Aggregate to grid points (`r_scripts/landcover_raster_to_gridpoints.R`)
+##### Aggregate to grid points (`r_scripts/landcover_raster_to_gridpoints.R`)
 
 This aggregates the high-resolution (~30 m) mask to your target DSSAT grid spacing and writes a point shapefile with a `crop_pct` attribute (fraction of the grid cell covered by cropland).
 
@@ -486,7 +535,7 @@ Outputs in `gridpoints/`:
 - `montana_cropland_5k.shp` — all aggregated cells with a `crop_pct` attribute
 - `montana_cropland_5k_above_threshold.shp` — filtered to cells above `cropland_threshold`
 
-#### Step 4 — Feed into Mode B
+##### Feed into Mode B
 
 ```r
 USE_EXISTING_POINT_SHAPEFILE  <- TRUE

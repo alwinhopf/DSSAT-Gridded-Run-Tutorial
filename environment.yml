@@ -1,7 +1,9 @@
-# Conda/mamba environment for the DSSAT gridded pipeline.
+# Conda/mamba environment for the DSSAT gridded Python pipeline.
 #
-#   mamba env create -f environment.yml      # or: conda env create -f environment.yml
-#   conda activate dssat_grid
+# Source of truth for Python dependencies. Generate a reproducible lock with:
+#   conda install -c conda-forge conda-lock
+#   conda-lock -f environment.yml -p win-64 -p linux-64
+#   conda-lock install -n dssat_grid conda-lock.yml
 #
 # HPC note: mpi4py is intentionally left to pip so it can be built against the
 # cluster's MPI. After activating, run:
@@ -24,5 +26,13 @@ dependencies:
   - tqdm=4.66.4
   - pyyaml=6.0.1
   - pip
+  - pytest=8.2.2
   # mpi4py via pip on HPC (see note above); uncomment for a local conda MPI:
   # - mpi4py=3.1.6
+  - pip:
+      # Shared package pins. Replace @main with a release tag or commit SHA when
+      # freezing a publication-grade environment.
+      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@main
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@main
+      # Optional: AgERA5 weather source (requires Copernicus CDS credentials).
+      # - cdsapi==0.7.3

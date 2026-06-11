@@ -210,6 +210,21 @@ BOUNDARY_FILTER_COLUMN   <- cfg_get("boundary_filter_column", "NAME")
 # Demo: Montana at 50 km spacing yields ~60 grid points — fast for a first test.
 STATE_NAME_FILTER        <- as.character(cfg_get("state_name_filter", c("Iowa")))
 
+# --- 2d. Optional cropland mask ---
+# If enabled, grid cells are filtered to cropland-bearing cells before soil,
+# weather, and DSSAT execution. The shapefile carries short field names because
+# ESRI Shapefile truncates names longer than 10 characters:
+#   crop_frac = cropland fraction [0-1]
+#   crop_pct  = cropland percent [0-100]
+#   crop_ha   = cropland hectares in the grid cell
+#   cell_ha   = full grid-cell hectares
+USE_CROPLAND_MASK <- isTRUE(as.logical(cfg_get("use_cropland_mask", FALSE)))
+CROPLAND_RASTER_FILE <- as.character(cfg_get("cropland_raster_file", ""))
+CROPLAND_CLASSES <- as.integer(unlist(cfg_get("cropland_classes", c(82))))
+CROPLAND_MIN_FRACTION <- as.numeric(cfg_get("cropland_min_fraction", 0))
+CROPLAND_STRICT <- isTRUE(as.logical(cfg_get("cropland_strict", FALSE)))
+REUSE_CROPLAND_GRID <- isTRUE(as.logical(cfg_get("reuse_cropland_grid", TRUE)))
+
 # --- 2c. Auto-Names & Naming Convention ---
 if (GRID_SPACING_METERS < 1000) { 
   RESOLUTION_TAG <- paste0(GRID_SPACING_METERS, "m") 
@@ -293,7 +308,15 @@ AGERA5_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
 
 # Input Paths
 GRIDPOINTS_OUTPUT_DIR <- file.path(MAIN_PROJECT_DIR, GRIDPOINTS_SUBDIR)
-POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, ".shp") # Shapefile is tied to Location/Res only
+ALL_LAND_POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, ".shp")
+CROPLAND_GRID_TAG <- ""
+if (USE_CROPLAND_MASK) {
+  class_tag <- paste(CROPLAND_CLASSES, collapse = "-")
+  min_tag <- gsub("\\.", "p", format(CROPLAND_MIN_FRACTION, trim = TRUE, scientific = FALSE))
+  CROPLAND_GRID_TAG <- gsub("[^A-Za-z0-9_\\-]", "_", paste0("_cropland_", class_tag, "_min", min_tag))
+}
+POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, CROPLAND_GRID_TAG, ".shp")
+ALL_LAND_POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
 
 # Run & Output Paths
@@ -815,6 +838,77 @@ extend_weather_smart_single <- function(f, reference_year) {
   return(TRUE)
 }
 
+resolve_optional_path <- function(path) {
+  path <- trimws(as.character(if (is.null(path)) "" else path))
+  if (!nzchar(path)) return("")
+  if (grepl("^([A-Za-z]:|/|\\\\\\\\|~)", path)) return(normalizePath(path, mustWork = FALSE))
+  normalizePath(file.path(MAIN_PROJECT_DIR, path), mustWork = FALSE)
+}
+
+apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
+                                min_fraction = 0, strict = FALSE) {
+  fallback <- function(text) {
+    if (strict) stop(text, call. = FALSE)
+    message("WARNING: ", text, " Continuing with all grid cells.")
+    points_sf
+  }
+
+  raster_file <- resolve_optional_path(raster_file)
+  if (!nzchar(raster_file) || !file.exists(raster_file)) {
+    return(fallback(sprintf("Cropland mask enabled, but cropland_raster_file is missing or not found: '%s'", raster_file)))
+  }
+  if (!requireNamespace("terra", quietly = TRUE)) {
+    return(fallback("Cropland mask enabled, but package 'terra' is not installed."))
+  }
+  if (length(classes) == 0 || any(is.na(classes))) {
+    return(fallback("Cropland mask enabled, but cropland_classes is empty or invalid."))
+  }
+
+  r <- tryCatch(terra::rast(raster_file), error = function(e) e)
+  if (inherits(r, "error")) {
+    return(fallback(sprintf("Could not read cropland raster '%s': %s", raster_file, r$message)))
+  }
+  if (terra::is.lonlat(r)) {
+    return(fallback("Cropland raster is longitude/latitude. Reproject it to a meter-based CRS before grid-cell fraction extraction."))
+  }
+
+  message(sprintf("Applying cropland mask from %s (classes: %s)", raster_file, paste(classes, collapse = ", ")))
+  pts_r <- st_transform(points_sf, terra::crs(r))
+  xy <- st_coordinates(pts_r)
+  half <- grid_spacing_m / 2
+  frac <- vapply(seq_len(nrow(pts_r)), function(i) {
+    x <- xy[i, 1]; y <- xy[i, 2]
+    cell_ext <- terra::ext(x - half, x + half, y - half, y + half)
+    cell_r <- tryCatch(terra::crop(r, cell_ext, snap = "out"), error = function(e) NULL)
+    if (is.null(cell_r) || terra::ncell(cell_r) == 0) return(NA_real_)
+    vals <- terra::values(cell_r, mat = FALSE, na.rm = TRUE)
+    if (length(vals) == 0) return(NA_real_)
+    mean(vals %in% classes)
+  }, numeric(1))
+  frac[is.nan(frac)] <- NA_real_
+  frac <- pmax(0, pmin(1, frac))
+
+  out <- points_sf
+  out$crop_frac <- frac
+  out$crop_pct <- round(100 * frac, 4)
+  out$cell_ha <- (grid_spacing_m^2) / 10000
+  out$crop_ha <- round(out$cell_ha * frac, 4)
+
+  keep <- !is.na(out$crop_frac)
+  if (min_fraction <= 0) keep <- keep & out$crop_frac > 0 else keep <- keep & out$crop_frac >= min_fraction
+  kept <- sum(keep)
+  message(sprintf("Cropland mask retained %d of %d grid cells (%.1f%%).",
+                  kept, nrow(out), if (nrow(out) > 0) 100 * kept / nrow(out) else 0))
+  if (kept == 0) stop("Cropland mask removed all grid cells. Lower cropland_min_fraction or check cropland raster/classes.", call. = FALSE)
+
+  out <- out[keep, ]
+  tryCatch(
+    sf::st_write(out, POINT_SHAPEFILE_PATH, append = FALSE, delete_layer = TRUE, quiet = TRUE),
+    error = function(e) message("WARNING: Could not rewrite cropland-filtered grid shapefile: ", e$message)
+  )
+  out
+}
+
 #-----------------------------------------------------------------------
 # STEP 0: CREATE GRIDFILE
 #-----------------------------------------------------------------------
@@ -824,7 +918,10 @@ message("STEP 0: PREPARING GRIDFILE / POINTS")
 setwd(MAIN_PROJECT_DIR) 
 dir.create(GRIDPOINTS_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-if (USE_EXISTING_POINT_SHAPEFILE) {
+if (!USE_EXISTING_POINT_SHAPEFILE && USE_CROPLAND_MASK && REUSE_CROPLAND_GRID && file.exists(POINT_SHAPEFILE_PATH)) {
+  message(sprintf("Reusing existing cropland grid shapefile: %s", POINT_SHAPEFILE_PATH))
+  gridfile <- st_read(POINT_SHAPEFILE_PATH, quiet = TRUE)
+} else if (USE_EXISTING_POINT_SHAPEFILE) {
   message(sprintf("Using existing point shapefile: %s", EXISTING_POINT_SHAPEFILE_PATH))
   gridfile <- load_existing_points(EXISTING_POINT_SHAPEFILE_PATH, POINT_SHAPEFILE_PATH,
                                    id_col = POINT_ID_COLUMN, lat_col = LAT_COLUMN, lon_col = LONG_COLUMN)
@@ -842,8 +939,22 @@ if (USE_EXISTING_POINT_SHAPEFILE) {
     boundary_sf <- boundary_sf[boundary_sf[[BOUNDARY_FILTER_COLUMN]] %in% BOUNDARY_FILTER_VALUE, ]
     if (nrow(boundary_sf) == 0) stop("Filter resulted in 0 features.")
   }
-  gridfile <- create_grid_points(boundary_sf, GRID_SPACING_METERS, POINT_SHAPEFILE_PATH)
+  raw_grid_path <- if (USE_CROPLAND_MASK) ALL_LAND_POINT_SHAPEFILE_PATH else POINT_SHAPEFILE_PATH
+  gridfile <- create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
 }
+
+if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile))) {
+  gridfile <- apply_cropland_mask(
+    points_sf = gridfile,
+    raster_file = CROPLAND_RASTER_FILE,
+    grid_spacing_m = GRID_SPACING_METERS,
+    classes = CROPLAND_CLASSES,
+    min_fraction = CROPLAND_MIN_FRACTION,
+    strict = CROPLAND_STRICT
+  )
+}
+
+message(sprintf("Grid points ready: %d point(s)", nrow(gridfile)))
 
 #-----------------------------------------------------------------------
 # STEP 1: SOIL DATA
@@ -1384,6 +1495,22 @@ if (RUN_DSSAT_EXECUTION) {
 
   final_data <- combine_results(all_ids)
   if (!is.null(final_data) && nrow(final_data) > 0) {
+    point_attrs <- st_drop_geometry(gridfile)
+    keep_cols <- intersect(c(POINT_ID_COLUMN, "crop_frac", "crop_pct", "crop_ha", "cell_ha"), names(point_attrs))
+    if (length(keep_cols) > 1) {
+      point_attrs <- point_attrs[, keep_cols, drop = FALSE]
+      names(point_attrs)[names(point_attrs) == POINT_ID_COLUMN] <- "point_id"
+      point_attrs$point_id <- as.character(point_attrs$point_id)
+      final_data <- dplyr::left_join(final_data, point_attrs, by = "point_id")
+      if ("cell_ha" %in% names(final_data)) final_data$gridcell_area_ha <- final_data$cell_ha
+      if ("crop_ha" %in% names(final_data)) final_data$cropland_ha <- final_data$crop_ha
+      if (all(c("final_grain_kg_ha", "cropland_ha") %in% names(final_data))) {
+        final_data$final_grain_production_kg <- final_data$final_grain_kg_ha * final_data$cropland_ha
+      }
+      if (all(c("top_weight_kg_ha", "cropland_ha") %in% names(final_data))) {
+        final_data$top_weight_production_kg <- final_data$top_weight_kg_ha * final_data$cropland_ha
+      }
+    }
     write_csv(final_data, FINAL_RESULTS_PATH)
     message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
   } else {
