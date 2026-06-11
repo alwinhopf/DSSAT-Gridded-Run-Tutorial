@@ -37,33 +37,34 @@ pkgs <- c(
 )
 
 renv::install(pkgs)
-renv::snapshot(packages = pkgs, prompt = FALSE)
 
-# Find the script's directory and construct a relative path to dssatutils
-.script_dir <- function() {
-  argv <- commandArgs(trailingOnly = FALSE)
-  file_arg <- grep("^--file=", argv, value = TRUE)
-  if (length(file_arg)) {
-    path <- sub("^--file=", "", file_arg[1])
-    return(dirname(normalizePath(path, mustWork = FALSE)))
-  }
-  for (i in seq_len(sys.nframe())) {
-    ofile <- sys.frame(i)$ofile
-    if (!is.null(ofile) && nzchar(ofile)) {
-      return(dirname(normalizePath(ofile, mustWork = FALSE)))
-    }
-  }
-  if (requireNamespace("rstudioapi", quietly = TRUE) &&
-      rstudioapi::isAvailable()) {
-    ctx <- tryCatch(rstudioapi::getSourceEditorContext(), error = function(e) NULL)
-    if (!is.null(ctx) && nzchar(ctx$path)) {
-      return(dirname(normalizePath(ctx$path, mustWork = FALSE)))
-    }
-  }
-  getwd()
-}
+# --- Shared Git packages: dssatutils + dssatengine -------------------------
+# These live in their own GitHub repos and are reused across projects, so we
+# install them FROM GITHUB (not a local "../path") and let renv pin the exact
+# commit in renv.lock via the snapshot below. On a fresh machine
+# `renv::restore()` then reinstalls the identical commit automatically — no
+# devtools::install_local(), and no "did I reinstall after editing?" version
+# skew.
+#
+# Pin style: "@main" installs the current tip and the resolved SHA is frozen
+# into renv.lock by the snapshot. Once you cut release tags you can swap
+# "@main" for "@<tag>" (e.g. "@v0.1.0") for human-readable pins.
+#
+# PREREQUISITES (one-time, on the machine that GENERATES the lock):
+#   1. Commit + push any local edits to dssatutils / dssatengine FIRST,
+#      otherwise the GitHub install will not include them.
+#   2. If either repo is private, configure a GitHub PAT so renv can clone it:
+#        usethis::create_github_token(); gitcreds::gitcreds_set()
+renv::install(c(
+  "git::https://github.com/alwinhopf/dssatutils.git@main",
+  "git::https://github.com/alwinhopf/dssatengine.git@main"
+))
 
-renv::install("git::https://github.com/alwinhopf/dssatutils.git@v0.1.0")
-renv::install("../dssatengine")
+# Snapshot the FULL project library (CRAN packages + both Git packages) so
+# renv.lock records every dependency, including the Git RemoteSha values that
+# make dssatutils/dssatengine reproducible. COMMIT renv.lock after this runs.
+renv::snapshot(type = "all", prompt = FALSE)
+
+message("\nrenv.lock written. Commit it so a fresh machine can `renv::restore()`.")
 
 

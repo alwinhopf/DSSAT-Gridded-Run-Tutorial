@@ -13,6 +13,7 @@ This repository provides an end-to-end, beginner-friendly workflow for **spatial
 - [Status, limitations, and future work](#status-limitations-and-future-work)
 - [What is DSSAT and why spatial modeling?](#what-is-dssat-and-why-spatial-modeling)
 - [Prerequisites](#prerequisites)
+- [How to start on a fresh Windows laptop](#how-to-start-on-a-fresh-windows-laptop)
 - [Quick start: run the demo in RStudio](#quick-start-run-the-demo-in-rstudio)
 - [Choosing your spatial input: shapefile types explained](#choosing-your-spatial-input-shapefile-types-explained)
   - [Option 1 — US state/county boundary (TIGER/Line)](#option-1--us-statecounty-boundary-tigerline)
@@ -128,6 +129,76 @@ Typical executable names:
 ### SLURM (optional)
 
 If you have a SLURM-managed HPC cluster, you can run the MPI runner with `sbatch`. Any other scheduler (PBS, LSF, SGE) works too — translate `sbatch`/`srun` to your scheduler's equivalents.
+
+---
+
+## How to start on a fresh Windows laptop
+
+End-to-end setup on a clean Windows machine. The R environment is pinned with
+[`renv`](https://rstudio.github.io/renv/), so `renv::restore()` reproduces the
+exact package versions — including the shared `dssatengine` / `dssatutils`
+packages, which install straight from GitHub (no side-by-side clones needed).
+
+### 1 — Install the non-R prerequisites
+
+1. **R** — install the version recorded in `renv.lock` (currently R 4.4.x) from
+   [CRAN](https://cran.r-project.org/bin/windows/base/).
+2. **RStudio** — [Posit Desktop](https://posit.co/download/rstudio-desktop/);
+   the pipeline uses `rstudioapi` to locate itself.
+3. **Rtools** — [matching your R version](https://cran.r-project.org/bin/windows/Rtools/).
+   Most packages install as binaries, but Rtools is a safe fallback for any
+   source build.
+4. **Git** — [git-scm.com](https://git-scm.com/download/win). If `dssatengine`
+   is a private repository, also set a GitHub token in R so `renv` can clone it:
+   `usethis::create_github_token()` then `gitcreds::gitcreds_set()`.
+5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
+   **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
+   Windows. This is the crop-model executable; `renv` does **not** provide it.
+
+### 2 — Clone the project and restore the R environment
+
+```powershell
+git clone https://github.com/alwinhopf/DSSAT-Gridded-Run-Tutorial.git
+cd DSSAT-Gridded-Run-Tutorial
+```
+
+Open the folder in RStudio (the project's `.Rprofile` auto-bootstraps `renv`),
+then install every pinned package — CRAN dependencies **and** the
+`dssatengine` / `dssatutils` packages from GitHub — in one step:
+
+```r
+renv::restore()
+```
+
+This replaces the old manual `install.packages(..., type = "binary")` /
+`devtools::install_local(...)` dance: the lockfile already pins exact versions,
+and the pipeline's installer prefers Windows binaries to avoid source-compile
+failures (e.g. `sf`, `terra`).
+
+> **Generating the lock (one-time, maintainers only):** if `renv.lock` does not
+> yet pin `dssatengine` / `dssatutils`, run `Rscript setup_renv.R` once on a
+> machine where those repos are committed and pushed, then commit the
+> regenerated `renv.lock`.
+
+### 3 — Get the demo boundary shapefile (one-time)
+
+Follow [Quick start → step 3](#3--download-the-demo-boundary-shapefile-one-time)
+to download `tl_2024_us_state.zip` into `shapefile/`.
+
+### 4 — Run it
+
+Open `dssat_main_pipeline.R` and click **Source**. DSSAT is auto-detected on
+Windows; override only if you installed it elsewhere:
+
+```r
+Sys.setenv(DSSAT_EXE = "C:/DSSAT48/DSCSM048.exe")
+```
+
+A successful run writes a combined results CSV and a yield map under `results/`.
+If any soil or weather point cannot be downloaded, the pipeline now reports it
+explicitly and writes a `*_download_failures.csv` log next to the data, so a
+point landing on water or outside coverage is auditable rather than a silent gap
+(see [Troubleshooting](#troubleshooting)).
 
 ---
 

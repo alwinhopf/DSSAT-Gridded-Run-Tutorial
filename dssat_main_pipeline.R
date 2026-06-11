@@ -1,3 +1,19 @@
+#renv::install("sf", type = "binary")
+#renv::install("devtools", type = "binary")
+#renv::install("soilDB", type = "binary")
+#renv::install("terra", type = "binary")
+#renv::install("terra", type = "binary")
+#install.packages("sf", type = "binary")
+#install.packages("devtools", type = "binary")
+#install.packages("soilDB", type = "binary")
+#library(soilDB)  
+# 1. Grab your main R session's library path
+#my_lib_path <- .libPaths()[1]
+
+# 2. Set it as a global environment variable for all R processes
+#Sys.setenv(R_LIBS_USER = my_lib_path)
+#devtools::install_local("C:/Users/alwin/Documents/GitHub/dssatutils")
+#devtools::install_local("C:/Users/alwin/Documents/GitHub/dssatengine")
 #=======================================================================
 #   DSSAT PIPELINE SCRIPT — Spatial / Gridded Crop Modeling
 #   Modular soil & weather download, folder building, local or HPC run
@@ -376,7 +392,7 @@ message("Loading libraries...")
 packages_needed <- c(
   # --- core pipeline ---
   "sf", "lubridate", "foreach", "doParallel", "parallel", "DSSAT", "stringr",
-  "dplyr", "tidyverse", "R.utils", "processx", "pbapply", "tools",
+  "dplyr", "ggplot2", "tibble", "R.utils", "processx", "pbapply", "tools",
   "rstudioapi", "zoo",
   # --- weather / soil helper modules (attached at source time) ---
   "nasapower", "daymetr", "terra", "ncdf4", "httr", "jsonlite", "tidyr",
@@ -388,15 +404,70 @@ packages_needed <- c(
 if (WEATHER_SOURCE == "AGERA5") packages_needed <- c(packages_needed, "ecmwfr")
 if (SOIL_SOURCE == "HWSD")      packages_needed <- c(packages_needed, "DBI", "RSQLite")
 
-# Packages installed from GitHub rather than CRAN (name -> repo).
-github_pkgs <- list(climateR = "mikejohnson51/climateR")
+# Packages installed from GitHub rather than CRAN (name -> repo). None are
+# currently required — the GRIDMET module downloads netCDF directly via httr +
+# terra, so no climateR dependency. Add entries here only if a helper module
+# genuinely `library()`s a GitHub-only package.
+github_pkgs <- list()
 
 # ---------------------------------------------------------------------------
 # ensure_packages(): install any missing packages (prompting first in an
 # interactive session, auto-installing in batch/Rscript), then attach them all.
 # This makes "Source" in RStudio self-bootstrapping instead of erroring on the
 # first missing dependency.
+#
+# Windows/macOS gotcha this handles: install.packages() defaults to
+# pkgType = "both", so for packages whose CRAN *source* is newer than the
+# *binary* (sf, terra, soilDB, ...) it tries to COMPILE from source — which
+# needs Rtools + system GDAL/GEOS/PROJ and typically fails. We therefore force
+# type = "binary" on Windows/macOS (with a source fallback), and route installs
+# through renv::install() when an renv project is active so they land in the
+# project library rather than fighting the renv shim.
 # ---------------------------------------------------------------------------
+
+# Make sure a real CRAN mirror is set (a bare "@CRAN@" makes installs prompt /
+# fail in non-interactive Rscript sessions).
+.repos <- getOption("repos")
+if (is.null(.repos) || is.na(.repos["CRAN"]) || .repos["CRAN"] == "@CRAN@") {
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+}
+
+# Prefer CRAN binaries on Windows/macOS; Linux CRAN has no binaries (use source).
+.is_binary_platform <- .Platform$OS.type == "windows" ||
+                       Sys.info()[["sysname"]] == "Darwin"
+.install_type <- if (.is_binary_platform) "binary" else "source"
+# renv sets RENV_PROJECT when a project is active; route installs through it.
+.renv_active <- nzchar(Sys.getenv("RENV_PROJECT")) &&
+                requireNamespace("renv", quietly = TRUE)
+
+# Install a single package (CRAN name or, if github_repo given, a GitHub repo),
+# preferring binaries and falling back to source if the binary path fails.
+.install_one <- function(pkg, github_repo = NULL) {
+  target <- if (!is.null(github_repo)) github_repo else pkg
+  attempt <- function(type) {
+    if (.renv_active) {
+      renv::install(target, type = type, prompt = FALSE)
+    } else if (!is.null(github_repo)) {
+      remotes::install_github(github_repo, upgrade = "never")
+    } else {
+      install.packages(pkg, type = type)
+    }
+  }
+  ok <- tryCatch({ attempt(.install_type); TRUE },
+                 error = function(e) {
+                   message(sprintf("  binary/default install of '%s' failed: %s",
+                                   pkg, conditionMessage(e))); FALSE })
+  # Source fallback only meaningful where we tried a binary first.
+  if (!ok && .is_binary_platform && is.null(github_repo)) {
+    message(sprintf("  retrying '%s' from source ...", pkg))
+    ok <- tryCatch({ attempt("source"); TRUE },
+                   error = function(e) {
+                     message(sprintf("  source install of '%s' also failed: %s",
+                                     pkg, conditionMessage(e))); FALSE })
+  }
+  ok
+}
+
 ensure_packages <- function(pkgs, github = list()) {
   pkgs    <- unique(pkgs)
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -404,6 +475,9 @@ ensure_packages <- function(pkgs, github = list()) {
   if (length(missing) > 0) {
     message("\nThe following required R package(s) are not installed:\n  ",
             paste(missing, collapse = ", "), "\n")
+    message(sprintf("Install method: %s%s",
+                    if (.renv_active) "renv::install" else "install.packages",
+                    sprintf(" (type = '%s')", .install_type)))
     do_install <- TRUE
     if (interactive()) {
       ans <- readline(sprintf(
@@ -416,15 +490,11 @@ ensure_packages <- function(pkgs, github = list()) {
 
     if (length(intersect(missing, names(github))) > 0 &&
         !requireNamespace("remotes", quietly = TRUE)) {
-      install.packages("remotes")
+      .install_one("remotes")
     }
     for (pkg in missing) {
       message(sprintf("Installing '%s' ...", pkg))
-      if (!is.null(github[[pkg]])) {
-        remotes::install_github(github[[pkg]])
-      } else {
-        install.packages(pkg)
-      }
+      .install_one(pkg, github_repo = github[[pkg]])
     }
   }
 
@@ -435,8 +505,14 @@ ensure_packages <- function(pkgs, github = list()) {
   if (length(failed) > 0)
     stop("These package(s) could not be installed/loaded automatically:\n  ",
          paste(failed, collapse = ", "),
-         "\nInstall them manually (e.g. install.packages()), then re-run.",
-         call. = FALSE)
+         sprintf("\nTry installing them manually as binaries, e.g.:\n  %s",
+                 if (.renv_active)
+                   sprintf("renv::install(c(%s), type = \"binary\")",
+                           paste(sprintf('"%s"', failed), collapse = ", "))
+                 else
+                   sprintf("install.packages(c(%s), type = \"binary\")",
+                           paste(sprintf('"%s"', failed), collapse = ", "))),
+         "\nthen re-run.", call. = FALSE)
 }
 
 ensure_packages(packages_needed, github = github_pkgs)
@@ -446,7 +522,6 @@ sf_use_s2(FALSE)
 
 if (WEATHER_SOURCE == "GRIDMET") {
   dir.create(GRIDMET_CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
-  options(climateR.cache_dir = GRIDMET_CACHE_DIR)
 }
 
 # --- Load Helper Scripts (Robust Search) ---
@@ -872,6 +947,12 @@ if (RUN_STEP_1_SOILS) {
           missing_left_mask <- ! (ids_left %in% existing_left)
           points_to_process <- points_to_process[missing_left_mask, ]
         } else {
+          # No deep validity check requested — still confirm the .SOL files now
+          # exist on disk so successfully-fetched points are cleared and we don't
+          # emit a spurious "failed" warning for them.
+          existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+          ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
+          points_to_process <- points_to_process[!(ids_left %in% existing_left), ]
           break
         }
       }
@@ -965,6 +1046,12 @@ if (RUN_STEP_2_WEATHER) {
         valid_mask <- vapply(ids_left, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
         points_to_process <- points_to_process[!valid_mask, ]
       } else {
+        # No deep validity check requested — still confirm the .WTH files now
+        # exist on disk, so points that downloaded fine are cleared from the
+        # pending list and we don't emit a spurious "failed" warning for them.
+        existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
+        ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
+        points_to_process <- points_to_process[!(ids_left %in% existing_files), ]
         break
       }
     }
@@ -1060,6 +1147,19 @@ if(file.exists(soil_mapping_file)) {
   soil_map[[POINT_ID_COLUMN]] <- as.character(soil_map[[POINT_ID_COLUMN]])
   common_cols <- setdiff(intersect(names(points), names(soil_map)), POINT_ID_COLUMN)
   if(length(common_cols) > 0) soil_map <- soil_map[, !names(soil_map) %in% common_cols]
+  # The soil mapping CSV is a per-LAYER table (many rows per point id). We only
+  # need point-level attributes (SOIL_ID, coords) here — the full profile lives
+  # in each point's .SOL file — so collapse to ONE row per id before joining.
+  # Without this, left_join() does a one-to-many expansion that multiplies
+  # `points` into one-row-per-soil-layer (e.g. 23 points -> 317 rows), which
+  # then runs DSSAT many redundant times per folder in parallel (racing on the
+  # same dir) and breaks the per-point coordinate lookup.
+  if (anyDuplicated(soil_map[[POINT_ID_COLUMN]])) {
+    n_before <- nrow(soil_map)
+    soil_map <- soil_map[!duplicated(soil_map[[POINT_ID_COLUMN]]), , drop = FALSE]
+    message(sprintf("Soil mapping has %d layer-rows for %d points; collapsed to one row per point.",
+                    n_before, nrow(soil_map)))
+  }
   points <- left_join(points, soil_map, by = POINT_ID_COLUMN)
 } else {
   message("WARNING: Soil mapping CSV not found. Attempting legacy logic.")
@@ -1123,6 +1223,53 @@ create_folders_and_files <- function(i) {
     }
     content <- gsub("00000000", ID, content, fixed = TRUE)
     content <- gsub(tools::file_path_sans_ext(TEMPLATE_FILE_NAME), ID, content, fixed = TRUE)
+
+    # Substitute real per-point coordinates into the *FIELDS tier-2 line so DSSAT
+    # does not log "Error reading latitude/longitude/elevation". The template
+    # placeholders (LATITUDE/LONGITUDE/ELEV) are right-justified at their field
+    # edges, so each is swapped for a SAME-LENGTH number to preserve the
+    # fixed-width column alignment. Only the single data line that carries the
+    # LATITUDE/LONGITUDE placeholders is edited — "ELEV" also appears in the @L
+    # header, so a global replace would corrupt it. Anything unexpected (bad
+    # coord, width overflow) leaves the placeholder untouched: never fatal.
+    content <- tryCatch({
+      fld_idx <- which(grepl("LATITUDE", content, fixed = TRUE) &
+                       grepl("LONGITUDE", content, fixed = TRUE))
+      if (length(fld_idx) == 1) {
+        lat  <- suppressWarnings(as.numeric(points[[LAT_COLUMN]][i]))
+        lon  <- suppressWarnings(as.numeric(points[[LONG_COLUMN]][i]))
+        elev <- -99  # DSSAT "missing"; valid number so no read error
+        wth_src <- file.path(weather_repo, paste0(ID, ".WTH"))
+        if (file.exists(wth_src)) {
+          hdr <- readLines(wth_src, n = 4, warn = FALSE)
+          h_i <- grep("\\bELEV\\b", hdr)
+          if (length(h_i) >= 1 && h_i[1] < length(hdr)) {
+            nm <- strsplit(trimws(sub("^@", "", hdr[h_i[1]])), "\\s+")[[1]]
+            vl <- strsplit(trimws(hdr[h_i[1] + 1]), "\\s+")[[1]]
+            ec <- which(nm == "ELEV")
+            if (length(ec) == 1 && ec <= length(vl)) {
+              e <- suppressWarnings(as.numeric(vl[ec]))
+              if (is.finite(e) && e > -90) elev <- e
+            }
+          }
+        }
+        # format to EXACTLY the placeholder width, else skip (keep alignment)
+        fit <- function(x, width, digits) {
+          s <- formatC(x, format = "f", digits = digits, width = width)
+          if (nchar(s) == width) s else NULL
+        }
+        line  <- content[fld_idx]
+        s_lat <- if (is.finite(lat)) fit(lat, 8, 3) else NULL  # "LATITUDE"  = 8
+        s_lon <- if (is.finite(lon)) fit(lon, 9, 3) else NULL  # "LONGITUDE" = 9
+        s_ele <- fit(elev, 4, 0)                               # "ELEV"      = 4
+        if (!is.null(s_lat)) line <- sub("LATITUDE",  s_lat, line, fixed = TRUE)
+        if (!is.null(s_lon)) line <- sub("LONGITUDE", s_lon, line, fixed = TRUE)
+        if (!is.null(s_ele)) line <- sub("ELEV",      s_ele, line, fixed = TRUE)
+        content[fld_idx] <- line
+      }
+      content
+    }, error = function(e) content)
+
     writeLines(content, file.path(ID, paste0(ID, ".", tools::file_ext(TEMPLATE_FILE_NAME))))
   }, error = function(e) return(NULL))
   
@@ -1148,7 +1295,7 @@ if (RESUME_DSSAT_RUNS) {
 if (length(ids_to_create_indices) > 0) {
   cl <- makeCluster(SOIL_CORES)
   on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
-  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES"), envir = environment())
+  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
   parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
   on.exit()  # clear the guard — cluster stopped cleanly
@@ -1200,8 +1347,25 @@ if (RUN_DSSAT_EXECUTION) {
     parLapply(cl, ids_to_run, run_simulation_wrapper)
     stopCluster(cl)
     on.exit()  # clear guard — cluster stopped cleanly
+
+    # --- Loud per-point failure report ---
+    # run_simulation() runs in parallel workers whose message()/error output is
+    # invisible in the parent console, so a failed point leaves no trace except a
+    # missing results_<ID>.csv. Surface that here instead of silently combining
+    # nothing. Each failed folder also contains a '_run_error.log' with the cause.
+    produced  <- file.exists(file.path(ids_to_run, paste0("results_", ids_to_run, ".csv")))
+    failed_ids <- ids_to_run[!produced]
+    if (length(failed_ids) > 0) {
+      message(sprintf("WARNING: %d of %d point(s) produced NO results_<ID>.csv.",
+                      length(failed_ids), length(ids_to_run)))
+      message("  Failed IDs: ", paste(head(failed_ids, 20), collapse = ", "),
+              if (length(failed_ids) > 20) sprintf(" ... (+%d more)", length(failed_ids) - 20) else "")
+      message("  Cause is logged in '_run_error.log' inside each failed folder under:\n    ", DSSAT_RUN_DIR)
+    } else {
+      message(sprintf("All %d point(s) produced results.", length(ids_to_run)))
+    }
   }
-  
+
   # --- 3.7. Combine Results ---
   if (!dir.exists(FINAL_OUTPUT_DIR)) dir.create(FINAL_OUTPUT_DIR, recursive = TRUE)
 
