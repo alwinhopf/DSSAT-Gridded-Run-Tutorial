@@ -1043,7 +1043,7 @@
     "dssatengine": {
       "Package": "dssatengine",
       "Version": "0.1.0",
-      "Source": "GitHub",
+      "Source": "Local",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
       "Authors@R": "person(\"Alwin\", \"Hopf\", email = \"alwinhopf@gmail.com\", role = c(\"aut\", \"cre\"))",
@@ -1073,12 +1073,8 @@
       "RoxygenNote": "7.3.1",
       "Author": "Alwin Hopf [aut, cre]",
       "Maintainer": "Alwin Hopf <alwinhopf@gmail.com>",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteUsername": "alwinhopf",
-      "RemoteRepo": "dssatengine",
-      "RemoteRef": "main",
-      "RemoteSha": "11a3037c4488aeb61c6085d2f9670b347e6a252d"
+      "RemoteType": "local",
+      "RemoteUrl": "C:/Users/alwin/Documents/GitHub/dssatengine"
     },
     "dssatutils": {
       "Package": "dssatutils",

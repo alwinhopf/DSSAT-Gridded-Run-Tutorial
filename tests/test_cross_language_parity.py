@@ -24,7 +24,9 @@ def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
 
     for src in (r_src, py_src):
         assert "_run_error.log" in src
-        assert "DSSAT produced no" in src
+        # Robust to wording ("DSSAT produced no ..." / "DSSAT completed but
+        # produced no ...") — assert the functional parity, not the exact phrase.
+        assert "produced no 'summary.csv'" in src
         assert "FMOPT" in src
         assert "summary.csv" in src
 

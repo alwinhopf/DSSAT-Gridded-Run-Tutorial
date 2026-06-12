@@ -141,19 +141,24 @@ packages, which install straight from GitHub (no side-by-side clones needed).
 
 ### 1 — Install the non-R prerequisites
 
-1. **R** — install the version recorded in `renv.lock` (currently R 4.4.x) from
+1. **R** — install the version recorded in `renv.lock` (currently R 4.6.x) from
    [CRAN](https://cran.r-project.org/bin/windows/base/).
 2. **RStudio** — [Posit Desktop](https://posit.co/download/rstudio-desktop/);
    the pipeline uses `rstudioapi` to locate itself.
 3. **Rtools** — [matching your R version](https://cran.r-project.org/bin/windows/Rtools/).
    Most packages install as binaries, but Rtools is a safe fallback for any
    source build.
-4. **Git** — [git-scm.com](https://git-scm.com/download/win). If `dssatengine`
-   is a private repository, also set a GitHub token in R so `renv` can clone it:
-   `usethis::create_github_token()` then `gitcreds::gitcreds_set()`.
+4. **Git** — [git-scm.com](https://git-scm.com/download/win). Because `dssatutils` and `dssatengine` are **private repositories**, you must authenticate Git with your GitHub account to install them:
+   * **For R / `renv`:**
+     Generate a Personal Access Token (PAT) by running `usethis::create_github_token()` in R.
+     Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
+   * **For Python / `pip`:**
+     Ensure your Git Credential Manager is active (it will prompt for authentication during the first `pip` install), or install using your PAT directly:
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.1.0"`
+     If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
-   Windows. This is the crop-model executable; `renv` does **not** provide it.
+   Windows. This is the crop-model executable; `renv` does **not** provide it. If installed elsewhere, see [Troubleshooting](#troubleshooting).
 
 ### 2 — Clone the project and restore the R environment
 
@@ -171,9 +176,21 @@ renv::restore()
 ```
 
 This replaces the old manual `install.packages(..., type = "binary")` /
-`devtools::install_local(...)` dance: the lockfile already pins exact versions,
-and the pipeline's installer prefers Windows binaries to avoid source-compile
-failures (e.g. `sf`, `terra`).
+`devtools::install_local(...)` dance. The project `.Rprofile` sets
+`options(pkgType = "binary")` on Windows/macOS **before** `renv` installs
+anything, so every package — including transitive system-library dependencies
+like `openssl`, `curl`, `sf`, and `terra` — is pulled as a prebuilt binary and
+never compiled from source. (Source builds of those packages are the usual cause
+of a cascade failure such as `openssl → httr → daymetr → dssatutils` on a clean
+laptop, because they need system dev headers that a fresh machine lacks.)
+
+> **If `renv::restore()` still tries to build something from source** (rare —
+> usually a package whose binary isn't yet on CRAN for your R version), install
+> just that one as a binary and re-snapshot:
+> ```r
+> renv::install("openssl", type = "binary")   # name the offending package
+> renv::snapshot()                             # update renv.lock so it sticks
+> ```
 
 > **Generating the lock (one-time, maintainers only):** if `renv.lock` does not
 > yet pin `dssatengine` / `dssatutils`, run `Rscript setup_renv.R` once on a
@@ -1417,6 +1434,8 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 | Weather does not cover full simulation period | Simulation years extend beyond downloaded range | For sequence runs: a 10-year rotation needs at least 10 + `NYERS` years of weather; extend `WEATHER_END_YEAR` or use the weather extension functions |
 | `mpi4py` import error on HPC | Built against wrong MPI library | Rebuild: `pip install --no-cache-dir --no-binary :all: mpi4py` after loading the correct MPI module |
 | Results CSV is empty after run | Parsing failed; DSSAT wrote `.OUT` only | Check per-point `LUN.LST`; enable CSV output in the `*OUTPUTS` section of your template |
+| Custom DSSAT installation not found | Default assumptions (e.g. `C:/DSSAT48`) do not match your setup | For the gridded pipeline, specify `DSSAT_EXE` and `standard_dssat_dir` in `config.yml` / `config.yaml` or set the `DSSAT_EXE` environment variable |
+| Private package clone failures | Authentication mismatch on `dssatutils` / `dssatengine` | Verify that your GitHub Personal Access Token (PAT) is set in R via `gitcreds` or `~/.Renviron` (`GITHUB_PAT`), or your SSH keys are configured for `pip` |
 
 ---
 

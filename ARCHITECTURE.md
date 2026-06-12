@@ -88,12 +88,16 @@ API. Its sole responsibility: fetch public weather/soil data and write DSSAT-for
 
 | Domain | Functions (identical names in R and Python) |
 |---|---|
-| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_nasapower_chirps` |
-| Soil | `process_soils_ssurgo`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd` |
+| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_nasapower_chirps`, `process_weather_dwd`, `process_weather_eobs`, `process_weather_xavier`, `process_weather_cmfd` |
+| Soil | `process_soils_ssurgo`, `process_soils_gnatsgo`, `process_soils_isdasoil`, `process_soils_lucas`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd` |
 
-Coverage: Daymet = North America; GridMET/SSURGO = USA; NASA POWER / Open-Meteo /
-AgERA5 / SoilGrids / HWSD2 = global. AgERA5 requires a Copernicus CDS key; CHIRPS fuses
-NASA POWER with high-resolution rainfall (50S–50N).
+Coverage: Daymet = North America; GridMET/SSURGO/gNATSGO = USA; DWD = Germany;
+E-OBS / LUCAS = Europe; Xavier (BR-DWGD) = Brazil; CMFD = China; iSDAsoil = Africa;
+NASA POWER / Open-Meteo / AgERA5 / SoilGrids / HWSD2 = global. AgERA5 requires a
+Copernicus CDS key; CHIRPS fuses NASA POWER with high-resolution rainfall (50S–50N).
+gNATSGO is the gap-free 30 m US grid; iSDAsoil is 30 m Africa; LUCAS is measured EU
+topsoil (extrapolated below 20 cm); DWD estimates SRAD from sunshine duration; E-OBS
+and Xavier carry daily global radiation directly; CMFD is aggregated from 3-hourly.
 
 - Function names are identical across R and Python by design.
 - Versioned with git tags; **consumers pin to a tag** (`@v0.1.0`), never `main`, so

@@ -16,8 +16,14 @@ if (!requireNamespace("renv", quietly = TRUE)) {
   install.packages("renv", repos = "https://cloud.r-project.org")
 }
 
-# Use CRAN cloud to get precompiled Windows binaries for R 4.6.0.
+# Use CRAN cloud for precompiled Windows/macOS binaries, and force binary
+# installs so system-library packages (openssl, sf, terra, curl) are NEVER built
+# from source — source builds need dev headers/Rtools that a fresh laptop lacks
+# and are the usual cause of the openssl -> httr -> daymetr install cascade.
 options(repos = c(CRAN = "https://cloud.r-project.org"))
+if (.Platform$OS.type == "windows" || Sys.info()[["sysname"]] == "Darwin") {
+  options(pkgType = "binary", install.packages.check.source = "no")
+}
 
 renv::init(bare = TRUE, restart = FALSE)
 
@@ -28,9 +34,12 @@ pkgs <- c(
   "ggplot2", "readr", "tibble", "rstudioapi", "this.path",
   # DSSAT interface
   "DSSAT",
-  # Soil
+  # Soil (SSURGO/gNATSGO via soilDB; iSDAsoil/HWSD rasters via terra; SoilGrids)
   "soilDB", "terra", "httr", "jsonlite",
-  # Weather
+  # Soil attribute DB readers — HWSD: SQLite (DBI/RSQLite) + FAO Access .mdb
+  # (odbc, needs the OS Microsoft Access ODBC driver); LUCAS: optional .xlsx.
+  "DBI", "RSQLite", "odbc", "readxl",
+  # Weather (Daymet/NASA-POWER point APIs; DWD stations; E-OBS/Xavier/CMFD NetCDF)
   "daymetr", "nasapower", "ncdf4",
   # Config + progress
   "yaml", "pbapply"
@@ -46,18 +55,19 @@ renv::install(pkgs)
 # devtools::install_local(), and no "did I reinstall after editing?" version
 # skew.
 #
-# Pin style: "@main" installs the current tip and the resolved SHA is frozen
-# into renv.lock by the snapshot. Once you cut release tags you can swap
-# "@main" for "@<tag>" (e.g. "@v0.1.0") for human-readable pins.
+# We use the "user/repo" shorthand (NOT a "git::https://...@main" URL) on
+# purpose: renv resolves this through the GitHub API and downloads a tarball, so
+# it works on a bare laptop with NO local git client installed. The resolved SHA
+# is still frozen into renv.lock by the snapshot below. The repos are public, so
+# no PAT is required; GitHub's unauthenticated API limit (60 req/hr) is plenty
+# for two installs. If you later make them private, set a PAT once first:
+#   usethis::create_github_token(); gitcreds::gitcreds_set()
 #
-# PREREQUISITES (one-time, on the machine that GENERATES the lock):
-#   1. Commit + push any local edits to dssatutils / dssatengine FIRST,
-#      otherwise the GitHub install will not include them.
-#   2. If either repo is private, configure a GitHub PAT so renv can clone it:
-#        usethis::create_github_token(); gitcreds::gitcreds_set()
+# PREREQUISITE: commit + push any local edits to dssatutils / dssatengine FIRST,
+# otherwise the GitHub install won't include them.
 renv::install(c(
-  "git::https://github.com/alwinhopf/dssatutils.git@main",
-  "git::https://github.com/alwinhopf/dssatengine.git@main"
+  "alwinhopf/dssatutils",
+  "alwinhopf/dssatengine"
 ))
 
 # Snapshot the FULL project library (CRAN packages + both Git packages) so

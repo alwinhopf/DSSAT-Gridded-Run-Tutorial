@@ -25,3 +25,8 @@
 .DS_Store
 .RData
 .Rproj.user
+
+# Credentials / API keys (never commit) — Copernicus CDS, etc.
+.cdsapirc
+*.cdsapirc
+.env

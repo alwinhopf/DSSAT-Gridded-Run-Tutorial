@@ -167,6 +167,17 @@ HWSD_RASTER_FILE   = cfg_get("hwsd_raster_file",
                              os.path.join(MAIN_PROJECT_DIR, "HWSD", "HWSD2.bil"))
 HWSD_DB_FILE       = cfg_get("hwsd_db_file",
                              os.path.join(MAIN_PROJECT_DIR, "HWSD", "HWSD2.sqlite"))
+# E-OBS only: folder of pre-downloaded E-OBS NetCDFs (tx/tn/rr/qq...). Set
+# eobs_use_cds: true to fetch an area subset via the Copernicus CDS instead
+# (needs the same ~/.cdsapirc key as AgERA5).
+EOBS_NC_DIR        = cfg_get("eobs_nc_dir",
+                             os.path.join(MAIN_PROJECT_DIR, "eobs_netcdf"))
+EOBS_USE_CDS       = bool(cfg_get("eobs_use_cds", False))
+# Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
+XAVIER_NC_DIR      = cfg_get("xavier_nc_dir", os.path.join(MAIN_PROJECT_DIR, "xavier_netcdf"))
+CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(MAIN_PROJECT_DIR, "cmfd_netcdf"))
+# LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
+LUCAS_CSV          = cfg_get("lucas_csv", os.path.join(MAIN_PROJECT_DIR, "LUCAS", "lucas_topsoil.csv"))
 
 # Constructed names
 SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}"
@@ -189,6 +200,8 @@ DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 GRIDMET_CACHE_DIR     = os.path.join(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
 AGERA5_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
+DWD_CACHE_DIR         = os.path.join(MAIN_PROJECT_DIR, "dwd_station_cache")
+EOBS_CACHE_DIR        = os.path.join(MAIN_PROJECT_DIR, "eobs_cds_cache")
 GRIDPOINTS_OUTPUT_DIR = os.path.join(MAIN_PROJECT_DIR, "gridpoints")
 ALL_LAND_POINT_SHAPEFILE_NAME = f"{GRID_BASE_NAME}.shp"
 CROPLAND_GRID_TAG = ""
@@ -402,7 +415,21 @@ from dssatutils.weather_gridmet       import process_weather_gridmet
 from dssatutils.weather_openmeteo     import process_weather_openmeteo
 from dssatutils.weather_nasapower_chirps import process_weather_nasapower_chirps
 from dssatutils.weather_agera5        import process_weather_agera5
+from dssatutils.weather_dwd           import process_weather_dwd
+from dssatutils.weather_eobs          import process_weather_eobs
+from dssatutils.weather_xavier        import process_weather_xavier
+from dssatutils.weather_cmfd          import process_weather_cmfd
+
+# Soil sources that write one .SOL per grid point named by the point ID (so
+# SOIL_ID == point ID and the per-point combine logic below applies). The other
+# sources (SoilGrids / HWSD) map points to shared profile IDs instead.
+_PER_POINT_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
+# Soil sources that need no pre-downloaded external file (queried online).
+_KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE")
 from dssatutils.soil_ssurgo           import process_soils_ssurgo
+from dssatutils.soil_gnatsgo          import process_soils_gnatsgo
+from dssatutils.soil_isdasoil         import process_soils_isdasoil
+from dssatutils.soil_lucas            import process_soils_lucas
 from dssatutils.soil_soilgrids        import process_soils_soilgrids
 from dssatutils.soil_soilgrids_online import process_soils_soilgrids_online
 from dssatutils.soil_hwsd             import process_soils_hwsd
@@ -430,7 +457,14 @@ if SOIL_SOURCE == "HWSD":
                 f"Download HWSD v2.0 from FAO and set hwsd_raster_file / "
                 f"hwsd_db_file in config.yml."
             )
-elif (SOIL_SOURCE not in ("SSURGO", "SOILGRIDS_ONLINE")
+elif SOIL_SOURCE == "LUCAS":
+    if not os.path.exists(LUCAS_CSV):
+        sys.exit(
+            f"CRITICAL: LUCAS topsoil table not found: {LUCAS_CSV}\n"
+            f"Request it free from ESDAC (esdac.jrc.ec.europa.eu) and set "
+            f"lucas_csv in config.yml."
+        )
+elif (SOIL_SOURCE not in _KEYLESS_ONLINE_SOIL
         and not os.path.exists(EXTERNAL_SOIL_FILE)):
     sys.exit(
         f"CRITICAL: External soil file needed for {SOIL_SOURCE} "
@@ -522,8 +556,11 @@ if __name__ == '__main__':
         individual_sol_dir = soilfile_prefix + "_individual_SOL"
         os.makedirs(individual_sol_dir, exist_ok=True)
 
-        if SOIL_SOURCE == "SSURGO":
-            process_soils_ssurgo(
+        if SOIL_SOURCE in _PER_POINT_SOIL:
+            # These sources all write one Saxton-&-Rawls .SOL per point named by
+            # the point ID, so the combine step below is shared. gNATSGO fills
+            # SSURGO's US gaps; iSDAsoil = Africa 30 m; LUCAS = EU topsoil.
+            _soil_kwargs = dict(
                 grid_points=gridfile,
                 output_dir_csv=soilfile_CSV,
                 output_dir_individual=individual_sol_dir,
@@ -532,6 +569,14 @@ if __name__ == '__main__':
                 lat_col=LAT_COLUMN,
                 long_col=LONG_COLUMN,
             )
+            if SOIL_SOURCE == "SSURGO":
+                process_soils_ssurgo(**_soil_kwargs)
+            elif SOIL_SOURCE == "GNATSGO":
+                process_soils_gnatsgo(**_soil_kwargs)
+            elif SOIL_SOURCE == "ISDASOIL":
+                process_soils_isdasoil(**_soil_kwargs)
+            else:  # LUCAS
+                process_soils_lucas(**_soil_kwargs, lucas_csv=LUCAS_CSV)
             sol_files = sorted([f for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")])
             with open(soilfile_DSSAT, "w") as out_fh:
                 out_fh.write("*SOILS: Combined\n")
@@ -634,6 +679,19 @@ if __name__ == '__main__':
                     **common_args, chirps_cache_dir=CHIRPS_CACHE_DIR)
             elif WEATHER_SOURCE == "AGERA5":
                 process_weather_agera5(**common_args, agera5_cache_dir=AGERA5_CACHE_DIR)
+            elif WEATHER_SOURCE == "DWD":
+                process_weather_dwd(**common_args, dwd_cache_dir=DWD_CACHE_DIR)
+            elif WEATHER_SOURCE == "EOBS":
+                process_weather_eobs(
+                    **common_args,
+                    eobs_nc_dir=EOBS_NC_DIR,
+                    eobs_cache_dir=EOBS_CACHE_DIR,
+                    eobs_use_cds=EOBS_USE_CDS,
+                )
+            elif WEATHER_SOURCE == "XAVIER":
+                process_weather_xavier(**common_args, xavier_nc_dir=XAVIER_NC_DIR)
+            elif WEATHER_SOURCE == "CMFD":
+                process_weather_cmfd(**common_args, cmfd_nc_dir=CMFD_NC_DIR)
             else:
                 sys.exit(f"Unknown WEATHER_SOURCE: {WEATHER_SOURCE}")
 
@@ -698,11 +756,11 @@ if __name__ == '__main__':
             points = points.merge(soil_map, on=POINT_ID_COLUMN, how="left")
     else:
         print("WARNING: Soil mapping CSV not found. Attempting legacy logic.")
-        if SOIL_SOURCE == "SSURGO":
+        if SOIL_SOURCE in _PER_POINT_SOIL:
             points["SOIL_ID"] = points[POINT_ID_COLUMN]
 
     if "SOIL_ID" not in points.columns:
-        points["SOIL_ID"] = points[POINT_ID_COLUMN] if SOIL_SOURCE == "SSURGO" else None
+        points["SOIL_ID"] = points[POINT_ID_COLUMN] if SOIL_SOURCE in _PER_POINT_SOIL else None
 
     # --- Precompute run-folder support files ONCE (not per point) ---------------
     # DSSATPRO.V48 lets DSSAT find genotype/SDA/CO2 files in the install dir, so we
@@ -739,7 +797,7 @@ if __name__ == '__main__':
                 fh.write("*SOIL ERROR\nNo Soil ID assigned\n")
             return
 
-        if SOIL_SOURCE == "SSURGO":
+        if SOIL_SOURCE in _PER_POINT_SOIL:
             src_fname          = f"{ID}.SOL"
             hmx_replacement_id = ID
         else:

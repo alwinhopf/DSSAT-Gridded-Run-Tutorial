@@ -1,19 +1,3 @@
-#renv::install("sf", type = "binary")
-#renv::install("devtools", type = "binary")
-#renv::install("soilDB", type = "binary")
-#renv::install("terra", type = "binary")
-#renv::install("terra", type = "binary")
-#install.packages("sf", type = "binary")
-#install.packages("devtools", type = "binary")
-#install.packages("soilDB", type = "binary")
-#library(soilDB)  
-# 1. Grab your main R session's library path
-#my_lib_path <- .libPaths()[1]
-
-# 2. Set it as a global environment variable for all R processes
-#Sys.setenv(R_LIBS_USER = my_lib_path)
-#devtools::install_local("C:/Users/alwin/Documents/GitHub/dssatutils")
-#devtools::install_local("C:/Users/alwin/Documents/GitHub/dssatengine")
 #=======================================================================
 #   DSSAT PIPELINE SCRIPT — Spatial / Gridded Crop Modeling
 #   Modular soil & weather download, folder building, local or HPC run
@@ -268,6 +252,16 @@ HWSD_RASTER_FILE   <- cfg_get("hwsd_raster_file",
                               file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.bil"))
 HWSD_DB_FILE       <- cfg_get("hwsd_db_file",
                               file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.sqlite"))
+# E-OBS only: folder of pre-downloaded E-OBS NetCDFs (tx/tn/rr/qq...). Set
+# eobs_use_cds: true to fetch an area subset via the Copernicus CDS instead.
+EOBS_NC_DIR        <- cfg_get("eobs_nc_dir",
+                              file.path(MAIN_PROJECT_DIR, "eobs_netcdf"))
+EOBS_USE_CDS       <- isTRUE(as.logical(cfg_get("eobs_use_cds", FALSE)))
+# Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
+XAVIER_NC_DIR      <- cfg_get("xavier_nc_dir", file.path(MAIN_PROJECT_DIR, "xavier_netcdf"))
+CMFD_NC_DIR        <- cfg_get("cmfd_nc_dir", file.path(MAIN_PROJECT_DIR, "cmfd_netcdf"))
+# LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
+LUCAS_CSV          <- cfg_get("lucas_csv", file.path(MAIN_PROJECT_DIR, "LUCAS", "lucas_topsoil.csv"))
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
@@ -305,6 +299,8 @@ RESULTS_SUBDIR <- "results"
 GRIDMET_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
+DWD_CACHE_DIR    <- file.path(MAIN_PROJECT_DIR, "dwd_station_cache")
+EOBS_CACHE_DIR   <- file.path(MAIN_PROJECT_DIR, "eobs_cds_cache")
 
 # Input Paths
 GRIDPOINTS_OUTPUT_DIR <- file.path(MAIN_PROJECT_DIR, GRIDPOINTS_SUBDIR)
@@ -572,6 +568,11 @@ message(sprintf("Using landcover helper scripts from: %s", SCRIPT_DIR))
 
 library(dssatutils)  # [dssatutils] shared weather/soil sources
 library(dssatengine) # [dssatengine] shared gridded run engine
+# Soil sources that write one Saxton-&-Rawls .SOL per grid point named by point
+# ID (so SOIL_ID == point ID and the per-point combine logic applies).
+PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
+# Soil sources needing no pre-downloaded external file (queried online).
+KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE")
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
@@ -677,7 +678,10 @@ if (SOIL_SOURCE == "HWSD") {
     if (!file.exists(f))
       stop(sprintf("CRITICAL: HWSD file not found: %s\nDownload HWSD v2.0 from FAO and set hwsd_raster_file / hwsd_db_file in config.yml.", f))
   }
-} else if (SOIL_SOURCE != "SSURGO" && SOIL_SOURCE != "SOILGRIDS_ONLINE" && !file.exists(EXTERNAL_SOIL_FILE)) {
+} else if (SOIL_SOURCE == "LUCAS") {
+  if (!file.exists(LUCAS_CSV))
+    stop(sprintf("CRITICAL: LUCAS topsoil table not found: %s\nRequest it free from ESDAC (esdac.jrc.ec.europa.eu) and set lucas_csv in config.yml.", LUCAS_CSV))
+} else if (!(SOIL_SOURCE %in% KEYLESS_ONLINE_SOIL) && !file.exists(EXTERNAL_SOIL_FILE)) {
   stop(sprintf("CRITICAL: External soil file needed for %s but not found at: %s", SOIL_SOURCE, EXTERNAL_SOIL_FILE))
 }
 
@@ -970,7 +974,16 @@ if (RUN_STEP_1_SOILS) {
   individual_sol_output_folder <- paste0(soilfile_path_prefix, "_individual_SOL")
   dir.create(individual_sol_output_folder, recursive = TRUE, showWarnings = FALSE)
   
-  if (SOIL_SOURCE == "SSURGO") {
+  if (SOIL_SOURCE %in% PER_POINT_SOIL) {
+    # All of these write one Saxton-&-Rawls .SOL per point named by point ID, so
+    # the combine/retry logic is shared. gNATSGO fills SSURGO's US gaps;
+    # iSDAsoil = Africa 30 m; LUCAS = EU topsoil (needs lucas_csv).
+    .soil_fn <- switch(SOIL_SOURCE,
+      SSURGO   = process_soils_ssurgo,
+      GNATSGO  = process_soils_gnatsgo,
+      ISDASOIL = process_soils_isdasoil,
+      LUCAS    = function(gridfile, csv, indiv, cores, idc, latc, lonc, fmt)
+                   process_soils_lucas(gridfile, csv, indiv, cores, idc, latc, lonc, fmt, lucas_csv = LUCAS_CSV))
     if (CHECK_SOIL_DOWNLOADS) {
       ids <- as.character(gridfile[[POINT_ID_COLUMN]])
       clean_invalid_soils(individual_sol_output_folder, ids)
@@ -994,9 +1007,9 @@ if (RUN_STEP_1_SOILS) {
     }
 
     repeat {
-      process_soils_ssurgo(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES, 
-                           POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
-      
+      .soil_fn(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES,
+               POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
+
       combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
       
       retry_count <- retry_count + 1
@@ -1008,7 +1021,7 @@ if (RUN_STEP_1_SOILS) {
         if (missing_count == 0) {
           break
         } else {
-          message(sprintf("SSURGO: %d profiles missing/invalid. Retrying...", missing_count))
+          message(sprintf("%s: %d profiles missing/invalid. Retrying...", SOIL_SOURCE, missing_count))
         }
       } else {
         break
@@ -1149,7 +1162,17 @@ if (RUN_STEP_2_WEATHER) {
       }
       else if (WEATHER_SOURCE == "AGERA5")
         do.call(process_weather_agera5, c(common_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
-        
+      else if (WEATHER_SOURCE == "DWD")
+        do.call(process_weather_dwd, c(common_args, list(dwd_cache_dir = DWD_CACHE_DIR)))
+      else if (WEATHER_SOURCE == "EOBS")
+        do.call(process_weather_eobs, c(common_args, list(eobs_nc_dir = EOBS_NC_DIR,
+                                                          eobs_cache_dir = EOBS_CACHE_DIR,
+                                                          eobs_use_cds = EOBS_USE_CDS)))
+      else if (WEATHER_SOURCE == "XAVIER")
+        do.call(process_weather_xavier, c(common_args, list(xavier_nc_dir = XAVIER_NC_DIR)))
+      else if (WEATHER_SOURCE == "CMFD")
+        do.call(process_weather_cmfd, c(common_args, list(cmfd_nc_dir = CMFD_NC_DIR)))
+
       retry_count <- retry_count + 1
       
       if (CHECK_WEATHER_DOWNLOADS) {
@@ -1274,13 +1297,13 @@ if(file.exists(soil_mapping_file)) {
   points <- left_join(points, soil_map, by = POINT_ID_COLUMN)
 } else {
   message("WARNING: Soil mapping CSV not found. Attempting legacy logic.")
-  if (SOIL_SOURCE == "SSURGO") points$SOIL_ID <- points[[POINT_ID_COLUMN]]
+  if (SOIL_SOURCE %in% PER_POINT_SOIL) points$SOIL_ID <- points[[POINT_ID_COLUMN]]
 }
 
 # --- 3.1b. CRITICAL FIX FOR SSURGO / MISSING COLUMNS ---
 if (!("SOIL_ID" %in% names(points))) {
-  if (SOIL_SOURCE == "SSURGO") {
-    message("SSURGO Mode: Defaulting SOIL_ID to Grid Point ID.")
+  if (SOIL_SOURCE %in% PER_POINT_SOIL) {
+    message(sprintf("%s Mode: Defaulting SOIL_ID to Grid Point ID.", SOIL_SOURCE))
     points$SOIL_ID <- points[[POINT_ID_COLUMN]]
   } else {
     message("WARNING: SOIL_ID column missing. Initializing as NA.")
@@ -1308,7 +1331,7 @@ create_folders_and_files <- function(i) {
     return(NULL)
   }
   
-  if (SOIL_SOURCE == "SSURGO") {
+  if (SOIL_SOURCE %in% PER_POINT_SOIL) {
     source_filename <- paste0(ID, ".SOL")
     hmx_replacement_id <- ID
   } else {
@@ -1406,7 +1429,7 @@ if (RESUME_DSSAT_RUNS) {
 if (length(ids_to_create_indices) > 0) {
   cl <- makeCluster(SOIL_CORES)
   on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
-  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
+  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "PER_POINT_SOIL", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
   parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
   on.exit()  # clear the guard — cluster stopped cleanly

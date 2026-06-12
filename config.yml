@@ -44,18 +44,31 @@ reuse_cropland_grid:    true         # reuse saved cropland grid for same projec
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
 # | NASA_POWER_CHIRPS (global, NASA POWER + high-res CHIRPS rainfall, 50S-50N)
 # | AGERA5 (global 0.1deg, ag-tuned; needs a free Copernicus CDS API key)
+# | DWD (Germany; quality-controlled stations, keyless; SRAD from sunshine duration)
+# | EOBS (Europe 0.1deg gridded; carries daily global radiation; see eobs_* keys)
+# | XAVIER (Brazil 0.1deg BR-DWGD grid; local NetCDFs; see xavier_nc_dir)
+# | CMFD (China 0.1deg, 3-hourly->daily; local NetCDFs, free TPDC account; see cmfd_nc_dir)
 # | gridpoints_weather (offline/cached or pre-generated)
 weather_source:       "NASA_POWER"
 weather_start_year:   1992           # NASA_POWER not available before 1984
 weather_end_year:     1992
 chirps_resolution:    "p05"          # NASA_POWER_CHIRPS only: p05 (~5.5km) | p25 (~28km, lighter)
+eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
+eobs_use_cds:         false          # EOBS only: true = fetch an area subset via Copernicus CDS (needs ~/.cdsapirc)
+xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)
+cmfd_nc_dir:          ""             # CMFD only: folder of CMFD NetCDFs temp/prec/srad/shum/pres/wind (blank = cmfd_netcdf/)
 
 # --- Soil ---
-soil_source:          "SSURGO"  # SSURGO | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD
+soil_source:          "SSURGO"  # SSURGO | GNATSGO | ISDASOIL | LUCAS | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD
+# GNATSGO  (US, 30m, keyless): gap-free USDA grid; fills SSURGO's un-surveyed holes.
+# ISDASOIL (Africa, 30m, keyless): iSDAsoil COGs (0-20 & 20-50cm), Saxton-Rawls.
+# LUCAS    (Europe, keyless but ESDAC request): nearest measured topsoil sample (see lucas_csv).
+# GNATSGO/ISDASOIL/SSURGO write per-point .SOL with no external file needed.
 external_soil_file:   ""                # SOILGRIDS_10K only; blank = script default (SoilGrids/US.SOL)
+lucas_csv:            ""                # LUCAS only: downloaded ESDAC LUCAS topsoil table (blank = LUCAS/lucas_topsoil.csv)
 soilgrids_mode:       "REST"            # SOILGRIDS_ONLINE only: REST (keyless, rate-limited) | VRT (needs rasterio; batch-friendly, better coverage)
 hwsd_raster_file:     ""                # HWSD only: FAO HWSD2 raster of mapping-unit IDs (blank = HWSD/HWSD2.bil)
-hwsd_db_file:         ""                # HWSD only: FAO HWSD2 SQLite database (blank = HWSD/HWSD2.sqlite)
+hwsd_db_file:         ""                # HWSD only: FAO HWSD2 attribute DB - the FAO MS Access .mdb directly OR a converted .sqlite (blank = HWSD/HWSD2.sqlite)
 
 # --- DSSAT template / run mode ---
 template_file_name:   "UFGA9201.MZX"
