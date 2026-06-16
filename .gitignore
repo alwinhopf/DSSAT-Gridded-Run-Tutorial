@@ -7,6 +7,8 @@
 /gridmet_netcdf_cache
 /chirps_netcdf_cache
 /agera5_netcdf_cache
+/dwd_station_cache
+/eobs_cds_cache
 /soil_cache
 /weather_cache
 /HWSD
@@ -30,3 +32,7 @@
 .cdsapirc
 *.cdsapirc
 .env
+
+# Python bytecode caches (anywhere, e.g. hpc/__pycache__)
+__pycache__/
+*.pyc

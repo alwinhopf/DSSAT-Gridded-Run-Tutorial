@@ -1,4 +1,4 @@
-*EXP.DETAILS: UFJA1803BC CARINATA N RATE STUDY JAY, FL 2018-19
+*EXP.DETAILS: INLL1803BC UFJA1803BC CARINATA N RATE STUDY JAY, FL 2018-19
 
 *GENERAL
 @PEOPLE
@@ -15,7 +15,11 @@ Jay, FL
  3 1 1 0 80 N Rate, Jay-2018-19     2  1  1  1  1  0  3  0  0  1  0  0  1
  4 1 1 0 120 N Rate, Jay-2018-19    2  1  1  1  1  0  4  0  0  1  0  0  1
  5 1 1 0 160 N Rate, Jay-2018-19    2  1  1  1  1  0  5  0  0  1  0  0  1
-! 6 1 1 0 240 N Rate, Jay-2018-19    2  1  1  1  1  0  6  0  0  1  0  0  1
+!11 1 1 0 0 N Rate, Jay-2018-19      2  2  1  1  1  0  1  0  0  1  0  0  2
+!12 1 1 0 40 N Rate, Jay-2018-19     2  2  1  1  1  0  2  0  0  1  0  0  2
+!13 1 1 0 80 N Rate, Jay-2018-19     2  2  1  1  1  0  3  0  0  1  0  0  2
+!14 1 1 0 120 N Rate, Jay-2018-19    2  2  1  1  1  0  4  0  0  1  0  0  2
+!15 1 1 0 160 N Rate, Jay-2018-19    2  2  1  1  1  0  5  0  0  1  0  0  2
 
 *CULTIVARS
 @C CR INGENO CNAME
@@ -23,26 +27,27 @@ Jay, FL
 
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000   -99     0 DR000     0     0 00000 -99    150  SOIL_ID    Jay 2018-2019
+ 1 00000000 00000000   -99   -99   -99   -99   -99   -99 SL     150     SOIL_ID Jay 2018-2019
+ 2 UFJA0002 UFJA       -99   -99   -99   -99   -99   -99 SL     150  UFWH940011 Jay 2018-2019 5 Year
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
- 1        LATITUDE       LONGITUDE      ELEV                 0     0     0     0   -99   -99
+ 1        LATITUDE       LONGITUDE      ELEV               -99   -99   -99   -99   -99   -99
+ 2             -99             -99       -99               -99   -99   -99   -99   -99   -99
 
 *SOIL ANALYSIS
 @A SADAT  SMHB  SMPX  SMKE  SANAME
  1 18341   -99   -99   -99  Guess at SOM3-78%
-@A  SABL  SADM  SAOC  SANI SAPHW SAPHB  SAPX  SAKE  SASC  !  92%  90% 88% 85% 82% 79% 76% 77-78%
- 1     5  1.63   .89     1     7     7   -99   -99   .69  !  .82  .80 .78 .76 .73 .70 .68 .69
- 1    15  1.63   .89     1     7     7   -99   -99   .69  !  .82  .80 .78 .76 .73 .70 .68 .69
- 1    20  1.63   .89     1     7     7   -99   -99   .69  !  .82  .80 .78 .76 .73 .70 .68 .69
- 1    30  1.61   .32     1     7     7   -99   -99   .25  !  .29  .29 .28 .27 .26 .25 .24 .25
- 1    35  1.61   .32     1     7     7   -99   -99   .25  !  .29  .29 .28 .27 .26 .25 .24 .25
- 1    45   1.6   .04     1     7     7   -99   -99   .03  !  .03  .03 .03 .03 .03 .03 .03 .03
- 1    60   1.6   .04     1     7     7   -99   -99   .03  !  .03  .03 .03 .03 .03 .03 .03 .03
- 1    90   1.6   .04     1     7     7   -99   -99   .03  !  .03  .03 .03 .03 .03 .03 .03 .03
- 1   128   1.6   .04     1     7     7   -99   -99   .03  !  .03  .03 .03 .03 .03 .03 .03 .03
- 1   150  1.61   .02     1     7     7   -99   -99   .02  !  .02  .02 .02 .02 .02 .02 .02 .02
+@A  SABL  SADM  SAOC  SANI SAPHW SAPHB  SAPX  SAKE  SASC
+ 1     5   1.6   .89     1     7     7   -99   -99   .69
+ 1    15   1.6   .89     1     7     7   -99   -99   .69
+ 1    20   1.6   .89     1     7     7   -99   -99   .69
+ 1    30   1.6   .32     1     7     7   -99   -99   .25
+ 1    35   1.6   .32     1     7     7   -99   -99   .25
+ 1    45   1.6   .04     1     7     7   -99   -99   .03
+ 1    60   1.6   .04     1     7     7   -99   -99   .03
+ 1    90   1.6   .04     1     7     7   -99   -99   .03
+ 1   128   1.6   .04     1     7     7   -99   -99   .03
+ 1   150   1.6   .02     1     7     7   -99   -99   .02
 
-!measured IC for NH4 and NO3 for 0-6 and 6-12 inch depths
 *INITIAL CONDITIONS
 @C   PCR ICDAT  ICRT  ICND  ICRN  ICRE  ICWD ICRES ICREN ICREP ICRIP ICRID ICNAME
  1    ML 18341   500   -99     1     1   -99  2000    .9   -99   100    10 -99
@@ -57,15 +62,14 @@ Jay, FL
  1    90  .261     1   1.5
  1   128  .261     1   1.5
  1   150  .236     1   1.5
-! Population is from stand count on last sampling date of 19121
 
 *PLANTING DETAILS
 @P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP  PLWT  PAGE  PENV  PLPH  SPRL                        PLNAME
- 1 17346   -99    16    16     S     R    38   -99     1   -99   -99   -99   -99   -99                        0 N
- 2 17346   -99    12    12     S     R    38   -99     1   -99   -99   -99   -99   -99                        40 N
- 3 17346   -99  14.3  14.3     S     R    38   -99     1   -99   -99   -99   -99   -99                        80 N
- 4 17346   -99  18.5  18.5     S     R    38   -99     1   -99   -99   -99   -99   -99                        120 N
- 5 17346   -99  15.8  15.8     S     R    38   -99     1   -99   -99   -99   -99   -99                        160 N
+ 1 18346   -99    16    16     S     R    38   -99     1   -99   -99   -99   -99   -99                        0 N
+ 2 18346   -99    12    12     S     R    38   -99     1   -99   -99   -99   -99   -99                        40 N
+ 3 18346   -99  14.3  14.3     S     R    38   -99     1   -99   -99   -99   -99   -99                        80 N
+ 4 18346   -99  18.5  18.5     S     R    38   -99     1   -99   -99   -99   -99   -99                        120 N
+ 5 18346   -99  15.8  15.8     S     R    38   -99     1   -99   -99   -99   -99   -99                        160 N
 
 *IRRIGATION AND WATER MANAGEMENT
 @I  EFIR  IDEP  ITHR  IEPT  IOFF  IAME  IAMT IRNAME
@@ -88,6 +92,10 @@ Jay, FL
  6 18358 FE006 AP002     1    42    45    91   -99   -99   -99 240 N
  6 19074 FE003 AP002     1   217   -99   -99   -99    22   -99 240 N
 
+*RESIDUES AND ORGANIC FERTILIZER
+@R RDATE  RCOD  RAMT  RESN  RESP  RESK  RINP  RDEP  RMET RENAME
+ 1 18341   -99   -99   -99   -99   -99   -99   -99   -99 -99
+
 *TILLAGE AND ROTATIONS
 @T TDATE TIMPL  TDEP TNAME
  1 18341 TI039    10 Tillage
@@ -95,7 +103,7 @@ Jay, FL
 
 *ENVIRONMENT MODIFICATIONS
 @E ODATE EDAY  ERAD  EMAX  EMIN  ERAIN ECO2  EDEW  EWIND ENVNAME  
- 1 18306 A   0 A   0 A   0 A   0 A 0.0 A   0 A   0 A   0 
+ 1 18306 A   0 A   0 A   0 A   0 A   0 A   0 A   0 A   0 
 
 *HARVEST DETAILS
 @H HDATE  HSTG  HCOM HSIZE   HPC  HBPC HNAME
@@ -103,7 +111,7 @@ Jay, FL
 
 *SIMULATION CONTROLS
 @N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
- 1 GE              6     1     S 17341  2150 Jay 2017
+ 1 GE              1     1     S 18341  2150 Jay 2017
 @N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
  1 OP              Y     Y     N     N     N     N     N     Y     M
 @N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
@@ -124,6 +132,29 @@ Jay, FL
  1 RE            100     1    20
 @N HARVEST     HFRST HLAST HPCNP HPCNR
  1 HA              0 00001   100     0
+
+@N GENERAL     NYERS NREPS START SDATE RSEED SNAME.................... SMODEL
+ 2 GE              5     1     S 18341  2150 5 Years
+@N OPTIONS     WATER NITRO SYMBI PHOSP POTAS DISES  CHEM  TILL   CO2
+ 2 OP              Y     Y     N     N     N     N     N     Y     M
+@N METHODS     WTHER INCON LIGHT EVAPO INFIL PHOTO HYDRO NSWIT MESOM MESEV MESOL
+ 2 ME              M     M     E     R     S     L     R     1     P     S     2
+@N MANAGEMENT  PLANT IRRIG FERTI RESID HARVS
+ 2 MA              R     R     R     N     M
+@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT FMOPT
+ 2 OU              N     Y     Y     1     Y     Y     Y     Y     N     N     Y     N     N     C
+
+@  AUTOMATIC MANAGEMENT
+@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN
+ 2 PL          07001 07001    40   100    30    40    10
+@N IRRIGATION  IMDEP ITHRL ITHRU IROFF IMETH IRAMT IREFF
+ 2 IR             30    50   100 GS000 IR001    10     1
+@N NITROGEN    NMDEP NMTHR NAMNT NCODE NAOFF
+ 2 NI             30    50    25 FE001 GS000
+@N RESIDUES    RIPCN RTIME RIDEP
+ 2 RE            100     1    20
+@N HARVEST     HFRST HLAST HPCNP HPCNR
+ 2 HA              0 00001   100     0
 
 
 

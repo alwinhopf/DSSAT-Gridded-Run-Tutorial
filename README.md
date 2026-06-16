@@ -1,5 +1,7 @@
 # Spatial Gridded Crop Modeling with DSSAT
 
+> **AI agents & maintainers:** read [`../AGENTS.md`](../AGENTS.md) before editing this repo.
+
 This repository provides an end-to-end, beginner-friendly workflow for **spatial (gridded / point-based) crop modeling in DSSAT**. The pipeline downloads weather and soil data for a set of geographic points, builds a DSSAT-ready input folder for every point, runs the simulations locally or prepares them for HPC, and maps the results.
 
 **Start here:** open `dssat_main_pipeline.R` in **RStudio** and click **Source** to run a small spatial demo locally (no command line needed). Once that works you can scale up on HPC/cloud using **SLURM + MPI**.
@@ -637,6 +639,8 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give full global daily coverage, so Europe, Asia, and Africa runs need no US-only source. For **rainfed crops in the tropics/semi-arid**, `NASA_POWER_CHIRPS` gives the best rainfall; for **all-variable global incl. high latitudes**, `AGERA5` (key required) is the highest-resolution option. Soil coverage is likewise global via `SOILGRIDS_10K` / `SOILGRIDS_ONLINE` (ISRIC SoilGrids) or `HWSD` (FAO).
 
 > **NASA-POWER wind note:** Previous versions of `weather_nasapower.R` wrote `WIND = -99` (missing) and set `WNDHT = -99` in the `.WTH` header. The current version writes the real `WS2M` value and correctly sets `REFHT = 2.0` and `WNDHT = 2.0`, matching the NASA-POWER AG community product specification.
+
+> **GridMET variables (Wind, Humidity, PET) note:** Standard DSSAT runs require only solar radiation, temperature, and precipitation. However, if using advanced evapotranspiration (such as FAO-56 Penman-Monteith, `MEEVP` = 'F' or 'G' in DSSAT simulation controls), the model consumes daily wind speed (`WIND` in `.WTH` files) and relative humidity/dewpoint (`TDEW`). GridMET's wind speed (`vs`) and specific humidity (`sph`) can be converted to dewpoint and wind speed to make Penman-Monteith crop-water simulations highly accurate, bypassing empirical temperature-based approximations (e.g. `Tmin - 2.5` for dewpoint). The GridMET reference evapotranspiration (`pet`) is not directly consumed by standard DSSAT configurations since DSSAT simulates crop transpiration and potential/actual ET dynamically based on crop leaf area index, canopy cover, and water balance.
 
 ### AgERA5 one-time setup (Copernicus CDS)
 

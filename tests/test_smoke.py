@@ -23,8 +23,13 @@ import pandas as pd
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
+_WORKSPACE = os.path.dirname(_REPO)
 sys.path.insert(0, _REPO)
 sys.path.insert(0, os.path.join(_REPO, "python_scripts"))
+for _sibling in ("dssatutils", "dssatengine"):
+    _pkg_path = os.path.join(_WORKSPACE, _sibling, "python")
+    if os.path.isdir(_pkg_path):
+        sys.path.insert(0, _pkg_path)
 
 
 # ---------------------------------------------------------------------------

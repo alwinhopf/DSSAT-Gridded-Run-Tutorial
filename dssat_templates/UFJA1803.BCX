@@ -23,9 +23,9 @@ Jay, FL
 
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000   -99     0 DR000     0     0 00000 -99    150  SOIL_ID    Jay 2018-2019
+ 1 00000000 00000000   -99   -99   -99   -99   -99   -99 SL     150     SOIL_ID Jay 2018-2019
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
- 1        LATITUDE       LONGITUDE      ELEV                 0     0     0     0   -99   -99
+ 1        LATITUDE       LONGITUDE      ELEV               -99   -99   -99   -99   -99   -99
 
 *SOIL ANALYSIS
 @A SADAT  SMHB  SMPX  SMKE  SANAME

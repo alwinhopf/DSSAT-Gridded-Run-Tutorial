@@ -71,18 +71,9 @@ def _detect_project_dir() -> str:
     return str(Path(__file__).resolve().parent)
 
 MAIN_PROJECT_DIR = _detect_project_dir()
-PROJECT_ROOT     = MAIN_PROJECT_DIR
+CODE_ROOT_DIR    = MAIN_PROJECT_DIR
 
-R_SCRIPTS_DIR    = os.path.join(PROJECT_ROOT, "r_scripts")   # unused in Python port
-PY_SCRIPTS_DIR   = os.path.join(PROJECT_ROOT, "py_scripts")
-SHAPEFILE_DIR    = os.path.join(PROJECT_ROOT, "shapefile")
-GRIDPOINTS_DIR   = os.path.join(PROJECT_ROOT, "gridpoints")
-WEATHER_ROOT_DIR = os.path.join(PROJECT_ROOT, "weather")
-SOIL_ROOT_DIR    = os.path.join(PROJECT_ROOT, "soil")
-RUNS_ROOT_DIR    = os.path.join(PROJECT_ROOT, "dssat_runs")
-RESULTS_ROOT_DIR = os.path.join(PROJECT_ROOT, "results")
-
-print(f"Running in Project Directory: {MAIN_PROJECT_DIR}")
+print(f"Running engine code from: {CODE_ROOT_DIR}")
 
 # --- 0.2 DSSAT executable ---------------------------------------------------
 _os = platform.system()
@@ -107,6 +98,34 @@ except Exception:  # noqa: BLE001
     def cfg_get(key, default):
         return default
 
+
+def resolve_config_path(path, base=CODE_ROOT_DIR) -> str:
+    path = str(path or "").strip()
+    if not path:
+        return ""
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = Path(base) / p
+    return str(p.resolve())
+
+
+# CODE_ROOT_DIR holds code/templates/static resources. OUTPUT_ROOT_DIR holds
+# generated model artifacts (gridpoints, weather, soils, run folders, results).
+INPUT_ROOT_DIR  = resolve_config_path(cfg_get("input_root_dir", CODE_ROOT_DIR), CODE_ROOT_DIR)
+OUTPUT_ROOT_DIR = resolve_config_path(cfg_get("output_root_dir", CODE_ROOT_DIR), CODE_ROOT_DIR)
+PROJECT_ROOT     = OUTPUT_ROOT_DIR
+R_SCRIPTS_DIR    = os.path.join(CODE_ROOT_DIR, "r_scripts")   # unused in Python port
+PY_SCRIPTS_DIR   = os.path.join(CODE_ROOT_DIR, "py_scripts")
+SHAPEFILE_DIR    = resolve_config_path(cfg_get("shapefile_dir", os.path.join(INPUT_ROOT_DIR, "shapefile")), CODE_ROOT_DIR)
+GRIDPOINTS_DIR   = resolve_config_path(cfg_get("gridpoints_dir", os.path.join(OUTPUT_ROOT_DIR, "gridpoints")), CODE_ROOT_DIR)
+WEATHER_ROOT_DIR = resolve_config_path(cfg_get("weather_root_dir", os.path.join(OUTPUT_ROOT_DIR, "weather")), CODE_ROOT_DIR)
+SOIL_ROOT_DIR    = resolve_config_path(cfg_get("soil_root_dir", os.path.join(OUTPUT_ROOT_DIR, "soil")), CODE_ROOT_DIR)
+RUNS_ROOT_DIR    = resolve_config_path(cfg_get("runs_root_dir", os.path.join(OUTPUT_ROOT_DIR, "dssat_runs")), CODE_ROOT_DIR)
+RESULTS_ROOT_DIR = resolve_config_path(cfg_get("results_root_dir", os.path.join(OUTPUT_ROOT_DIR, "results")), CODE_ROOT_DIR)
+
+print(f"Engine input/static root: {INPUT_ROOT_DIR}")
+print(f"Engine generated-output root: {OUTPUT_ROOT_DIR}")
+
 # --- 0.3 Project settings ---------------------------------------------------
 PROJECT_NAME        = cfg_get("project_name", "dssat_spatial_demo")
 GRID_SPACING_METERS = cfg_get("grid_spacing_meters", 50_000)   # 50 km test; 5-10 km production
@@ -120,7 +139,7 @@ RUN_NAME_OVERRIDE = cfg_get("run_name_override", "")        # If set, used verba
 # --- 0.4 Spatial domain (choose MODE A / B / C) ----------------------------
 USE_EXISTING_POINT_SHAPEFILE  = cfg_get("use_existing_point_shapefile", False)
 EXISTING_POINT_SHAPEFILE_PATH = cfg_get("existing_point_shapefile_path",
-                                        os.path.join(MAIN_PROJECT_DIR, "gridpoints", "my_points.shp"))
+                                        os.path.join(GRIDPOINTS_DIR, "my_points.shp"))
 
 # MODE A boundary settings (ignored when USE_EXISTING_POINT_SHAPEFILE = True)
 BOUNDARY_SHAPEFILE_NAME = cfg_get("boundary_shapefile_name", "tl_2024_us_state.shp")
@@ -148,36 +167,41 @@ BOUNDARY_FILTER_VALUE = STATE_NAME_FILTER
 
 # Weather settings
 WEATHER_SOURCE     = cfg_get("weather_source", "GRIDMET")   # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS
-WEATHER_START_YEAR = cfg_get("weather_start_year", 1982)
-WEATHER_END_YEAR   = cfg_get("weather_end_year", 1983)
+WEATHER_START_YEAR = int(cfg_get("weather_start_year", 1982))
+WEATHER_END_YEAR   = int(cfg_get("weather_end_year", 1983))
 # NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p05" (~5.5 km, recommended)
 # or "p25" (~28 km, lighter download).
 CHIRPS_RESOLUTION  = str(cfg_get("chirps_resolution", "p05"))
 
 # Soil settings
-SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # "SSURGO" | "SOILGRIDS_10K" | "SOILGRIDS_ONLINE"
+SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # "SSURGO" | "SOILGRIDS_10K" | "SOILGRIDS_ONLINE" | "POLARIS"
 EXTERNAL_SOIL_FILE = cfg_get("external_soil_file",
-                             os.path.join(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL"))
+                             os.path.join(INPUT_ROOT_DIR, "SoilGrids", "US.SOL"))
 # SOILGRIDS_ONLINE only: "REST" (JSON API, rate-limited, no extra deps) or
 # "VRT" (GDAL virtual rasters via rasterio; batch-friendly, better coverage).
 SOILGRIDS_MODE     = str(cfg_get("soilgrids_mode", "REST")).upper()
+# POLARIS only (CONUS 30 m): which statistic layer to build the profile from.
+# "p50" (median) is the deterministic drop-in; p5/p95 are reserved for a future
+# soil-uncertainty ensemble. Optional polaris_cache_dir caches the GeoTIFF tiles.
+POLARIS_STAT       = str(cfg_get("polaris_stat", "p50"))
+POLARIS_CACHE_DIR  = cfg_get("polaris_cache_dir", "") or None
 # HWSD only: paths to the FAO HWSD v2.0 raster (SMU IDs) + SQLite database,
 # downloaded once from FAO (blank = script defaults under HWSD/).
 HWSD_RASTER_FILE   = cfg_get("hwsd_raster_file",
-                             os.path.join(MAIN_PROJECT_DIR, "HWSD", "HWSD2.bil"))
+                             os.path.join(INPUT_ROOT_DIR, "HWSD", "HWSD2.bil"))
 HWSD_DB_FILE       = cfg_get("hwsd_db_file",
-                             os.path.join(MAIN_PROJECT_DIR, "HWSD", "HWSD2.sqlite"))
+                             os.path.join(INPUT_ROOT_DIR, "HWSD", "HWSD2.sqlite"))
 # E-OBS only: folder of pre-downloaded E-OBS NetCDFs (tx/tn/rr/qq...). Set
 # eobs_use_cds: true to fetch an area subset via the Copernicus CDS instead
 # (needs the same ~/.cdsapirc key as AgERA5).
 EOBS_NC_DIR        = cfg_get("eobs_nc_dir",
-                             os.path.join(MAIN_PROJECT_DIR, "eobs_netcdf"))
+                             os.path.join(INPUT_ROOT_DIR, "eobs_netcdf"))
 EOBS_USE_CDS       = bool(cfg_get("eobs_use_cds", False))
 # Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
-XAVIER_NC_DIR      = cfg_get("xavier_nc_dir", os.path.join(MAIN_PROJECT_DIR, "xavier_netcdf"))
-CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(MAIN_PROJECT_DIR, "cmfd_netcdf"))
+XAVIER_NC_DIR      = cfg_get("xavier_nc_dir", os.path.join(INPUT_ROOT_DIR, "xavier_netcdf"))
+CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(INPUT_ROOT_DIR, "cmfd_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
-LUCAS_CSV          = cfg_get("lucas_csv", os.path.join(MAIN_PROJECT_DIR, "LUCAS", "lucas_topsoil.csv"))
+LUCAS_CSV          = cfg_get("lucas_csv", os.path.join(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
 
 # Constructed names
 SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}"
@@ -197,12 +221,12 @@ else:
 DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 
 # --- 0.6 Dynamic paths ------------------------------------------------------
-GRIDMET_CACHE_DIR     = os.path.join(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
-CHIRPS_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
-AGERA5_CACHE_DIR      = os.path.join(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
-DWD_CACHE_DIR         = os.path.join(MAIN_PROJECT_DIR, "dwd_station_cache")
-EOBS_CACHE_DIR        = os.path.join(MAIN_PROJECT_DIR, "eobs_cds_cache")
-GRIDPOINTS_OUTPUT_DIR = os.path.join(MAIN_PROJECT_DIR, "gridpoints")
+GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
+AGERA5_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "agera5_netcdf_cache")
+DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
+EOBS_CACHE_DIR        = os.path.join(OUTPUT_ROOT_DIR, "eobs_cds_cache")
+GRIDPOINTS_OUTPUT_DIR = GRIDPOINTS_DIR
 ALL_LAND_POINT_SHAPEFILE_NAME = f"{GRID_BASE_NAME}.shp"
 CROPLAND_GRID_TAG = ""
 if USE_CROPLAND_MASK:
@@ -212,8 +236,8 @@ if USE_CROPLAND_MASK:
 POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}{CROPLAND_GRID_TAG}.shp"
 ALL_LAND_POINT_SHAPEFILE_PATH = os.path.join(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH  = os.path.join(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
-DSSAT_RUN_DIR         = os.path.join(MAIN_PROJECT_DIR, "dssat_runs", DSSAT_RUN_NAME)
-FINAL_OUTPUT_DIR      = os.path.join(MAIN_PROJECT_DIR, "results")
+DSSAT_RUN_DIR         = os.path.join(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
+FINAL_OUTPUT_DIR      = RESULTS_ROOT_DIR
 FINAL_RESULTS_PATH    = os.path.join(FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_results.csv")
 FINAL_PLOT_PATH       = os.path.join(FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_yield_map.png")
 
@@ -222,8 +246,8 @@ LAT_COLUMN      = "LAT"
 LONG_COLUMN     = "LONG"
 
 # --- 0.7 Weather extension --------------------------------------------------
-EXTEND_WEATHER_DATA    = False
-WEATHER_REFERENCE_YEAR = 2025
+EXTEND_WEATHER_DATA    = bool(cfg_get("extend_weather_data", False))
+WEATHER_REFERENCE_YEAR = int(cfg_get("weather_reference_year", WEATHER_END_YEAR))
 
 TEMPLATE_SOIL_ID_PLACEHOLDER = "SOIL_ID"
 
@@ -235,8 +259,7 @@ DSSAT_EXE_PATH     = os.environ.get("DSSAT_EXE",
 # runs do NOT fall back to the DSSAT48 install for these, so copy any new
 # .CUL/.ECO/.SPE/.SDA/.WDA/FileX into that folder. Override with the
 # `template_dir` config key or the DSSAT_TEMPLATE_DIR env var.
-_DEFAULT_TEMPLATE_DIR = os.path.join(os.path.dirname(MAIN_PROJECT_DIR),
-                                     "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
+_DEFAULT_TEMPLATE_DIR = os.path.join(INPUT_ROOT_DIR, "dssat_templates")
 TEMPLATE_DIR       = os.environ.get("DSSAT_TEMPLATE_DIR",
                                     cfg_get("template_dir", _DEFAULT_TEMPLATE_DIR))
 TEMPLATE_FILE_NAME = cfg_get("template_file_name", "UFGA8201.MZX")   # DEMO PLACEHOLDER - replace with your own
@@ -244,10 +267,10 @@ TEMPLATE_FILE_PATH = os.path.join(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 
 # --- 0.9 Run mode -----------------------------------------------------------
 RUN_MODE        = cfg_get("run_mode", "experiment")   # "experiment" | "sequence"
-TREATMENT_START = cfg_get("treatment_start", 1)
-TREATMENT_END   = cfg_get("treatment_end", 4)
-SEQUENCE_START  = cfg_get("sequence_start", 1)
-SEQUENCE_END    = cfg_get("sequence_end", 1)
+TREATMENT_START = int(cfg_get("treatment_start", 1))
+TREATMENT_END   = int(cfg_get("treatment_end", 4))
+SEQUENCE_START  = int(cfg_get("sequence_start", 1))
+SEQUENCE_END    = int(cfg_get("sequence_end", 1))
 
 # --- 0.10 HPC & switches ----------------------------------------------------
 ZIP_FOR_HPC         = False
@@ -305,7 +328,7 @@ def _resolve_optional_path(path: str) -> str:
         return ""
     p = Path(path).expanduser()
     if not p.is_absolute():
-        p = Path(MAIN_PROJECT_DIR) / p
+        p = Path(INPUT_ROOT_DIR) / p
     return str(p)
 
 
@@ -425,13 +448,14 @@ from dssatutils.weather_cmfd          import process_weather_cmfd
 # sources (SoilGrids / HWSD) map points to shared profile IDs instead.
 _PER_POINT_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
 # Soil sources that need no pre-downloaded external file (queried online).
-_KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE")
+_KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS")
 from dssatutils.soil_ssurgo           import process_soils_ssurgo
 from dssatutils.soil_gnatsgo          import process_soils_gnatsgo
 from dssatutils.soil_isdasoil         import process_soils_isdasoil
 from dssatutils.soil_lucas            import process_soils_lucas
 from dssatutils.soil_soilgrids        import process_soils_soilgrids
 from dssatutils.soil_soilgrids_online import process_soils_soilgrids_online
+from dssatutils.soil_polaris          import process_soils_polaris
 from dssatutils.soil_hwsd             import process_soils_hwsd
 
 print(f"Sourcing helper modules from: {PY_SCRIPTS_DIR}")
@@ -609,12 +633,66 @@ if __name__ == '__main__':
             import dssatutils.soil_soilgrids_online as _sg_mod
             _sg_mod.USE_REST_API = (SOILGRIDS_MODE != "VRT")
             print(f"SoilGrids online mode: {'VRT' if SOILGRIDS_MODE == 'VRT' else 'REST API'}")
-            process_soils_soilgrids_online(
-                gridfile=gridfile,
-                soilfile_csv_path=soilfile_CSV,
-                output_sol_dir=individual_sol_dir,
-                id_col=POINT_ID_COLUMN,
-            )
+            try:
+                process_soils_soilgrids_online(
+                    gridfile=gridfile,
+                    soilfile_csv_path=soilfile_CSV,
+                    output_sol_dir=individual_sol_dir,
+                    id_col=POINT_ID_COLUMN,
+                )
+            except Exception as exc:
+                valid_ids = {
+                    os.path.splitext(f)[0]
+                    for f in os.listdir(individual_sol_dir)
+                    if f.upper().endswith(".SOL")
+                }
+                valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
+                if not valid_ids:
+                    raise
+                print(
+                    "WARNING: SoilGrids online extraction failed, but "
+                    f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
+                    f"are available; missing IDs will be skipped. Cause: {exc}"
+                )
+                if not os.path.exists(soilfile_CSV):
+                    pd.DataFrame({
+                        POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
+                        "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
+                    }).to_csv(soilfile_CSV, index=False)
+
+        elif SOIL_SOURCE == "POLARIS":
+            # POLARIS = 30 m probabilistic disaggregation of SSURGO (CONUS).
+            # Same output contract as SOILGRIDS_ONLINE: one .SOL per point named
+            # by point ID + a CSV, streamed via GDAL /vsicurl. Water limits come
+            # from POLARIS's van Genuchten curve (stat=p50 deterministic).
+            try:
+                process_soils_polaris(
+                    gridfile=gridfile,
+                    soilfile_csv_path=soilfile_CSV,
+                    output_sol_dir=individual_sol_dir,
+                    id_col=POINT_ID_COLUMN,
+                    stat=POLARIS_STAT,
+                    cache_dir=POLARIS_CACHE_DIR,
+                )
+            except Exception as exc:
+                valid_ids = {
+                    os.path.splitext(f)[0]
+                    for f in os.listdir(individual_sol_dir)
+                    if f.upper().endswith(".SOL")
+                }
+                valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
+                if not valid_ids:
+                    raise
+                print(
+                    "WARNING: POLARIS extraction failed, but "
+                    f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
+                    f"are available; missing IDs will be skipped. Cause: {exc}"
+                )
+                if not os.path.exists(soilfile_CSV):
+                    pd.DataFrame({
+                        POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
+                        "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
+                    }).to_csv(soilfile_CSV, index=False)
 
         elif SOIL_SOURCE == "HWSD":
             process_soils_hwsd(
@@ -816,9 +894,15 @@ if __name__ == '__main__':
             with open(TEMPLATE_FILE_PATH) as fh:
                 content = fh.read()
             if TEMPLATE_SOIL_ID_PLACEHOLDER in content:
-                content = content.replace(TEMPLATE_SOIL_ID_PLACEHOLDER, hmx_replacement_id)
+                if f"   {TEMPLATE_SOIL_ID_PLACEHOLDER}" in content:
+                    content = content.replace(f"   {TEMPLATE_SOIL_ID_PLACEHOLDER}", hmx_replacement_id.ljust(10))
+                else:
+                    content = content.replace(TEMPLATE_SOIL_ID_PLACEHOLDER, hmx_replacement_id)
             elif "ID_SOIL" in content:
-                content = content.replace("ID_SOIL", hmx_replacement_id)
+                if "   ID_SOIL" in content:
+                    content = content.replace("   ID_SOIL", hmx_replacement_id.ljust(10))
+                else:
+                    content = content.replace("ID_SOIL", hmx_replacement_id)
             # Patch WSTA in *FIELDS section: DSSAT opens <WSTA>.WTH from the run
             # folder. The template uses "00000000"; replace with the 8-char point
             # ID so it resolves to the per-point weather file (e.g. 00000001.WTH).

@@ -30,9 +30,9 @@ dependencies:
   # mpi4py via pip on HPC (see note above); uncomment for a local conda MPI:
   # - mpi4py=3.1.6
   - pip:
-      # Shared package pins. Replace @main with a release tag or commit SHA when
-      # freezing a publication-grade environment.
-      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@main
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@main
+      # Shared package pins. Bump these deliberately when validating a new
+      # workspace release; avoid @main so clean installs are reproducible.
+      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.1.0
       # Optional: AgERA5 weather source (requires Copernicus CDS credentials).
       # - cdsapi==0.7.3

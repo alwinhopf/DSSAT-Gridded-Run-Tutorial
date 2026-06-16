@@ -59,6 +59,11 @@ This document outlines all weather and soil data sources available in `dssatutil
   - High quality gridded data
   - Slower than Open-Meteo (~10-20s per point) due to NetCDF parsing
   - Can fail if server is down or network issues occur
+  - **Variable Relevance for DSSAT:**
+    * **Baseline variables (`tmmn`, `tmmx`, `pr`, `srad`):** Essential. Always required.
+    * **Wind Speed (`vs`):** Wind speed at 10m. Crucial if using the **FAO-56 Penman-Monteith method** for potential evapotranspiration (PET) in DSSAT (mapped to the `WIND` column in `.WTH` files). If omitted, DSSAT falls back to simpler Priestley-Taylor ET or default wind constants.
+    * **Specific Humidity (`sph`):** Specific humidity. Used to calculate actual Relative Humidity (`RHUM`) or Dewpoint Temperature (`TDEW`, written to `.WTH` files) for Penman-Monteith ET calculations, avoiding the need for empirical temperature-based approximations (e.g. `Tmin - 2.5`).
+    * **Reference ET (`pet`):** Alfalfa reference ET. Not directly consumed by standard DSSAT since DSSAT computes potential and actual ET dynamically based on crop leaf area and water balance. It is valuable as a baseline for model validation or regional water policy comparisons.
 
 ### 5. **AgERA5** (Global, Requires CDS Key)
 - **Coverage**: Global land areas

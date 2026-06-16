@@ -87,7 +87,7 @@ requests, tqdm, PyYAML; optional: cdsapi (AgERA5)
 
 ### Phase 1 — Build `dssat-spatial-utils` (additive, low risk)
 ```
-ROOT=/Users/alwinhopf/Documents/GitHub
+ROOT="${ROOT:-$HOME/Documents/GitHub}"
 SRC="$ROOT/DSSAT_Gridded_Run_Tutorial"
 PKG="$ROOT/dssat-spatial-utils"
 
@@ -268,19 +268,20 @@ made to either consumer repo. Findings that REQUIRED fixing the pre-written scri
 
 ### How to RUN phase 2/3 yourself (you can see output; tool display was glitching)
 ```
-cd /Users/alwinhopf/Documents/GitHub/dssatutils
+ROOT="${ROOT:-$HOME/Documents/GitHub}"
+cd "$ROOT/dssatutils"
 USE_LOCAL=1 ./migrate/02_phase2_ml_phenology.sh
-git -C "/Users/alwinhopf/Documents/GitHub/DSSAT_ML_Phenology_Prediction" diff   # review
+git -C "$ROOT/DSSAT_ML_Phenology_Prediction" diff   # review
 # then in R, from the ML repo root:
 #   renv::init(); renv::snapshot()
 USE_LOCAL=1 ./migrate/03_phase3_gridded.sh
-git -C "/Users/alwinhopf/Documents/GitHub/DSSAT_Gridded_Run_Tutorial" diff      # review
+git -C "$ROOT/DSSAT_Gridded_Run_Tutorial" diff      # review
 ```
 Each script backs up touched files to `<repo>/.migration_backup_<ts>/`. To undo:
 restore from there or `git checkout -- <file>` (edits are staged, not committed).
 
 ## ✅ DONE so far (local, no remote yet)
-- Package built at `/Users/alwinhopf/Documents/GitHub/dssatutils` and VERIFIED while
+- Package built at `$ROOT/dssatutils` and VERIFIED while
   display was working: R/ has 10 files, python/dssatutils/ has 10 + __init__.py,
   relative cross-imports confirmed (`from .soil_soilgrids_online`,
   `from .weather_nasapower`), no flat cross-imports remain, smoke.yml present,
@@ -337,7 +338,7 @@ reuses `_calculate_soil_physics/_format_dssat_sol_file` — both converted to
 relative imports and byte-compile-verified.
 
 ## BUILD STATE — Phase 1 executed (2026-05-31)
-The package was created at `/Users/alwinhopf/Documents/GitHub/dssatutils`.
+The package was created at `$ROOT/dssatutils`.
 Operations were issued while the tool DISPLAY was intermittently blind, so the
 fresh session MUST verify the following actually landed (the file ops themselves
 succeed even when output doesn't render):
@@ -361,7 +362,7 @@ VERIFY both took (grep '^from \.'); if not, apply manually.
 
 ### VERIFY checklist (run first in fresh session)
 ```
-PKG=/Users/alwinhopf/Documents/GitHub/dssatutils
+PKG="${PKG:-$HOME/Documents/GitHub/dssatutils}"
 ls "$PKG" "$PKG/R" "$PKG/python/dssatutils" "$PKG/tests" "$PKG/.github/workflows"
 grep -n '^from \.' "$PKG/python/dssatutils/soil_hwsd.py" "$PKG/python/dssatutils/weather_nasapower_chirps.py"
 python3 -c "import sys; sys.path.insert(0,'$PKG/python'); import dssatutils; print(dssatutils.__all__)"

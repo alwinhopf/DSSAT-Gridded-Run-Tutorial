@@ -66,20 +66,9 @@ detect_project_dir <- function() {
 }
 
 MAIN_PROJECT_DIR <- detect_project_dir()
+CODE_ROOT_DIR <- MAIN_PROJECT_DIR
 
-# --- Project-root aware paths (portable across machines/HPC) ---
-# This script is designed to live in the project root of the repository.
-# Helper R scripts (soil/weather) should live in: <repo_root>/r_scripts/
-PROJECT_ROOT <- MAIN_PROJECT_DIR
-R_SCRIPTS_DIR <- file.path(PROJECT_ROOT, "r_scripts")
-SHAPEFILE_DIR <- file.path(PROJECT_ROOT, "shapefile")
-GRIDPOINTS_DIR <- file.path(PROJECT_ROOT, "gridpoints")
-WEATHER_ROOT_DIR <- file.path(PROJECT_ROOT, "weather")
-SOIL_ROOT_DIR <- file.path(PROJECT_ROOT, "soil")
-RUNS_ROOT_DIR <- file.path(PROJECT_ROOT, "dssat_runs")
-RESULTS_ROOT_DIR <- file.path(PROJECT_ROOT, "results")
-
-message(sprintf("Running in Project Directory: %s", MAIN_PROJECT_DIR))
+message(sprintf("Running engine code from: %s", CODE_ROOT_DIR))
 
 # Detect Operating System for DSSAT Executable
 os_system <- Sys.info()["sysname"]
@@ -136,6 +125,31 @@ local({
 })
 if (!exists("cfg_get")) cfg_get <- function(key, default) default
 
+resolve_config_path <- function(path, base = CODE_ROOT_DIR) {
+  path <- trimws(as.character(if (is.null(path)) "" else path))
+  if (!nzchar(path)) return("")
+  if (grepl("^([A-Za-z]:|/|\\\\\\\\|~)", path)) return(normalizePath(path, mustWork = FALSE))
+  normalizePath(file.path(base, path), mustWork = FALSE)
+}
+
+# --- Project-root aware paths (portable across machines/HPC) ---
+# CODE_ROOT_DIR holds code/templates/static resources. OUTPUT_ROOT_DIR holds
+# generated model artifacts (gridpoints, weather, soils, run folders, results).
+# This lets consuming projects use the engine without filling the engine repo.
+INPUT_ROOT_DIR  <- resolve_config_path(cfg_get("input_root_dir", CODE_ROOT_DIR), CODE_ROOT_DIR)
+OUTPUT_ROOT_DIR <- resolve_config_path(cfg_get("output_root_dir", CODE_ROOT_DIR), CODE_ROOT_DIR)
+PROJECT_ROOT <- OUTPUT_ROOT_DIR
+R_SCRIPTS_DIR <- file.path(CODE_ROOT_DIR, "r_scripts")
+SHAPEFILE_DIR <- resolve_config_path(cfg_get("shapefile_dir", file.path(INPUT_ROOT_DIR, "shapefile")), CODE_ROOT_DIR)
+GRIDPOINTS_DIR <- resolve_config_path(cfg_get("gridpoints_dir", file.path(OUTPUT_ROOT_DIR, "gridpoints")), CODE_ROOT_DIR)
+WEATHER_ROOT_DIR <- resolve_config_path(cfg_get("weather_root_dir", file.path(OUTPUT_ROOT_DIR, "weather")), CODE_ROOT_DIR)
+SOIL_ROOT_DIR <- resolve_config_path(cfg_get("soil_root_dir", file.path(OUTPUT_ROOT_DIR, "soil")), CODE_ROOT_DIR)
+RUNS_ROOT_DIR <- resolve_config_path(cfg_get("runs_root_dir", file.path(OUTPUT_ROOT_DIR, "dssat_runs")), CODE_ROOT_DIR)
+RESULTS_ROOT_DIR <- resolve_config_path(cfg_get("results_root_dir", file.path(OUTPUT_ROOT_DIR, "results")), CODE_ROOT_DIR)
+
+message(sprintf("Engine input/static root: %s", INPUT_ROOT_DIR))
+message(sprintf("Engine generated-output root: %s", OUTPUT_ROOT_DIR))
+
 # --- 2. Project Settings ---
 # PROJECT_NAME: short label used in folder/file naming. No spaces.
 PROJECT_NAME      <- cfg_get("project_name", "dssat_spatial_demo")
@@ -179,7 +193,7 @@ RUN_NAME_OVERRIDE <- cfg_get("run_name_override", "")  # if non-empty, this exac
 #   See README → "Optional: run only on cropland" for the full walkthrough.
 USE_EXISTING_POINT_SHAPEFILE  <- cfg_get("use_existing_point_shapefile", FALSE)   # TRUE = MODE B/C; FALSE = MODE A (demo default)
 EXISTING_POINT_SHAPEFILE_PATH <- cfg_get("existing_point_shapefile_path",
-                                         file.path(MAIN_PROJECT_DIR, "gridpoints", "my_points.shp"))  # MODE B/C only
+                                         file.path(GRIDPOINTS_DIR, "my_points.shp"))  # MODE B/C only
 
 # --- 2b. Boundary settings (MODE A only — ignored when USE_EXISTING_POINT_SHAPEFILE = TRUE) ---
 # BOUNDARY_SHAPEFILE_NAME: path relative to shapefile/ folder.
@@ -234,6 +248,7 @@ CHIRPS_RESOLUTION  <- as.character(cfg_get("chirps_resolution", "p05"))
 # SOIL_SOURCE: "SSURGO"          — US only, queries USDA SDA web service per point
 #              "SOILGRIDS_10K"   — global, reads a pre-downloaded master .SOL file
 #              "SOILGRIDS_ONLINE"— global, queries SoilGrids REST API per point
+#              "POLARIS"         — US 30 m, streams POLARIS GeoTIFF tiles per point
 SOIL_SOURCE        <- cfg_get("soil_source", "SOILGRIDS_10K")
 # EXTERNAL_SOIL_FILE: only needed when SOIL_SOURCE is "SOILGRIDS_10K".
 # Pre-formatted DSSAT-ready .SOL files at 10 km resolution (by country):
@@ -242,26 +257,31 @@ SOIL_SOURCE        <- cfg_get("soil_source", "SOILGRIDS_10K")
 #   https://www.sciencedirect.com/science/article/pii/S1364815218313033
 # Download the country file you need, place it under SoilGrids/, and adjust the path below.
 EXTERNAL_SOIL_FILE <- cfg_get("external_soil_file",
-                              file.path(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL"))
+                              file.path(INPUT_ROOT_DIR, "SoilGrids", "US.SOL"))
 # SOILGRIDS_ONLINE only: "REST" (JSON API, rate-limited) or "VRT" (GDAL virtual
 # rasters via terra; batch-friendly, better coverage). Drives USE_REST_API.
 SOILGRIDS_MODE     <- toupper(cfg_get("soilgrids_mode", "REST"))
+# POLARIS only (CONUS 30 m): statistic layer to build the profile from. "p50"
+# (median) is the deterministic drop-in; p5/p95 are reserved for a future soil-
+# uncertainty ensemble. Optional polaris_cache_dir caches the GeoTIFF tiles.
+POLARIS_STAT       <- cfg_get("polaris_stat", "p50")
+POLARIS_CACHE_DIR  <- { .v <- cfg_get("polaris_cache_dir", ""); if (nzchar(.v)) .v else NULL }
 # HWSD only: paths to the FAO HWSD v2.0 raster (SMU IDs) + SQLite database,
 # downloaded once from FAO (blank = script defaults under HWSD/).
 HWSD_RASTER_FILE   <- cfg_get("hwsd_raster_file",
-                              file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.bil"))
+                              file.path(INPUT_ROOT_DIR, "HWSD", "HWSD2.bil"))
 HWSD_DB_FILE       <- cfg_get("hwsd_db_file",
-                              file.path(MAIN_PROJECT_DIR, "HWSD", "HWSD2.sqlite"))
+                              file.path(INPUT_ROOT_DIR, "HWSD", "HWSD2.sqlite"))
 # E-OBS only: folder of pre-downloaded E-OBS NetCDFs (tx/tn/rr/qq...). Set
 # eobs_use_cds: true to fetch an area subset via the Copernicus CDS instead.
 EOBS_NC_DIR        <- cfg_get("eobs_nc_dir",
-                              file.path(MAIN_PROJECT_DIR, "eobs_netcdf"))
+                              file.path(INPUT_ROOT_DIR, "eobs_netcdf"))
 EOBS_USE_CDS       <- isTRUE(as.logical(cfg_get("eobs_use_cds", FALSE)))
 # Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
-XAVIER_NC_DIR      <- cfg_get("xavier_nc_dir", file.path(MAIN_PROJECT_DIR, "xavier_netcdf"))
-CMFD_NC_DIR        <- cfg_get("cmfd_nc_dir", file.path(MAIN_PROJECT_DIR, "cmfd_netcdf"))
+XAVIER_NC_DIR      <- cfg_get("xavier_nc_dir", file.path(INPUT_ROOT_DIR, "xavier_netcdf"))
+CMFD_NC_DIR        <- cfg_get("cmfd_nc_dir", file.path(INPUT_ROOT_DIR, "cmfd_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
-LUCAS_CSV          <- cfg_get("lucas_csv", file.path(MAIN_PROJECT_DIR, "LUCAS", "lucas_topsoil.csv"))
+LUCAS_CSV          <- cfg_get("lucas_csv", file.path(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
@@ -296,14 +316,19 @@ GRIDPOINTS_SUBDIR <- "gridpoints"
 CENTRAL_SOIL_DIR <- SOIL_ROOT_DIR
 CENTRAL_WEATHER_DIR <- WEATHER_ROOT_DIR
 RESULTS_SUBDIR <- "results"
-GRIDMET_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "gridmet_netcdf_cache")
-CHIRPS_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "chirps_netcdf_cache")
-AGERA5_CACHE_DIR <- file.path(MAIN_PROJECT_DIR, "agera5_netcdf_cache")
-DWD_CACHE_DIR    <- file.path(MAIN_PROJECT_DIR, "dwd_station_cache")
-EOBS_CACHE_DIR   <- file.path(MAIN_PROJECT_DIR, "eobs_cds_cache")
+# Downloaded source-data caches (reanalysis grids, station pulls) live under the
+# INPUT/engine root, NOT the per-study OUTPUT root. The raw grids are independent
+# of which study consumes them, so keeping them with the engine lets every output
+# project reuse one cache instead of re-downloading (e.g. GridMET 1984-2025) per
+# study. These dirs are gitignored — they hold large generated downloads.
+GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
+AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
+DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
+EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
 
 # Input Paths
-GRIDPOINTS_OUTPUT_DIR <- file.path(MAIN_PROJECT_DIR, GRIDPOINTS_SUBDIR)
+GRIDPOINTS_OUTPUT_DIR <- GRIDPOINTS_DIR
 ALL_LAND_POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, ".shp")
 CROPLAND_GRID_TAG <- ""
 if (USE_CROPLAND_MASK) {
@@ -316,8 +341,8 @@ ALL_LAND_POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT
 POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
 
 # Run & Output Paths
-DSSAT_RUN_DIR <- file.path(MAIN_PROJECT_DIR, "dssat_runs", DSSAT_RUN_NAME)
-FINAL_OUTPUT_DIR <- file.path(MAIN_PROJECT_DIR, RESULTS_SUBDIR)
+DSSAT_RUN_DIR <- file.path(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
+FINAL_OUTPUT_DIR <- RESULTS_ROOT_DIR
 FINAL_RESULTS_PATH <- file.path(FINAL_OUTPUT_DIR, paste0(DSSAT_RUN_NAME, "_results.csv"))
 FINAL_PLOT_PATH <- file.path(FINAL_OUTPUT_DIR, paste0(DSSAT_RUN_NAME, "_yield_map.png"))
 
@@ -335,7 +360,7 @@ TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID"
 # --- 5. DSSAT Settings ---
 DSSAT_EXE_PATH <- file.path(DSSAT_BASE, DSSAT_EXE_NAME)
 DSSAT_EXE_PATH <- Sys.getenv("DSSAT_EXE", unset = DSSAT_EXE_PATH)
-TEMPLATE_DIR <- file.path(MAIN_PROJECT_DIR, "dssat_templates")
+TEMPLATE_DIR <- resolve_config_path(cfg_get("template_dir", file.path(INPUT_ROOT_DIR, "dssat_templates")), CODE_ROOT_DIR)
 TEMPLATE_FILE_NAME <- cfg_get("template_file_name", "UFGA8201.MZX")  # DEMO PLACEHOLDER — replace with your own experiment file
                                        # UFGA8201.MZX is a maize file bundled with DSSAT for testing only.
                                        # Any valid DSSAT experiment file works (.MZX, .WHX, .SBX, etc.)
@@ -572,7 +597,7 @@ library(dssatengine) # [dssatengine] shared gridded run engine
 # ID (so SOIL_ID == point ID and the per-point combine logic applies).
 PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
 # Soil sources needing no pre-downloaded external file (queried online).
-KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE")
+KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS")
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
@@ -650,6 +675,51 @@ clean_invalid_soils <- function(dir, ids) {
       }
     }
   }
+}
+
+clear_run_diagnostics <- function(ids) {
+  artifacts <- c("_run_error.log", "dssat_B_stdout_stderr.log", "dssat_Q_stdout_stderr.log",
+                 "ERROR.OUT", "WARNING.OUT", "INFO.OUT", "Summary.OUT", "summary.csv")
+  for (id in ids) {
+    unlink(file.path(id, artifacts), force = TRUE)
+  }
+}
+
+write_input_error <- function(id, reason) {
+  dir.create(id, showWarnings = FALSE, recursive = TRUE)
+  line <- sprintf("[%s] ID %s: INPUT: %s", format(Sys.time()), id, reason)
+  writeLines(line, file.path(id, "_run_error.log"))
+}
+
+soil_input_issue <- function(id) {
+  f <- file.path(id, "SOIL.SOL")
+  if (!file.exists(f)) return("SOIL.SOL is missing")
+  lines <- tryCatch(readLines(f, warn = FALSE), error = function(e) character())
+  if (!length(lines)) return("SOIL.SOL is empty or unreadable")
+  if (any(grepl("^\\*SOIL ERROR", lines))) {
+    return(paste(trimws(lines[grepl("^\\*SOIL ERROR|^Source missing|^No Soil ID", lines)]),
+                 collapse = " | "))
+  }
+
+  hdr <- grep("^@\\s+SLB\\b", lines)
+  if (!length(hdr)) return("SOIL.SOL has no @ SLB layer table")
+  layer_lines <- lines[(hdr[1] + 1):length(lines)]
+  layer_lines <- layer_lines[nzchar(trimws(layer_lines))]
+  layer_lines <- layer_lines[grepl("^\\s*\\d+\\s+", layer_lines)]
+  depths <- suppressWarnings(as.integer(sub("^\\s*(\\d+).*", "\\1", layer_lines)))
+  depths <- depths[is.finite(depths)]
+  if (!length(depths)) return("SOIL.SOL has no parseable SLB layer depths")
+  if (length(depths) > 19) return(sprintf("SOIL.SOL has %d layers; DSSAT accepts at most 19", length(depths)))
+  if (any(diff(depths) <= 0)) return(sprintf("SOIL.SOL layer depths are not strictly increasing: %s",
+                                             paste(depths, collapse = ",")))
+  NULL
+}
+
+weather_input_issue <- function(id) {
+  f <- file.path(id, paste0(id, ".WTH"))
+  if (!file.exists(f)) return(paste0(basename(f), " is missing"))
+  if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
+  NULL
 }
 
 
@@ -846,7 +916,7 @@ resolve_optional_path <- function(path) {
   path <- trimws(as.character(if (is.null(path)) "" else path))
   if (!nzchar(path)) return("")
   if (grepl("^([A-Za-z]:|/|\\\\\\\\|~)", path)) return(normalizePath(path, mustWork = FALSE))
-  normalizePath(file.path(MAIN_PROJECT_DIR, path), mustWork = FALSE)
+  normalizePath(file.path(INPUT_ROOT_DIR, path), mustWork = FALSE)
 }
 
 apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
@@ -919,7 +989,7 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
 # STEP 0: CREATE GRIDFILE
 #-----------------------------------------------------------------------
 message("STEP 0: PREPARING GRIDFILE / POINTS")
-setwd(MAIN_PROJECT_DIR) 
+setwd(OUTPUT_ROOT_DIR)
 dir.create(GRIDPOINTS_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 if (!USE_EXISTING_POINT_SHAPEFILE && USE_CROPLAND_MASK && REUSE_CROPLAND_GRID && file.exists(POINT_SHAPEFILE_PATH)) {
@@ -1058,15 +1128,23 @@ if (RUN_STEP_1_SOILS) {
                           retry_count, max_retries, nrow(points_to_process)))
         }
         
-        process_soils_soilgrids_online(points_to_process, soilfile_CSV,
-                                       output_sol_dir = individual_sol_output_folder,
-                                       id_col = POINT_ID_COLUMN)
+        ok <- tryCatch({
+          process_soils_soilgrids_online(points_to_process, soilfile_CSV,
+                                         output_sol_dir = individual_sol_output_folder,
+                                         id_col = POINT_ID_COLUMN)
+          TRUE
+        }, error = function(e) {
+          warning(sprintf("SoilGrids online extraction failed for this retry batch (%d point(s)): %s",
+                          nrow(points_to_process), conditionMessage(e)))
+          FALSE
+        })
         
         retry_count <- retry_count + 1
         
         if (CHECK_SOIL_DOWNLOADS) {
           ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
           clean_invalid_soils(individual_sol_output_folder, ids_left)
+          if (!ok) break
           existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
           missing_left_mask <- ! (ids_left %in% existing_left)
           points_to_process <- points_to_process[missing_left_mask, ]
@@ -1086,12 +1164,67 @@ if (RUN_STEP_1_SOILS) {
                         nrow(points_to_process), max_retries))
       }
     }
+
+    valid_online_ids <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+    valid_online_ids <- intersect(ids, valid_online_ids)
+    missing_online_ids <- setdiff(ids, valid_online_ids)
+    if (length(valid_online_ids) == 0) {
+      stop("SOILGRIDS_ONLINE produced no valid .SOL files. Check SoilGrids connectivity, coordinates, or try SOILGRIDS_10K / SSURGO.",
+           call. = FALSE)
+    }
+    if (length(missing_online_ids) > 0) {
+      message(sprintf("SOILGRIDS_ONLINE: %d/%d valid profile(s) available; missing IDs will be skipped during DSSAT execution: %s",
+                      length(valid_online_ids), length(ids),
+                      paste(head(missing_online_ids, 20), collapse = ", ")))
+    }
     
     # Always write/rebuild the complete CSV mapping since we might have run a subset
     mapping_df <- data.frame(ID = gridfile[[POINT_ID_COLUMN]], SOIL_ID = gridfile[[POINT_ID_COLUMN]])
     colnames(mapping_df)[1] <- POINT_ID_COLUMN
     write.csv(mapping_df, soilfile_CSV, row.names = FALSE)
-    
+
+  } else if (SOIL_SOURCE == "POLARIS") {
+    # POLARIS = 30 m probabilistic disaggregation of SSURGO (CONUS). Same output
+    # contract as SOILGRIDS_ONLINE: one .SOL per point named by point ID + a CSV,
+    # streamed via GDAL /vsicurl. Water limits come from POLARIS's van Genuchten
+    # curve (stat=p50 deterministic). Resume by skipping points already on disk.
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    existing_files <- tools::file_path_sans_ext(
+      list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+    points_to_process <- gridfile[!(ids %in% existing_files), ]
+
+    if (nrow(points_to_process) == 0) {
+      message("All POLARIS soil profiles already exist. Skipping POLARIS processing.")
+    } else {
+      message(sprintf("POLARIS (statistic=%s): processing %d missing point(s)...",
+                      POLARIS_STAT, nrow(points_to_process)))
+      tryCatch({
+        process_soils_polaris(points_to_process, soilfile_CSV,
+                              output_sol_dir = individual_sol_output_folder,
+                              id_col = POINT_ID_COLUMN,
+                              stat = POLARIS_STAT, cache_dir = POLARIS_CACHE_DIR)
+      }, error = function(e) {
+        warning(sprintf("POLARIS extraction failed for this batch (%d point(s)): %s",
+                        nrow(points_to_process), conditionMessage(e)))
+      })
+    }
+
+    valid_ids <- intersect(ids, tools::file_path_sans_ext(
+      list.files(individual_sol_output_folder, pattern = "\\.SOL$")))
+    if (length(valid_ids) == 0) {
+      stop("POLARIS produced no valid .SOL files. Check connectivity, coordinates (CONUS only), or try SSURGO.",
+           call. = FALSE)
+    }
+    missing_ids <- setdiff(ids, valid_ids)
+    if (length(missing_ids) > 0) {
+      message(sprintf("POLARIS: %d/%d valid profile(s) available; missing IDs will be skipped: %s",
+                      length(valid_ids), length(ids),
+                      paste(head(missing_ids, 20), collapse = ", ")))
+    }
+    mapping_df <- data.frame(ID = gridfile[[POINT_ID_COLUMN]], SOIL_ID = gridfile[[POINT_ID_COLUMN]])
+    colnames(mapping_df)[1] <- POINT_ID_COLUMN
+    write.csv(mapping_df, soilfile_CSV, row.names = FALSE)
+
   } else if (SOIL_SOURCE == "HWSD") {
     process_soils_hwsd(gridfile, HWSD_RASTER_FILE, HWSD_DB_FILE,
                        output_csv_path = soilfile_CSV,
@@ -1350,10 +1483,18 @@ create_folders_and_files <- function(i) {
     content <- readLines(TEMPLATE_FILE_PATH)
     if (!any(grepl(TEMPLATE_SOIL_ID_PLACEHOLDER, content, fixed=TRUE))) {
       if(any(grepl("ID_SOIL", content, fixed=TRUE))) {
-        content <- gsub("ID_SOIL", hmx_replacement_id, content, fixed = TRUE)
+        if (any(grepl("   ID_SOIL", content, fixed=TRUE))) {
+          content <- gsub("   ID_SOIL", sprintf("%-10s", hmx_replacement_id), content, fixed = TRUE)
+        } else {
+          content <- gsub("ID_SOIL", hmx_replacement_id, content, fixed = TRUE)
+        }
       }
     } else {
-      content <- gsub(TEMPLATE_SOIL_ID_PLACEHOLDER, hmx_replacement_id, content, fixed = TRUE)
+      if (any(grepl("   SOIL_ID", content, fixed=TRUE))) {
+        content <- gsub("   SOIL_ID", sprintf("%-10s", hmx_replacement_id), content, fixed = TRUE)
+      } else {
+        content <- gsub(TEMPLATE_SOIL_ID_PLACEHOLDER, hmx_replacement_id, content, fixed = TRUE)
+      }
     }
     content <- gsub("00000000", ID, content, fixed = TRUE)
     content <- gsub(tools::file_path_sans_ext(TEMPLATE_FILE_NAME), ID, content, fixed = TRUE)
@@ -1450,6 +1591,29 @@ if (RUN_DSSAT_EXECUTION) {
   }
   
   if(length(ids_to_run) > 0) {
+    clear_run_diagnostics(ids_to_run)
+
+    input_ok <- vapply(ids_to_run, function(id) {
+      issue <- soil_input_issue(id)
+      if (is.null(issue)) issue <- weather_input_issue(id)
+      if (!is.null(issue)) {
+        write_input_error(id, issue)
+        return(FALSE)
+      }
+      TRUE
+    }, logical(1))
+
+    skipped_input_ids <- ids_to_run[!input_ok]
+    if (length(skipped_input_ids) > 0) {
+      message(sprintf("Skipping %d point(s) with invalid DSSAT inputs; see _run_error.log in each folder.",
+                      length(skipped_input_ids)))
+      message("  Invalid input IDs: ", paste(head(skipped_input_ids, 20), collapse = ", "),
+              if (length(skipped_input_ids) > 20) sprintf(" ... (+%d more)", length(skipped_input_ids) - 20) else "")
+    }
+    ids_to_run <- ids_to_run[input_ok]
+  }
+
+  if(length(ids_to_run) > 0) {
     cl <- makeCluster(DSSAT_CORES)
     on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
     clusterEvalQ(cl, { library(dssatengine) })
@@ -1539,7 +1703,29 @@ if (RUN_DSSAT_EXECUTION) {
   } else {
     message("WARNING: No results were produced. Check DSSAT logs in the per-point run folders.")
   }
-  
+
+  # --- 3.8. Optional cleanup of per-point run folders --------------------------
+  # When CLEANUP_RUN_FOLDERS is TRUE, delete the per-point simulation subfolders
+  # (and all of their DSSAT I/O) now that the combined summary CSV has been
+  # written — so a large sweep does not leave thousands of folders cluttering the
+  # drive. Guarded on the combined CSV actually existing on disk: if the combine
+  # step produced nothing, the folders are KEPT so the failure can be diagnosed.
+  # The per-scenario results CSV (FINAL_RESULTS_PATH) lives under
+  # RESULTS_ROOT_DIR, outside DSSAT_RUN_DIR, so it survives the cleanup.
+  if (CLEANUP_RUN_FOLDERS) {
+    if (file.exists(FINAL_RESULTS_PATH)) {
+      point_dirs <- file.path(DSSAT_RUN_DIR, all_ids)
+      point_dirs <- point_dirs[dir.exists(point_dirs)]
+      if (length(point_dirs) > 0) {
+        message(sprintf("Cleanup: deleting %d per-point run folder(s) under %s",
+                        length(point_dirs), DSSAT_RUN_DIR))
+        unlink(point_dirs, recursive = TRUE, force = TRUE)
+      }
+    } else {
+      message("Cleanup requested, but the combined results CSV was not written — keeping run folders for troubleshooting.")
+    }
+  }
+
 } else {
   # ============================================================================
   # HPC PREP MODE (Folders Created, No Execution)
@@ -1610,7 +1796,7 @@ if (RUN_DSSAT_EXECUTION) {
       message(sprintf("Error during zipping: %s", e$message))
     }, finally = {
       # 5. Return to Project Root (Safest location)
-      setwd(MAIN_PROJECT_DIR)
+      setwd(OUTPUT_ROOT_DIR)
     })
     
   } else {
