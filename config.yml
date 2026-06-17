@@ -73,8 +73,11 @@ hwsd_db_file:         ""                # HWSD only: FAO HWSD2 attribute DB - th
 # --- DSSAT template / run mode ---
 template_file_name:   "UFGA9201.MZX"
 run_mode:             "experiment"   # experiment | sequence
+# Use treatment_start/treatment_end for a contiguous range. Use treatment_list
+# only when you need explicit non-contiguous IDs, e.g. [1, 5, 10].
 treatment_start:      1
 treatment_end:        1
+treatment_list:       []
 sequence_start:       1
 sequence_end:         1
 

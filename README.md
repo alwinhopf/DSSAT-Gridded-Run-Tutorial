@@ -156,7 +156,7 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication during the first `pip` install), or install using your PAT directly:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.1.0"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.2.0"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -721,6 +721,7 @@ base:                         # held constant across every combination (config.y
   template_file_name:  "UFGA8201.MZX"
   treatment_start:     1
   treatment_end:       4
+  treatment_list:      []            # optional explicit IDs, e.g. [1, 5, 10]
 
 factors:                      # the full factorial of these lists is run
   weather_source: ["DAYMET", "OPEN_METEO"]   # keyless, both cover 1982
@@ -1125,6 +1126,7 @@ template_file_name:   "UFGA8201.MZX"
 run_mode:             "experiment"   # experiment | sequence
 treatment_start:      1
 treatment_end:        4
+treatment_list:       []             # optional explicit non-contiguous IDs
 ```
 
 **How precedence works:** every key in `config.yml` **overrides** the matching in-script default in SECTION 0. Any key you delete (or leave blank, `""`) falls back to the SECTION 0 default. `config.yml` is therefore fully optional — delete it and both pipelines run exactly on their built-in defaults. If PyYAML / the R `yaml` package is missing, the loader prints a notice and silently uses the in-script defaults.

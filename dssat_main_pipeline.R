@@ -369,8 +369,36 @@ TEMPLATE_FILE_PATH <- file.path(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 
 # --- 6. Run Mode ---
 RUN_MODE <- cfg_get("run_mode", "experiment") #experiment or sequence
-TREATMENT_START <- cfg_get("treatment_start", 1)
-TREATMENT_END <- cfg_get("treatment_end", 4)
+TREATMENT_START <- as.integer(cfg_get("treatment_start", 1))
+TREATMENT_END <- as.integer(cfg_get("treatment_end", 4))
+legacy_treatments_key <- cfg_get("treatments", NULL)
+if (!is.null(legacy_treatments_key)) {
+  stop("Config key 'treatments' is ambiguous in the gridded engine. ",
+       "Use treatment_start/treatment_end for a contiguous range, or ",
+       "treatment_list for explicit non-contiguous treatment IDs.",
+       call. = FALSE)
+}
+TREATMENT_LIST <- cfg_get("treatment_list", NULL)
+if (!is.null(TREATMENT_LIST)) {
+  TREATMENT_LIST <- suppressWarnings(as.integer(unlist(TREATMENT_LIST, use.names = FALSE)))
+  TREATMENT_LIST <- unique(TREATMENT_LIST[!is.na(TREATMENT_LIST)])
+}
+if (is.null(TREATMENT_LIST)) TREATMENT_LIST <- integer(0)
+if (is.na(TREATMENT_START) || is.na(TREATMENT_END)) {
+  stop("treatment_start and treatment_end must be valid integers.", call. = FALSE)
+}
+if (TREATMENT_END < TREATMENT_START) {
+  stop(sprintf("treatment_end (%d) must be >= treatment_start (%d).",
+               TREATMENT_END, TREATMENT_START), call. = FALSE)
+}
+if (length(TREATMENT_LIST) && any(TREATMENT_LIST < 1L)) {
+  stop("treatment_list must contain positive integer treatment IDs.", call. = FALSE)
+}
+TREATMENT_RUN_LABEL <- if (length(TREATMENT_LIST)) {
+  paste(TREATMENT_LIST, collapse = ",")
+} else {
+  sprintf("%d-%d", TREATMENT_START, TREATMENT_END)
+}
 SEQUENCE_START <- cfg_get("sequence_start", 1)
 SEQUENCE_END <- cfg_get("sequence_end", 1)
 
@@ -1617,8 +1645,15 @@ if (RUN_DSSAT_EXECUTION) {
     cl <- makeCluster(DSSAT_CORES)
     on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
     clusterEvalQ(cl, { library(dssatengine) })
+    SUPPORTS_TREATMENT_LIST <- "treatment_list" %in% names(formals(dssatengine::run_simulation))
+    if (length(TREATMENT_LIST) && !SUPPORTS_TREATMENT_LIST) {
+      stop("This config sets treatment_list, but the installed dssatengine package ",
+           "does not support explicit treatment lists. Reinstall/update dssatengine ",
+           "before running; falling back to a contiguous range would change the run.",
+           call. = FALSE)
+    }
     run_simulation_wrapper <- function(ID) {
-      dssatengine::run_simulation(
+      args <- list(
         ID = ID,
         dssat_run_dir = DSSAT_RUN_DIR,
         crop_extension = CROP_EXTENSION,
@@ -1635,10 +1670,13 @@ if (RUN_DSSAT_EXECUTION) {
         cleanup_run_folders = CLEANUP_RUN_FOLDERS,
         points_df = points
       )
+      if (length(TREATMENT_LIST)) args$treatment_list <- TREATMENT_LIST
+      do.call(dssatengine::run_simulation, args)
     }
     clusterExport(cl, c("DSSAT_RUN_DIR", "CROP_EXTENSION", "TEMPLATE_FILE_NAME",
                         "TEMPLATE_FILE_PATH", "RUN_MODE", "TREATMENT_START",
-                        "TREATMENT_END", "SEQUENCE_START", "SEQUENCE_END",
+                        "TREATMENT_END", "TREATMENT_LIST", "SUPPORTS_TREATMENT_LIST",
+                        "SEQUENCE_START", "SEQUENCE_END",
                         "WEATHER_START_YEAR", "WEATHER_END_YEAR", "DSSAT_EXE_PATH",
                         "CLEANUP_RUN_FOLDERS", "points"),
                   envir = globalenv())
@@ -1756,7 +1794,7 @@ if (RUN_DSSAT_EXECUTION) {
     "",
     "--- SIMULATION SETTINGS ---",
     sprintf("Mode:              %s", RUN_MODE),
-    sprintf("Treatments:        %d - %d", TREATMENT_START, TREATMENT_END),
+    sprintf("Treatments:        %s", TREATMENT_RUN_LABEL),
     sprintf("Sequences:         %d - %d", SEQUENCE_START, SEQUENCE_END),
     sprintf("Template File:     %s", TEMPLATE_FILE_NAME),
     "",

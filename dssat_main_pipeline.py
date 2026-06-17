@@ -109,6 +109,32 @@ def resolve_config_path(path, base=CODE_ROOT_DIR) -> str:
     return str(p.resolve())
 
 
+def as_int_list(value) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [v.strip() for v in value.split(",")] if "," in value else [value]
+    elif not isinstance(value, (list, tuple, set)):
+        value = [value]
+    out = []
+    for item in value:
+        try:
+            out.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def unique_preserve_order(values: list[int]) -> list[int]:
+    seen = set()
+    out = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
 # CODE_ROOT_DIR holds code/templates/static resources. OUTPUT_ROOT_DIR holds
 # generated model artifacts (gridpoints, weather, soils, run folders, results).
 INPUT_ROOT_DIR  = resolve_config_path(cfg_get("input_root_dir", CODE_ROOT_DIR), CODE_ROOT_DIR)
@@ -269,6 +295,24 @@ TEMPLATE_FILE_PATH = os.path.join(TEMPLATE_DIR, TEMPLATE_FILE_NAME)
 RUN_MODE        = cfg_get("run_mode", "experiment")   # "experiment" | "sequence"
 TREATMENT_START = int(cfg_get("treatment_start", 1))
 TREATMENT_END   = int(cfg_get("treatment_end", 4))
+if cfg_get("treatments", None) is not None:
+    raise SystemExit(
+        "Config key 'treatments' is ambiguous in the gridded engine. "
+        "Use treatment_start/treatment_end for a contiguous range, or "
+        "treatment_list for explicit non-contiguous treatment IDs."
+    )
+TREATMENT_LIST = unique_preserve_order(as_int_list(cfg_get("treatment_list", [])))
+if TREATMENT_END < TREATMENT_START:
+    raise SystemExit(
+        f"treatment_end ({TREATMENT_END}) must be >= treatment_start ({TREATMENT_START})."
+    )
+if any(t < 1 for t in TREATMENT_LIST):
+    raise SystemExit("treatment_list must contain positive integer treatment IDs.")
+TREATMENT_RUN_LABEL = (
+    ",".join(str(t) for t in TREATMENT_LIST)
+    if TREATMENT_LIST
+    else f"{TREATMENT_START}-{TREATMENT_END}"
+)
 SEQUENCE_START  = int(cfg_get("sequence_start", 1))
 SEQUENCE_END    = int(cfg_get("sequence_end", 1))
 
@@ -1055,6 +1099,7 @@ if __name__ == '__main__':
                 "run_mode": RUN_MODE,
                 "treatment_start": TREATMENT_START,
                 "treatment_end": TREATMENT_END,
+                "treatment_list": TREATMENT_LIST,
                 "sequence_start": SEQUENCE_START,
                 "sequence_end": SEQUENCE_END,
                 "weather_start_year": WEATHER_START_YEAR,
@@ -1137,7 +1182,7 @@ if __name__ == '__main__':
             fh.write(f"Soil Source:     {SOIL_SOURCE}\n")
             fh.write("\n--- SIMULATION SETTINGS ---\n")
             fh.write(f"Mode:            {RUN_MODE}\n")
-            fh.write(f"Treatments:      {TREATMENT_START} - {TREATMENT_END}\n")
+            fh.write(f"Treatments:      {TREATMENT_RUN_LABEL}\n")
             fh.write(f"Sequences:       {SEQUENCE_START} - {SEQUENCE_END}\n")
             fh.write(f"Template File:   {TEMPLATE_FILE_NAME}\n")
             fh.write("\n--- PATHS ---\n")

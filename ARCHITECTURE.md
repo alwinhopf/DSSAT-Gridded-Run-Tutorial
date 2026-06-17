@@ -4,7 +4,7 @@
 > workspace fit together, the role of each, the data they exchange, and a prioritized
 > set of suggested structural improvements.
 >
-> **Last verified:** 2026-06-14 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
+> **Last verified:** 2026-06-17 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
 > (the canonical engine).
 
 ## Contents
@@ -88,19 +88,20 @@ API. Its sole responsibility: fetch public weather/soil data and write DSSAT-for
 
 | Domain | Functions (identical names in R and Python) |
 |---|---|
-| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_nasapower_chirps`, `process_weather_dwd`, `process_weather_eobs`, `process_weather_xavier`, `process_weather_cmfd` |
-| Soil | `process_soils_ssurgo`, `process_soils_gnatsgo`, `process_soils_isdasoil`, `process_soils_lucas`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd` |
+| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_era5_land`, `process_weather_nasapower_chirps`, `process_weather_dwd`, `process_weather_eobs`, `process_weather_xavier`, `process_weather_cmfd` |
+| Soil | `process_soils_ssurgo`, `process_soils_ssurgo_alderman`, `process_soils_gnatsgo`, `process_soils_isdasoil`, `process_soils_lucas`, `process_soils_polaris`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd` |
 
 Coverage: Daymet = North America; GridMET/SSURGO/gNATSGO = USA; DWD = Germany;
 E-OBS / LUCAS = Europe; Xavier (BR-DWGD) = Brazil; CMFD = China; iSDAsoil = Africa;
-NASA POWER / Open-Meteo / AgERA5 / SoilGrids / HWSD2 = global. AgERA5 requires a
-Copernicus CDS key; CHIRPS fuses NASA POWER with high-resolution rainfall (50S–50N).
-gNATSGO is the gap-free 30 m US grid; iSDAsoil is 30 m Africa; LUCAS is measured EU
-topsoil (extrapolated below 20 cm); DWD estimates SRAD from sunshine duration; E-OBS
-and Xavier carry daily global radiation directly; CMFD is aggregated from 3-hourly.
+NASA POWER / Open-Meteo / AgERA5 / ERA5-Land / SoilGrids / HWSD2 = global. AgERA5 and
+ERA5-Land require a Copernicus CDS key; CHIRPS fuses NASA POWER with high-resolution
+rainfall (50S–50N). gNATSGO is the gap-free 30 m US grid; POLARIS is a 30 m probabilistic
+disaggregation of SSURGO (USA); iSDAsoil is 30 m Africa; LUCAS is measured EU topsoil
+(extrapolated below 20 cm); DWD estimates SRAD from sunshine duration; E-OBS and Xavier
+carry daily global radiation directly; CMFD is aggregated from 3-hourly.
 
 - Function names are identical across R and Python by design.
-- Versioned with git tags; **consumers pin to a tag** (`@v0.1.0`), never `main`, so
+- Versioned with git tags; **consumers pin to a tag** (`@vX.Y.Z`), never `main`, so
   upstream changes never silently break a pipeline until the pin is deliberately bumped.
 - Product of the extraction migration that de-duplicated download code formerly copied
   between the Gridded Run Tutorial and ML Phenology repos (see `SHARED_UTILS_MIGRATION.md`).
@@ -167,7 +168,7 @@ shapefile / boundary / CDL-NLCD raster
 
 ## 7. Dependency matrix
 
-Engine logic now lives in the shared **`dssatengine`** package (R + Python, v0.1.0); the
+Engine logic now lives in the shared **`dssatengine`** package (R + Python, v0.2.0); the
 "Engine" column records how each repo obtains it — import, `ENGINE_DIR` reference, or not
 at all. **No repo carries a hand-copied engine fork anymore.**
 
@@ -192,11 +193,11 @@ stand.
 
 | # | Improvement | Problem it solves | Effort |
 |---|---|---|---|
-| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, v0.1.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT-SubField-MILP-Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
-| 2 | **Pin and record the dependency versions each consumer uses** — one line per repo (`dssatutils@v0.1.0`, engine tag, DSSAT48 build). Add a `DEPENDENCIES.md` or a row in each README. | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low |
+| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, v0.2.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT-SubField-MILP-Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix and explicit `treatment_list` support). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
+| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (`dssatutils@v0.2.0`, `dssatengine@v0.2.0`, DSSAT48 build notes). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
 | 3 | **Centralize `dssat_templates/` genotype files.** The same `.CUL/.ECO/.SPE/.CDE` are duplicated across most repos. Ship them from `DSSAT48` (resolved via `DSSATPRO.V48`) or a small shared `dssat-templates` package; keep only project-specific FileX locally. | Genotype edits (e.g. the cereal-rye `TKFH = -25°C` ecotype) must currently be hand-synced. | Medium |
-| 4 | ✅ **Done — repo naming standardized** to `snake_case`; the spaced folder names (`DSSAT Gridded Run Tutorial`, …) were renamed with underscores and all references updated. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
-| 5 | ✅ **Done — workspace index README** exists (`dssatengine/README.md`), with a repo table (tier / language / purpose). | New contributors no longer have to open each folder to learn what it is. | Low (done) |
+| 4 | ✅ **Done — spaced folder names removed**; current repo names still preserve historical capitalization/hyphens where already published, so new repos should use `snake_case` but old repo names are not churned. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
+| 5 | ✅ **Done — workspace index README** exists at the workspace root (`README.md`), with a repo table (tier / language / purpose). | New contributors no longer have to open each folder to learn what it is. | Low (done) |
 | 6 | **Decide an R↔Python parity policy.** `dssatutils`, `dssat_lca_tea`, and the engine all maintain mirrored implementations by hand. Either (a) declare one language canonical and generate/wrap the other, or (b) add cross-language parity tests (camelina already has `test_excel_parity` — extend the idea). | Halves maintenance and prevents the two implementations from quietly diverging. | Medium |
 | 7 | **Repository hygiene.** Commit-ignore and purge transient state: `*_cache/`, `dssat_runs/`, `.RData`, `.Rhistory`, `.DS_Store`, and leftover `.migration_backup_*/` dirs. Verify each repo's `.gitignore` covers them. | Shrinks repos, removes machine-specific noise from diffs, prevents accidental cache commits. | Low |
 | 8 | ✅ **Done — the empty `DSSAT_LAI_Assimilation` placeholder is no longer in the workspace checkout.** | An empty repo in the stack was ambiguous — now removed. | Low (done) |

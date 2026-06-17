@@ -31,8 +31,8 @@ dependencies:
   # - mpi4py=3.1.6
   - pip:
       # Shared package pins. Bump these deliberately when validating a new
-      # workspace release; avoid @main so clean installs are reproducible.
-      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.1.0
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.1.0
+      # workspace release; avoid branch pins so clean installs are reproducible.
+      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.2.0
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.2.0
       # Optional: AgERA5 weather source (requires Copernicus CDS credentials).
       # - cdsapi==0.7.3
