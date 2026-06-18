@@ -646,10 +646,10 @@ if __name__ == '__main__':
             else:  # LUCAS
                 process_soils_lucas(**_soil_kwargs, lucas_csv=LUCAS_CSV)
             sol_files = sorted([f for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")])
-            with open(soilfile_DSSAT, "w") as out_fh:
+            with open(soilfile_DSSAT, "w", encoding="utf-8") as out_fh:
                 out_fh.write("*SOILS: Combined\n")
                 for sf in sol_files:
-                    with open(os.path.join(individual_sol_dir, sf)) as in_fh:
+                    with open(os.path.join(individual_sol_dir, sf), encoding="utf-8") as in_fh:
                         data       = in_fh.read()
                         first_star = data.find("\n*")
                         if first_star == -1:
@@ -824,7 +824,7 @@ if __name__ == '__main__':
 
             def _needs_extension(f: str) -> bool:
                 try:
-                    with open(f) as fh:
+                    with open(f, encoding="utf-8") as fh:
                         last = fh.readlines()[-1]
                     m = re.match(r"^\s*(\d+)", last)
                     if not m:
@@ -891,13 +891,41 @@ if __name__ == '__main__':
     _DSSATPRO_SRC      = os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
     _DSSATPRO_OK       = os.path.exists(_DSSATPRO_SRC)
     _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE"}
+
+    dssat_dir = os.environ.get("DSSAT_DIR", os.environ.get("DSSAT_BASE", DSSAT_BASE))
+
+    def _is_custom_or_missing(fname: str) -> bool:
+        ext = os.path.splitext(fname)[1].upper()
+        stock_folder = "Genotype" if ext in {".CUL", ".ECO", ".SPE"} else "StandardData"
+        stock_path = os.path.join(dssat_dir, stock_folder, fname)
+        if not os.path.exists(stock_path):
+            return True
+        local_path = os.path.join(TEMPLATE_DIR, fname)
+        if os.path.getsize(local_path) != os.path.getsize(stock_path):
+            return True
+        import hashlib
+        def get_hash(p):
+            try:
+                with open(p, "rb") as fh:
+                    return hashlib.md5(fh.read()).hexdigest()
+            except Exception:
+                return ""
+        if get_hash(local_path) != get_hash(stock_path):
+            return True
+        return False
+
     # Genotype/support files ALWAYS come from the shared template dir, never the
     # DSSAT48 install: every run folder gets the .CUL/.ECO/.SPE/.SDA/.WDA/.CDE that
     # live in TEMPLATE_DIR, so the local copy overrides whatever DSSATPRO would
     # otherwise resolve from DSSAT48. Linked by symlink (USE_SYMLINKS, cheap) with
     # an automatic copy fallback. To add a crop, drop its files into TEMPLATE_DIR.
-    _SUPPORT_FILES     = [f for f in os.listdir(TEMPLATE_DIR)
-                          if os.path.splitext(f)[1].upper() in _SUPPORT_EXTS]
+    copy_support = BUNDLE_GENOTYPE_FILES or not _DSSATPRO_OK
+    _SUPPORT_FILES     = []
+    for f in os.listdir(TEMPLATE_DIR):
+        if os.path.splitext(f)[1].upper() in _SUPPORT_EXTS:
+            if copy_support or _is_custom_or_missing(f):
+                _SUPPORT_FILES.append(f)
+
     # Symlink for local runs; force a real copy when building a portable bundle
     # (ZIP_FOR_HPC / bundle_genotype_files) - symlinks don't survive the move.
     _SUPPORT_SYMLINK   = USE_SYMLINKS and not ZIP_FOR_HPC and not BUNDLE_GENOTYPE_FILES
@@ -915,7 +943,7 @@ if __name__ == '__main__':
         os.makedirs(point_dir, exist_ok=True)
 
         if assigned_soil_id is None:
-            with open(os.path.join(point_dir, "SOIL.SOL"), "w") as fh:
+            with open(os.path.join(point_dir, "SOIL.SOL"), "w", encoding="utf-8") as fh:
                 fh.write("*SOIL ERROR\nNo Soil ID assigned\n")
             return
 
@@ -931,11 +959,11 @@ if __name__ == '__main__':
         if os.path.exists(src_sol):
             shutil.copy2(src_sol, dst_sol)
         else:
-            with open(dst_sol, "w") as fh:
+            with open(dst_sol, "w", encoding="utf-8") as fh:
                 fh.write(f"*SOIL ERROR\nSource missing: {src_fname}\n")
 
         try:
-            with open(TEMPLATE_FILE_PATH) as fh:
+            with open(TEMPLATE_FILE_PATH, encoding="utf-8") as fh:
                 content = fh.read()
             if TEMPLATE_SOIL_ID_PLACEHOLDER in content:
                 if f"   {TEMPLATE_SOIL_ID_PLACEHOLDER}" in content:
@@ -1002,7 +1030,7 @@ if __name__ == '__main__':
                     line = line.replace("ELEV", s_elev, 1)
                 content = content[:coord_match.start()] + line + content[coord_match.end():]
 
-            with open(os.path.join(point_dir, TEMPLATE_FILE_NAME), "w") as fh:
+            with open(os.path.join(point_dir, TEMPLATE_FILE_NAME), "w", encoding="utf-8") as fh:
                 fh.write(content)
         except Exception as exc:
             print(f"Warning: could not write experiment file for {ID}: {exc}")
@@ -1163,7 +1191,7 @@ if __name__ == '__main__':
         print("=" * 60)
 
         metadata_path = os.path.join(DSSAT_RUN_DIR, "README_CONFIG.txt")
-        with open(metadata_path, "w") as fh:
+        with open(metadata_path, "w", encoding="utf-8") as fh:
             fh.write("=" * 60 + "\n")
             fh.write(f"DSSAT RUN CONFIGURATION: {datetime.now()}\n")
             fh.write("=" * 60 + "\n")

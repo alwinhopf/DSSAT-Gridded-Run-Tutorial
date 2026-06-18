@@ -427,8 +427,49 @@ SOIL_DOWNLOAD_RETRIES <- as.integer(cfg_get("soil_download_retries", 3))
 BUNDLE_GENOTYPE_FILES <- isTRUE(as.logical(cfg_get("bundle_genotype_files", FALSE)))
 COPY_SUPPORT_FILES <- BUNDLE_GENOTYPE_FILES || ZIP_FOR_HPC ||
   !file.exists(file.path(dirname(DSSAT_EXE_PATH), "DSSATPRO.V48"))
-if (!COPY_SUPPORT_FILES)
-  message("Genotype files resolved via DSSATPRO.V48 (not copied per point — faster).")
+
+is_custom_or_missing <- function(fname, template_dir, dssat_dir) {
+  ext <- toupper(tools::file_ext(fname))
+  stock_folder <- if (ext %in% c("CUL", "ECO", "SPE")) "Genotype" else "StandardData"
+  stock_path <- file.path(dssat_dir, stock_folder, fname)
+  if (!file.exists(stock_path)) {
+    return(TRUE)
+  }
+  local_path <- file.path(template_dir, fname)
+  if (!file.exists(local_path)) {
+    return(FALSE)
+  }
+  if (file.info(local_path)$size != file.info(stock_path)$size) {
+    return(TRUE)
+  }
+  
+  # Compare MD5
+  get_hash <- function(p) {
+    tryCatch({
+      as.character(tools::md5sum(p))
+    }, error = function(e) "")
+  }
+  
+  if (get_hash(local_path) != get_hash(stock_path)) {
+    return(TRUE)
+  }
+  return(FALSE)
+}
+
+# Precompute support files to copy
+all_templates <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = FALSE)
+if (COPY_SUPPORT_FILES) {
+  SUPPORT_FILES <- all_templates
+  message("Genotype files resolution: BUNDLE_GENOTYPE_FILES/ZIP_FOR_HPC or no DSSATPRO.V48 (copying all support files).")
+} else {
+  SUPPORT_FILES <- character()
+  for (f in all_templates) {
+    if (is_custom_or_missing(f, TEMPLATE_DIR, DSSAT_BASE)) {
+      SUPPORT_FILES <- c(SUPPORT_FILES, f)
+    }
+  }
+  message(sprintf("Genotype files resolved via DSSATPRO.V48. Copying %d custom/missing support file(s) per point.", length(SUPPORT_FILES)))
+}
 
 # --- 8. Parallel ---
 # Core counts are read from config.yml (soil_cores / weather_cores / dssat_cores).
@@ -662,7 +703,7 @@ is_wth_valid <- function(id, dir, end_yr) {
   if (file.info(f)$size == 0) return(FALSE)
   
   tryCatch({
-    lines <- tail(readLines(f, warn = FALSE), 50)
+    lines <- tail(readLines(f, warn = FALSE, encoding = "UTF-8"), 50)
     if (length(lines) == 0) return(FALSE)
     data_lines <- grep("^\\s*[0-9]{5,7}\\b", lines, value = TRUE)
     if (length(data_lines) == 0) return(FALSE)
@@ -689,7 +730,7 @@ clean_invalid_soils <- function(dir, ids) {
       is_valid <- tryCatch({
         if (file.info(f)$size == 0) FALSE
         else {
-          lines <- readLines(f, n = 5, warn = FALSE)
+          lines <- readLines(f, n = 5, warn = FALSE, encoding = "UTF-8")
           if (length(lines) == 0) FALSE
           else if (any(grepl("ERROR", lines, ignore.case = TRUE))) FALSE
           else if (!any(grepl("^\\s*\\*", lines))) FALSE
@@ -716,13 +757,15 @@ clear_run_diagnostics <- function(ids) {
 write_input_error <- function(id, reason) {
   dir.create(id, showWarnings = FALSE, recursive = TRUE)
   line <- sprintf("[%s] ID %s: INPUT: %s", format(Sys.time()), id, reason)
-  writeLines(line, file.path(id, "_run_error.log"))
+  con <- file(file.path(id, "_run_error.log"), open = "w", encoding = "UTF-8")
+  writeLines(line, con = con)
+  close(con)
 }
 
 soil_input_issue <- function(id) {
   f <- file.path(id, "SOIL.SOL")
   if (!file.exists(f)) return("SOIL.SOL is missing")
-  lines <- tryCatch(readLines(f, warn = FALSE), error = function(e) character())
+  lines <- tryCatch(readLines(f, warn = FALSE, encoding = "UTF-8"), error = function(e) character())
   if (!length(lines)) return("SOIL.SOL is empty or unreadable")
   if (any(grepl("^\\*SOIL ERROR", lines))) {
     return(paste(trimws(lines[grepl("^\\*SOIL ERROR|^Source missing|^No Soil ID", lines)]),
@@ -792,7 +835,7 @@ message("All checks passed. Starting pipeline...")
 extend_weather_smart_single <- function(f, reference_year) {
   
   # --- STAGE 1: FAST READ ---
-  lines <- readLines(f)
+  lines <- readLines(f, encoding = "UTF-8")
   
   # 1. Identify data start
   data_start_idx <- grep("^\\s*[0-9]+", lines)[1]
@@ -936,7 +979,9 @@ extend_weather_smart_single <- function(f, reference_year) {
   })
   formatted_body <- do.call(paste, c(list(date_col_str), val_cols_list, list(sep = "")))
   
-  writeLines(c(header_lines, formatted_body), f)
+  con <- file(f, open = "w", encoding = "UTF-8")
+  writeLines(c(header_lines, formatted_body), con = con)
+  close(con)
   return(TRUE)
 }
 
@@ -1094,10 +1139,10 @@ if (RUN_STEP_1_SOILS) {
     # Define combine helper
     combine_sol_files_local <- function(input_folder, output_file_path) {
       sol_files <- list.files(path = input_folder, pattern = "\\.SOL$", full.names = TRUE)
-      out_con <- file(output_file_path, open = "wt")
+      out_con <- file(output_file_path, open = "wt", encoding = "UTF-8")
       cat("*SOILS: Combined\n", file = out_con)
       for (f in sol_files) {
-        lines <- readLines(f, warn = FALSE)
+        lines <- readLines(f, warn = FALSE, encoding = "UTF-8")
         start <- grep("^\\*", lines)[1]
         if(!is.na(start)) writeLines(lines[start:length(lines)], out_con)
       }
@@ -1364,7 +1409,7 @@ if (RUN_STEP_2_WEATHER) {
     
     files_to_extend <- Filter(function(f) {
       tryCatch({
-        last_line <- tail(readLines(f, n = -1), 1)
+        last_line <- tail(readLines(f, n = -1, encoding = "UTF-8"), 1)
         if (length(last_line) == 0) return(TRUE) 
         last_date_str <- regmatches(last_line, regexpr("^\\s*\\d+", last_line))
         if (length(last_date_str) == 0) return(TRUE)
@@ -1488,7 +1533,9 @@ create_folders_and_files <- function(i) {
   dir.create(ID, showWarnings = FALSE)
   
   if (is.na(assigned_soil_id)) {
-    writeLines(c("*SOIL ERROR", "No Soil ID assigned"), file.path(ID, "SOIL.SOL"))
+    con <- file(file.path(ID, "SOIL.SOL"), open = "w", encoding = "UTF-8")
+    writeLines(c("*SOIL ERROR", "No Soil ID assigned"), con = con)
+    close(con)
     return(NULL)
   }
   
@@ -1504,11 +1551,15 @@ create_folders_and_files <- function(i) {
   src_path <- file.path(individual_soil_folder, source_filename)
   dest_path <- file.path(ID, "SOIL.SOL")
   if (file.exists(src_path)) file.copy(src_path, dest_path, overwrite = TRUE)
-  else writeLines(c("*SOIL ERROR", paste("Source missing:", source_filename)), dest_path)
+  else {
+    con <- file(dest_path, open = "w", encoding = "UTF-8")
+    writeLines(c("*SOIL ERROR", paste("Source missing:", source_filename)), con = con)
+    close(con)
+  }
   
   # 2. HANDLE EXPERIMENT FILE
   tryCatch({
-    content <- readLines(TEMPLATE_FILE_PATH)
+    content <- readLines(TEMPLATE_FILE_PATH, encoding = "UTF-8")
     if (!any(grepl(TEMPLATE_SOIL_ID_PLACEHOLDER, content, fixed=TRUE))) {
       if(any(grepl("ID_SOIL", content, fixed=TRUE))) {
         if (any(grepl("   ID_SOIL", content, fixed=TRUE))) {
@@ -1544,7 +1595,7 @@ create_folders_and_files <- function(i) {
         elev <- -99  # DSSAT "missing"; valid number so no read error
         wth_src <- file.path(weather_repo, paste0(ID, ".WTH"))
         if (file.exists(wth_src)) {
-          hdr <- readLines(wth_src, n = 4, warn = FALSE)
+          hdr <- readLines(wth_src, n = 4, warn = FALSE, encoding = "UTF-8")
           h_i <- grep("\\bELEV\\b", hdr)
           if (length(h_i) >= 1 && h_i[1] < length(hdr)) {
             nm <- strsplit(trimws(sub("^@", "", hdr[h_i[1]])), "\\s+")[[1]]
@@ -1573,18 +1624,19 @@ create_folders_and_files <- function(i) {
       content
     }, error = function(e) content)
 
-    writeLines(content, file.path(ID, paste0(ID, ".", tools::file_ext(TEMPLATE_FILE_NAME))))
+    con <- file(file.path(ID, paste0(ID, ".", tools::file_ext(TEMPLATE_FILE_NAME))), open = "w", encoding = "UTF-8")
+    writeLines(content, con = con)
+    close(con)
   }, error = function(e) return(NULL))
   
   # 3. HANDLE WEATHER FILE
   wth <- file.path(weather_repo, paste0(ID, ".WTH"))
   if (file.exists(wth)) file.copy(wth, file.path(ID, basename(wth)))
   
-  # 4. EXTRAS — genotype/SDA/CO2 files. Skipped when DSSATPRO.V48 (next to the
-  # executable) can resolve them from the install dir; see COPY_SUPPORT_FILES.
-  if (COPY_SUPPORT_FILES) {
-    files_to_copy <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = TRUE)
-    if (length(files_to_copy) > 0) file.copy(files_to_copy, ID)
+  # 4. EXTRAS — genotype/SDA/CO2 files (only copy files listed in SUPPORT_FILES).
+  if (length(SUPPORT_FILES) > 0) {
+    files_to_copy <- file.path(TEMPLATE_DIR, SUPPORT_FILES)
+    file.copy(files_to_copy, ID, overwrite = TRUE)
   }
 }
 
@@ -1598,7 +1650,7 @@ if (RESUME_DSSAT_RUNS) {
 if (length(ids_to_create_indices) > 0) {
   cl <- makeCluster(SOIL_CORES)
   on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
-  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "PER_POINT_SOIL", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "COPY_SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
+  clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "PER_POINT_SOIL", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
   parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
   on.exit()  # clear the guard — cluster stopped cleanly
@@ -1801,7 +1853,9 @@ if (RUN_DSSAT_EXECUTION) {
     "--- PATHS ---",
     sprintf("Soil Map CSV:      %s", soil_mapping_file)
   )
-  writeLines(metadata_content, metadata_file)
+  metadata_con <- file(metadata_file, open = "w", encoding = "UTF-8")
+  writeLines(metadata_content, con = metadata_con)
+  close(metadata_con)
   message("Metadata file created.")
   
   if (ZIP_FOR_HPC) {

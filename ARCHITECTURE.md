@@ -4,7 +4,7 @@
 > workspace fit together, the role of each, the data they exchange, and a prioritized
 > set of suggested structural improvements.
 >
-> **Last verified:** 2026-06-17 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
+> **Last verified:** 2026-06-18 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
 > (the canonical engine).
 
 ## Contents
@@ -168,7 +168,7 @@ shapefile / boundary / CDL-NLCD raster
 
 ## 7. Dependency matrix
 
-Engine logic now lives in the shared **`dssatengine`** package (R + Python, v0.2.0); the
+Engine logic now lives in the shared **`dssatengine`** package (R + Python, v0.3.0); the
 "Engine" column records how each repo obtains it — import, `ENGINE_DIR` reference, or not
 at all. **No repo carries a hand-copied engine fork anymore.**
 
@@ -177,7 +177,7 @@ at all. **No repo carries a hand-copied engine fork anymore.**
 | DSSAT_Gridded_Run_Tutorial | ✓ | ✓ | imports (canonical wrapper) |
 | Bioenergy_Model_Input_Comparison | ✓ | ✓ | via `ENGINE_DIR` → Gridded |
 | dssat_lca_tea | ✓ (via yields) | — (reads DSSAT output CSVs) | — (consumes CSVs) |
-| dssatcalibrator | ✓ | — | — (own config-driven DSSAT wrapper) |
+| dssatcalibrator | ✓ | optional (`[acquire]`) | optional executor (`[shared]`) |
 | DSSAT_ML_Phenology_Prediction | ✓ | ✓ | — (own pipeline) |
 | DSSAT-SubField-MILP-Analysis | ✓ | ✓ | imports |
 | pythia | — | — | — (independent third-party tool) |
@@ -193,8 +193,8 @@ stand.
 
 | # | Improvement | Problem it solves | Effort |
 |---|---|---|---|
-| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, v0.2.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT-SubField-MILP-Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix and explicit `treatment_list` support). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
-| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (`dssatutils@v0.2.0`, `dssatengine@v0.2.0`, DSSAT48 build notes). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
+| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, v0.3.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT-SubField-MILP-Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`; `dssatcalibrator` can use its public executor behind `execution.backend: dssatengine`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix, explicit `treatment_list` support, and fail-loud DSSAT execution). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
+| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (existing gridded consumers remain pinned to `dssatengine@v0.2.0`; `dssatcalibrator[shared]` pins `dssatengine@v0.3.0`; shared utilities remain `dssatutils@v0.2.0`). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
 | 3 | **Centralize `dssat_templates/` genotype files.** The same `.CUL/.ECO/.SPE/.CDE` are duplicated across most repos. Ship them from `DSSAT48` (resolved via `DSSATPRO.V48`) or a small shared `dssat-templates` package; keep only project-specific FileX locally. | Genotype edits (e.g. the cereal-rye `TKFH = -25°C` ecotype) must currently be hand-synced. | Medium |
 | 4 | ✅ **Done — spaced folder names removed**; current repo names still preserve historical capitalization/hyphens where already published, so new repos should use `snake_case` but old repo names are not churned. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
 | 5 | ✅ **Done — workspace index README** exists at the workspace root (`README.md`), with a repo table (tier / language / purpose). | New contributors no longer have to open each folder to learn what it is. | Low (done) |
