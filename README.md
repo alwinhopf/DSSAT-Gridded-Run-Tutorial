@@ -572,19 +572,25 @@ Set `SOIL_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 |-------|----------|--------|-------|
 | `SSURGO` | United States only | Queries USDA Soil Data Access (SDA) web service per point | Most detailed US data; requires internet; queries one point at a time |
 | `SOILGRIDS_10K` | Global | Reads a pre-downloaded master `.SOL` file at 10 km resolution | Fastest for large domains; download the country file once (see below) |
+| `AGMIP` | Global cropland | Reads the AgMIP/Han DSSAT-ready country `.SOL` files at 5 arc-min (~10 km) | Semantic alias for the Han et al. global DSSAT soil profile database; use this when you want the source named explicitly in scenario IDs |
 | `SOILGRIDS_ONLINE` | Global | Queries ISRIC SoilGrids 2.0 via REST API or VRT/GDAL virtual rasters | Flexible; set `soilgrids_mode: REST` (interactive) or `VRT` (HPC batch) in `config.yml` — see [VRT vs REST](#soilgrids-online-vrt-vs-rest-api) |
 | `HWSD` | Global | Reads the FAO Harmonized World Soil Database v2.0 (raster of mapping-unit IDs + SQLite attribute DB) | The FAO "official" ~1 km global product; the long-standing reference for global gridded crop-model studies. **One-time manual download** from FAO (not a streaming API): set `hwsd_raster_file` + `hwsd_db_file` in `config.yml`. Samples the dominant soil per mapping unit and computes DSSAT physics. Requires `rasterio` (Python) / `terra`+`RSQLite` (R). |
+| `HIHYDROSOIL` | Global | Reads local HiHydroSoil v2.0 hydraulic GeoTIFF/VRT rasters | Uses pF4.2, pF2/pF2.5, and saturated-water rasters directly for LL/DUL/SAT; set `hihydrosoil_raster_dir`. If sand/silt/clay rasters are absent it uses the product's USDA texture-class raster as a documented approximation. |
+| `SLGA` | Australia | Reads local Soil and Landscape Grid of Australia rasters | Australian regional soil source; set `slga_raster_dir`. Computes DSSAT hydraulics from local sand/clay/silt/BD/OC rasters using the same Saxton-Rawls path as SoilGrids. |
+| `WISE30SEC` | Global | Reads local WISE30sec GeoTIFF/VRT rasters | Global soil fallback using the same texture/BD/OC to Saxton-Rawls path as SLGA; set `wise30sec_raster_dir`. |
+| `WOSIS` | Global point profiles | Reads a processed WoSIS layer CSV and assigns nearest profile | For calibration/validation or sparse measured-profile runs. Requires a harmonized CSV (`wosis_profile_csv`) with sand/clay/silt/BD/OC and layer depths. |
 
-### SoilGrids 10K pre-formatted files
+### AgMIP / SoilGrids 10K pre-formatted files
 
-Pre-formatted DSSAT-ready `.SOL` files at 10 km resolution, organised by country:
+Pre-formatted DSSAT-ready `.SOL` files at 5 arc-min (~10 km) resolution, organised by country:
 
 - **Download (Harvard Dataverse):** https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/1PEEY0
-- **Citation:** Folberth et al. (2019). *Environmental Modelling & Software* 111:218–228. https://www.sciencedirect.com/science/article/pii/S1364815218313033
+- **Citation:** Han, Ines, and Koo (2019). *Environmental Modelling & Software* 119:70–83. https://doi.org/10.1016/j.envsoft.2019.05.012
 
-Download the country file you need (e.g. `US.SOL`), place it under `SoilGrids/`, and set:
-```r
-EXTERNAL_SOIL_FILE <- file.path(MAIN_PROJECT_DIR, "SoilGrids", "US.SOL")
+Download the country file you need (e.g. `US.SOL`), place it under `SoilGrids/`, and set either source name:
+```yaml
+soil_source: "AGMIP"          # or "SOILGRIDS_10K" for the legacy label
+external_soil_file: "SoilGrids/US.SOL"
 ```
 
 ### HWSD v2.0 (FAO Harmonized World Soil Database)
@@ -635,6 +641,14 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 | `OPEN_METEO` | Global (1940–present) | ~9–11 km daily (ERA5/ERA5-Land) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Daily dewpoint and RH are not available (written as `-99`). Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
 | `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
 | `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless** — needs a free [Copernicus CDS](https://cds.climate.copernicus.eu/) API key in `~/.cdsapirc`, **plus a one-time licence acceptance** for the dataset (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python) / `ecmwfr`+`terra` (R). |
+| `CHELSA_W5E5` | Global (1979–2016) | 30 arcsec (~1 km) daily | Topographically downscaled daily climate forcing. Requires local NetCDFs (`chelsa_nc_dir`) with `tasmax`, `tasmin`, `pr`, and `rsds`. |
+| `AGMERRA` / `AGCFSR` | Global (1980–2010) | 0.25° daily | AgMIP-standard historical climate forcing for benchmark/intercomparison studies. Requires local NetCDFs (`agmerra_nc_dir` / `agcfsr_nc_dir`). |
+| `SILO` | Australia (1889–present) | Australian gridded daily | Australian regional weather source. Requires local SILO NetCDFs via `silo_nc_dir`. |
+| `PRISM` | Contiguous US (daily 1981–present) | 4 km daily | Downloads/caches PRISM public 4 km daily grids (`prism_cache_dir`) for precipitation, Tmax, Tmin, and dewpoint. SRAD/wind/RH are written missing (`-99`). |
+| `MSWX` | Global | ~0.1° daily | Full local NetCDF weather forcing; set `mswx_nc_dir`. |
+| `MSWEP` | Global precipitation | ~0.1° daily | Hybrid source: NASA POWER supplies non-rain variables, local MSWEP NetCDFs replace rainfall; set `mswep_nc_dir`. |
+| `CRUJRA` | Global | 0.5° daily | Local CRU-JRA NetCDF weather forcing; set `crujra_nc_dir`. |
+| `TERRACLIMATE` | Global | ~4 km monthly | Monthly product written only as screening/climatology input; set `terraclimate_nc_dir`. Do not treat as true daily weather. |
 
 Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give full global daily coverage, so Europe, Asia, and Africa runs need no US-only source. For **rainfed crops in the tropics/semi-arid**, `NASA_POWER_CHIRPS` gives the best rainfall; for **all-variable global incl. high latitudes**, `AGERA5` (key required) is the highest-resolution option. Soil coverage is likewise global via `SOILGRIDS_10K` / `SOILGRIDS_ONLINE` (ISRIC SoilGrids) or `HWSD` (FAO).
 

@@ -53,13 +53,15 @@ weather_source:       "NASA_POWER"
 weather_start_year:   1992           # NASA_POWER not available before 1984
 weather_end_year:     1992
 chirps_resolution:    "p05"          # NASA_POWER_CHIRPS only: p05 (~5.5km) | p25 (~28km, lighter)
+agera5_max_concurrent_requests: 4    # AgERA5 only: concurrent CDS requests; 4 is a conservative max
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
 eobs_use_cds:         false          # EOBS only: true = fetch an area subset via Copernicus CDS (needs ~/.cdsapirc)
 xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)
 cmfd_nc_dir:          ""             # CMFD only: folder of CMFD NetCDFs temp/prec/srad/shum/pres/wind (blank = cmfd_netcdf/)
 
-# --- Soil ---
-soil_source:          "SSURGO"  # SSURGO | GNATSGO | ISDASOIL | LUCAS | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD
+soil_source:          "SSURGO_ALDERMAN"  # SSURGO | GNATSGO | ISDASOIL | LUCAS | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD | SSURGO_ALDERMAN
+statsgo:              false
+standardize_layers:   true
 # GNATSGO  (US, 30m, keyless): gap-free USDA grid; fills SSURGO's un-surveyed holes.
 # ISDASOIL (Africa, 30m, keyless): iSDAsoil COGs (0-20 & 20-50cm), Saxton-Rawls.
 # LUCAS    (Europe, keyless but ESDAC request): nearest measured topsoil sample (see lucas_csv).

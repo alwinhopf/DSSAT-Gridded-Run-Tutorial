@@ -15,7 +15,7 @@ Story County, IA
  1 WH RY0001 Cereal_Rye
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000   -99     0 DR000     0     0 00000 -99    180  SOIL_ID    -99
+ 1 00000000 WID00000   -99     0 DR000     0     0 00000 -99    180  SID00000   -99
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
  1        LATITUDE       LONGITUDE       100                 0     0     0     0   -99   -99
 *INITIAL CONDITIONS

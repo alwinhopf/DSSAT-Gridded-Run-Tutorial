@@ -307,7 +307,7 @@
 
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000   -99   -99   -99   -99   -99   -99  -99   -99  00000000      -99
+ 1 00000000 WID00000   -99   -99   -99   -99   -99   -99  -99   -99  SID00000      -99
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
  1        LATITUDE       LONGITUDE      ELEV                 0     0     0     0 FH201   100
 

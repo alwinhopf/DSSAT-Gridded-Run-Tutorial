@@ -48,27 +48,31 @@ pkgs <- c(
 renv::install(pkgs)
 
 # --- Shared Git packages: dssatutils + dssatengine -------------------------
-# These live in their own GitHub repos and are reused across projects, so we
-# install them FROM GITHUB (not a local "../path") and let renv pin the exact
-# commit in renv.lock via the snapshot below. On a fresh machine
-# `renv::restore()` then reinstalls the identical commit automatically: no
-# devtools::install_local(), and no "did I reinstall after editing?" version
-# skew.
+# These live in their own GitHub repos and are reused across projects. During
+# local development, prefer sibling checkouts if they exist; on a fresh machine,
+# install from GitHub main and let renv pin the exact commit in renv.lock via the
+# snapshot below.
 #
-# We use the "user/repo@tag" shorthand (rather than a branch URL) on
-# purpose: renv resolves this through the GitHub API and downloads a tarball, so
-# it works on a bare laptop with NO local git client installed. The resolved SHA
-# is still frozen into renv.lock by the snapshot below. The repos are public, so
-# no PAT is required; GitHub's unauthenticated API limit (60 req/hr) is plenty
-# for two installs. If you later make them private, set a PAT once first:
+# The GitHub fallback uses "user/repo" rather than a tag because the package
+# versions can move ahead before release tags are cut. The resolved SHA is still
+# frozen into renv.lock by the snapshot below. The repos are public, so no PAT is
+# required; GitHub's unauthenticated API limit (60 req/hr) is plenty for two
+# installs. If you later make them private, set a PAT once first:
 #   usethis::create_github_token(); gitcreds::gitcreds_set()
 #
-# PREREQUISITE: commit + push any local edits to dssatutils / dssatengine FIRST,
-# otherwise the GitHub install won't include them.
-renv::install(c(
-  "alwinhopf/dssatutils@v0.2.0",
-  "alwinhopf/dssatengine@v0.2.0"
-))
+# PREREQUISITE for fresh machines: commit + push any local edits to dssatutils /
+# dssatengine FIRST, otherwise the GitHub install won't include them.
+workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
+for (pkg in c("dssatutils", "dssatengine")) {
+  local_dir <- file.path(workspace_root, pkg)
+  target <- if (file.exists(file.path(local_dir, "DESCRIPTION"))) {
+    local_dir
+  } else {
+    paste0("alwinhopf/", pkg)
+  }
+  message(sprintf("Installing shared package '%s' from %s", pkg, target))
+  renv::install(target, prompt = FALSE)
+}
 
 # Snapshot the FULL project library (CRAN packages + both Git packages) so
 # renv.lock records every dependency, including the Git RemoteSha values that
@@ -76,5 +80,4 @@ renv::install(c(
 renv::snapshot(type = "all", prompt = FALSE)
 
 message("\nrenv.lock written. Commit it so a fresh machine can `renv::restore()`.")
-
 

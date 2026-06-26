@@ -200,7 +200,9 @@ WEATHER_END_YEAR   = int(cfg_get("weather_end_year", 1983))
 CHIRPS_RESOLUTION  = str(cfg_get("chirps_resolution", "p05"))
 
 # Soil settings
-SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # "SSURGO" | "SOILGRIDS_10K" | "SOILGRIDS_ONLINE" | "POLARIS"
+SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # SSURGO | SOILGRIDS_10K | AGMIP | SOILGRIDS_ONLINE | POLARIS
+STATSGO            = bool(cfg_get("statsgo", False))
+STANDARDIZE_LAYERS = bool(cfg_get("standardize_layers", False))
 EXTERNAL_SOIL_FILE = cfg_get("external_soil_file",
                              os.path.join(INPUT_ROOT_DIR, "SoilGrids", "US.SOL"))
 # SOILGRIDS_ONLINE only: "REST" (JSON API, rate-limited, no extra deps) or
@@ -226,8 +228,23 @@ EOBS_USE_CDS       = bool(cfg_get("eobs_use_cds", False))
 # Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
 XAVIER_NC_DIR      = cfg_get("xavier_nc_dir", os.path.join(INPUT_ROOT_DIR, "xavier_netcdf"))
 CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(INPUT_ROOT_DIR, "cmfd_netcdf"))
+# Large local/cache-backed weather products.
+CHELSA_NC_DIR      = cfg_get("chelsa_nc_dir", os.path.join(INPUT_ROOT_DIR, "chelsa_w5e5_netcdf"))
+AGMERRA_NC_DIR     = cfg_get("agmerra_nc_dir", os.path.join(INPUT_ROOT_DIR, "agmerra_netcdf"))
+AGCFSR_NC_DIR      = cfg_get("agcfsr_nc_dir", os.path.join(INPUT_ROOT_DIR, "agcfsr_netcdf"))
+SILO_NC_DIR        = cfg_get("silo_nc_dir", os.path.join(INPUT_ROOT_DIR, "silo_netcdf"))
+PRISM_CACHE_DIR    = cfg_get("prism_cache_dir", os.path.join(INPUT_ROOT_DIR, "prism_cache"))
+MSWX_NC_DIR        = cfg_get("mswx_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswx_netcdf"))
+MSWEP_NC_DIR       = cfg_get("mswep_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswep_netcdf"))
+CRUJRA_NC_DIR      = cfg_get("crujra_nc_dir", os.path.join(INPUT_ROOT_DIR, "crujra_netcdf"))
+TERRACLIMATE_NC_DIR = cfg_get("terraclimate_nc_dir", os.path.join(INPUT_ROOT_DIR, "terraclimate_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
 LUCAS_CSV          = cfg_get("lucas_csv", os.path.join(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
+# Local/cache-backed soil products.
+HIHYDROSOIL_RASTER_DIR = cfg_get("hihydrosoil_raster_dir", os.path.join(INPUT_ROOT_DIR, "HiHydroSoil"))
+SLGA_RASTER_DIR        = cfg_get("slga_raster_dir", os.path.join(INPUT_ROOT_DIR, "SLGA"))
+WISE30SEC_RASTER_DIR   = cfg_get("wise30sec_raster_dir", os.path.join(INPUT_ROOT_DIR, "WISE30sec"))
+WOSIS_PROFILE_CSV      = cfg_get("wosis_profile_csv", os.path.join(INPUT_ROOT_DIR, "WoSIS", "wosis_processed_profiles.csv"))
 
 # Constructed names
 SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}"
@@ -250,6 +267,7 @@ DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
 AGERA5_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "agera5_netcdf_cache")
+AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 4))
 DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR        = os.path.join(OUTPUT_ROOT_DIR, "eobs_cds_cache")
 GRIDPOINTS_OUTPUT_DIR = GRIDPOINTS_DIR
@@ -274,7 +292,25 @@ LONG_COLUMN     = "LONG"
 # --- 0.7 Weather extension --------------------------------------------------
 EXTEND_WEATHER_DATA    = bool(cfg_get("extend_weather_data", False))
 WEATHER_REFERENCE_YEAR = int(cfg_get("weather_reference_year", WEATHER_END_YEAR))
+REPAIR_WEATHER_MISSING_VALUES = bool(cfg_get("repair_weather_missing_values", False))
+REPAIR_WEATHER_DATE_GAPS = bool(cfg_get("repair_weather_date_gaps", False))
+REPAIR_WEATHER_TEMPERATURE_INVERSIONS = bool(cfg_get("repair_weather_temperature_inversions", False))
+AUDIT_WEATHER_QUALITY = bool(cfg_get("audit_weather_quality", False))
+WEATHER_REPAIR_MAX_GAP_DAYS = int(cfg_get("weather_repair_max_gap_days", 3))
+WEATHER_REPAIR_WINDOW_DAYS = int(cfg_get("weather_repair_window_days", 2))
+WEATHER_QUALITY_FLATLINE_DAYS = int(cfg_get("weather_quality_flatline_days", 10))
+WEATHER_REPAIR_VARIABLES = cfg_get(
+    "weather_repair_variables",
+    ["SRAD", "TMAX", "TMIN", "RAIN", "TDEW", "RH2M", "WIND"],
+)
+if isinstance(WEATHER_REPAIR_VARIABLES, str):
+    WEATHER_REPAIR_VARIABLES = [v.strip() for v in WEATHER_REPAIR_VARIABLES.split(",") if v.strip()]
 
+# Soil/weather placeholders in the *FIELDS data row of the FileX template:
+#   SID00000 -> per-point soil ID        (preferred; 8-char, ID_SOIL column only)
+#   WID00000 -> per-point weather/WSTA ID (preferred; 8-char, WSTA column only)
+# Legacy templates may instead use SOIL_ID / ID_SOIL for soil and 00000000 for
+# WSTA; both engines still handle those as a fallback (see _create_folders_and_files).
 TEMPLATE_SOIL_ID_PLACEHOLDER = "SOIL_ID"
 
 # --- 0.8 DSSAT settings -----------------------------------------------------
@@ -486,21 +522,41 @@ from dssatutils.weather_dwd           import process_weather_dwd
 from dssatutils.weather_eobs          import process_weather_eobs
 from dssatutils.weather_xavier        import process_weather_xavier
 from dssatutils.weather_cmfd          import process_weather_cmfd
+from dssatutils.weather_chelsa_w5e5   import process_weather_chelsa_w5e5
+from dssatutils.weather_agmip         import process_weather_agmerra, process_weather_agcfsr
+from dssatutils.weather_silo          import process_weather_silo
+from dssatutils.weather_prism         import process_weather_prism
+from dssatutils.weather_mswx          import process_weather_mswx
+from dssatutils.weather_mswep         import process_weather_mswep
+from dssatutils.weather_crujra        import process_weather_crujra
+from dssatutils.weather_terraclimate  import process_weather_terraclimate
+from dssatutils.weather_repair        import (
+    audit_weather_quality,
+    repair_weather_date_gaps,
+    repair_weather_missing_values,
+    repair_weather_temperature_inversions,
+)
 
 # Soil sources that write one .SOL per grid point named by the point ID (so
 # SOIL_ID == point ID and the per-point combine logic below applies). The other
 # sources (SoilGrids / HWSD) map points to shared profile IDs instead.
-_PER_POINT_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
+_PER_POINT_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")
 # Soil sources that need no pre-downloaded external file (queried online).
-_KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS")
+_KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS", "SSURGO_ALDERMAN")
 from dssatutils.soil_ssurgo           import process_soils_ssurgo
+from dssatutils.soil_ssurgo_alderman  import process_soils_ssurgo_alderman
 from dssatutils.soil_gnatsgo          import process_soils_gnatsgo
 from dssatutils.soil_isdasoil         import process_soils_isdasoil
 from dssatutils.soil_lucas            import process_soils_lucas
+from dssatutils.soil_agmip            import process_soils_agmip
 from dssatutils.soil_soilgrids        import process_soils_soilgrids
 from dssatutils.soil_soilgrids_online import process_soils_soilgrids_online
 from dssatutils.soil_polaris          import process_soils_polaris
 from dssatutils.soil_hwsd             import process_soils_hwsd
+from dssatutils.soil_hihydrosoil      import process_soils_hihydrosoil
+from dssatutils.soil_slga             import process_soils_slga
+from dssatutils.soil_wise30sec        import process_soils_wise30sec
+from dssatutils.soil_wosis            import process_soils_wosis
 
 print(f"Sourcing helper modules from: {PY_SCRIPTS_DIR}")
 
@@ -639,6 +695,8 @@ if __name__ == '__main__':
             )
             if SOIL_SOURCE == "SSURGO":
                 process_soils_ssurgo(**_soil_kwargs)
+            elif SOIL_SOURCE == "SSURGO_ALDERMAN":
+                process_soils_ssurgo_alderman(**_soil_kwargs, STATSGO=STATSGO, standardize_layers=STANDARDIZE_LAYERS)
             elif SOIL_SOURCE == "GNATSGO":
                 process_soils_gnatsgo(**_soil_kwargs)
             elif SOIL_SOURCE == "ISDASOIL":
@@ -658,10 +716,11 @@ if __name__ == '__main__':
                             first_star += 1
                         out_fh.write(data[first_star:])
 
-        elif SOIL_SOURCE == "SOILGRIDS_10K":
+        elif SOIL_SOURCE in ("SOILGRIDS_10K", "AGMIP"):
             if not os.path.exists(EXTERNAL_SOIL_FILE):
                 sys.exit(f"External soil file not found: {EXTERNAL_SOIL_FILE}")
-            process_soils_soilgrids(
+            _external_sol_fn = process_soils_agmip if SOIL_SOURCE == "AGMIP" else process_soils_soilgrids
+            _external_sol_fn(
                 grid_points=gridfile,
                 source_sol_file=EXTERNAL_SOIL_FILE,
                 output_csv_path=soilfile_CSV,
@@ -749,6 +808,46 @@ if __name__ == '__main__':
                 lat_col=LAT_COLUMN,
                 long_col=LONG_COLUMN,
             )
+        elif SOIL_SOURCE == "HIHYDROSOIL":
+            process_soils_hihydrosoil(
+                grid_points=gridfile,
+                hihydrosoil_raster_dir=HIHYDROSOIL_RASTER_DIR,
+                output_csv_path=soilfile_CSV,
+                output_sol_dir=individual_sol_dir,
+                id_col=POINT_ID_COLUMN,
+                lat_col=LAT_COLUMN,
+                long_col=LONG_COLUMN,
+            )
+        elif SOIL_SOURCE == "SLGA":
+            process_soils_slga(
+                grid_points=gridfile,
+                slga_raster_dir=SLGA_RASTER_DIR,
+                output_csv_path=soilfile_CSV,
+                output_sol_dir=individual_sol_dir,
+                id_col=POINT_ID_COLUMN,
+                lat_col=LAT_COLUMN,
+                long_col=LONG_COLUMN,
+            )
+        elif SOIL_SOURCE == "WISE30SEC":
+            process_soils_wise30sec(
+                grid_points=gridfile,
+                wise30sec_raster_dir=WISE30SEC_RASTER_DIR,
+                output_csv_path=soilfile_CSV,
+                output_sol_dir=individual_sol_dir,
+                id_col=POINT_ID_COLUMN,
+                lat_col=LAT_COLUMN,
+                long_col=LONG_COLUMN,
+            )
+        elif SOIL_SOURCE == "WOSIS":
+            process_soils_wosis(
+                grid_points=gridfile,
+                wosis_profile_csv=WOSIS_PROFILE_CSV,
+                output_csv_path=soilfile_CSV,
+                output_sol_dir=individual_sol_dir,
+                id_col=POINT_ID_COLUMN,
+                lat_col=LAT_COLUMN,
+                long_col=LONG_COLUMN,
+            )
 
         else:
             sys.exit(f"Unknown SOIL_SOURCE: {SOIL_SOURCE}")
@@ -760,9 +859,9 @@ if __name__ == '__main__':
     print("STEP 2: DOWNLOADING WEATHER DATA")
     print("=" * 60)
 
+    weather_dir = os.path.join(WEATHER_ROOT_DIR, WEATHER_DIR_NAME)
     if RUN_STEP_2_WEATHER:
         os.makedirs(WEATHER_ROOT_DIR, exist_ok=True)
-        weather_dir = os.path.join(WEATHER_ROOT_DIR, WEATHER_DIR_NAME)
         os.makedirs(weather_dir, exist_ok=True)
 
         existing_wth      = {os.path.splitext(f)[0]
@@ -800,7 +899,9 @@ if __name__ == '__main__':
                 process_weather_nasapower_chirps(
                     **common_args, chirps_cache_dir=CHIRPS_CACHE_DIR)
             elif WEATHER_SOURCE == "AGERA5":
-                process_weather_agera5(**common_args, agera5_cache_dir=AGERA5_CACHE_DIR)
+                agera5_args = dict(common_args)
+                agera5_args["n_cores"] = AGERA5_MAX_CONCURRENT_REQUESTS
+                process_weather_agera5(**agera5_args, agera5_cache_dir=AGERA5_CACHE_DIR)
             elif WEATHER_SOURCE == "DWD":
                 process_weather_dwd(**common_args, dwd_cache_dir=DWD_CACHE_DIR)
             elif WEATHER_SOURCE == "EOBS":
@@ -814,10 +915,118 @@ if __name__ == '__main__':
                 process_weather_xavier(**common_args, xavier_nc_dir=XAVIER_NC_DIR)
             elif WEATHER_SOURCE == "CMFD":
                 process_weather_cmfd(**common_args, cmfd_nc_dir=CMFD_NC_DIR)
+            elif WEATHER_SOURCE == "CHELSA_W5E5":
+                process_weather_chelsa_w5e5(**common_args, chelsa_nc_dir=CHELSA_NC_DIR)
+            elif WEATHER_SOURCE == "AGMERRA":
+                process_weather_agmerra(**common_args, agmerra_nc_dir=AGMERRA_NC_DIR)
+            elif WEATHER_SOURCE == "AGCFSR":
+                process_weather_agcfsr(**common_args, agcfsr_nc_dir=AGCFSR_NC_DIR)
+            elif WEATHER_SOURCE == "SILO":
+                process_weather_silo(**common_args, silo_nc_dir=SILO_NC_DIR)
+            elif WEATHER_SOURCE == "PRISM":
+                process_weather_prism(**common_args, prism_cache_dir=PRISM_CACHE_DIR)
+            elif WEATHER_SOURCE == "MSWX":
+                process_weather_mswx(**common_args, mswx_nc_dir=MSWX_NC_DIR)
+            elif WEATHER_SOURCE == "MSWEP":
+                process_weather_mswep(**common_args, mswep_nc_dir=MSWEP_NC_DIR)
+            elif WEATHER_SOURCE == "CRUJRA":
+                process_weather_crujra(**common_args, crujra_nc_dir=CRUJRA_NC_DIR)
+            elif WEATHER_SOURCE == "TERRACLIMATE":
+                process_weather_terraclimate(**common_args, terraclimate_nc_dir=TERRACLIMATE_NC_DIR)
             else:
                 sys.exit(f"Unknown WEATHER_SOURCE: {WEATHER_SOURCE}")
 
-        if EXTEND_WEATHER_DATA:
+    if REPAIR_WEATHER_MISSING_VALUES:
+        if os.path.isdir(weather_dir):
+            repair_log = os.path.join(weather_dir, "weather_repair.log")
+            repair_summary = repair_weather_missing_values(
+                weather_dir,
+                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                variables=WEATHER_REPAIR_VARIABLES,
+                log_file=repair_log,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                "Weather missing-value repair complete: "
+                f"{repaired_values} value(s) repaired; "
+                f"{unrepaired_values} missing value(s) left unrepaired. Log: {repair_log}"
+            )
+        else:
+            print(
+                "WARNING: repair_weather_missing_values is true, but weather "
+                f"directory does not exist: {weather_dir}"
+            )
+
+    if REPAIR_WEATHER_DATE_GAPS:
+        if os.path.isdir(weather_dir):
+            repair_log = os.path.join(weather_dir, "weather_repair.log")
+            repair_summary = repair_weather_date_gaps(
+                weather_dir,
+                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                variables=WEATHER_REPAIR_VARIABLES,
+                log_file=repair_log,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                "Weather date-gap repair complete: "
+                f"{repaired_values} missing day row(s) inserted; "
+                f"{unrepaired_values} missing day row(s) left unrepaired. Log: {repair_log}"
+            )
+        else:
+            print(
+                "WARNING: repair_weather_date_gaps is true, but weather "
+                f"directory does not exist: {weather_dir}"
+            )
+
+    if REPAIR_WEATHER_TEMPERATURE_INVERSIONS:
+        if os.path.isdir(weather_dir):
+            repair_log = os.path.join(weather_dir, "weather_repair.log")
+            repair_summary = repair_weather_temperature_inversions(
+                weather_dir,
+                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                log_file=repair_log,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                "Weather Tmax/Tmin inversion repair complete: "
+                f"{repaired_values} day(s) repaired; "
+                f"{unrepaired_values} inversion day(s) left unrepaired. Log: {repair_log}"
+            )
+        else:
+            print(
+                "WARNING: repair_weather_temperature_inversions is true, but weather "
+                f"directory does not exist: {weather_dir}"
+            )
+
+    if AUDIT_WEATHER_QUALITY:
+        if os.path.isdir(weather_dir):
+            repair_log = os.path.join(weather_dir, "weather_repair.log")
+            audit_csv = os.path.join(weather_dir, "weather_quality_audit.csv")
+            audit_summary = audit_weather_quality(
+                weather_dir,
+                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
+                audit_csv=audit_csv,
+                flatline_days=WEATHER_QUALITY_FLATLINE_DAYS,
+                log_file=repair_log,
+            )
+            print(f"Weather QA audit complete: {len(audit_summary)} finding row(s). Audit CSV: {audit_csv}")
+        else:
+            print(
+                "WARNING: audit_weather_quality is true, but weather "
+                f"directory does not exist: {weather_dir}"
+            )
+
+    if EXTEND_WEATHER_DATA:
+        if os.path.isdir(weather_dir):
             all_wth = [os.path.join(weather_dir, f)
                        for f in os.listdir(weather_dir) if f.endswith(".WTH")]
             print("Checking which files need extension...")
@@ -848,6 +1057,11 @@ if __name__ == '__main__':
                     )
             else:
                 print("All files already extended.")
+        else:
+            print(
+                "WARNING: extend_weather_data is true, but weather directory "
+                f"does not exist: {weather_dir}"
+            )
 
     # =============================================================================
     # STEP 3 - BUILD DSSAT FOLDERS AND RUN SIMULATIONS
@@ -965,7 +1179,14 @@ if __name__ == '__main__':
         try:
             with open(TEMPLATE_FILE_PATH, encoding="utf-8") as fh:
                 content = fh.read()
-            if TEMPLATE_SOIL_ID_PLACEHOLDER in content:
+            # --- Soil ID substitution ---
+            # Preferred: the unambiguous 8-char SID00000 placeholder that occupies
+            # ONLY the *FIELDS ID_SOIL column (so it can never collide with the
+            # weather/field placeholders). Legacy fallback: the older SOIL_ID /
+            # ID_SOIL tokens, for templates not yet migrated.
+            if "SID00000" in content:
+                content = content.replace("SID00000", hmx_replacement_id)
+            elif TEMPLATE_SOIL_ID_PLACEHOLDER in content:
                 if f"   {TEMPLATE_SOIL_ID_PLACEHOLDER}" in content:
                     content = content.replace(f"   {TEMPLATE_SOIL_ID_PLACEHOLDER}", hmx_replacement_id.ljust(10))
                 else:
@@ -975,17 +1196,20 @@ if __name__ == '__main__':
                     content = content.replace("   ID_SOIL", hmx_replacement_id.ljust(10))
                 else:
                     content = content.replace("ID_SOIL", hmx_replacement_id)
-            # Patch WSTA in *FIELDS section: DSSAT opens <WSTA>.WTH from the run
-            # folder. The template uses "00000000"; replace with the 8-char point
-            # ID so it resolves to the per-point weather file (e.g. 00000001.WTH).
-            # The *FIELDS header is "@L ID_FIELD WSTA...."; WSTA is the token right
-            # after the ID_FIELD token, so we replace only the WSTA occurrence by
-            # targeting the specific pattern in the fields data line.
-            content = re.sub(
-                r'(?m)^( \d+\s+\S{8}\s+)00000000(\s)',
-                lambda m: m.group(1) + ID[:8].ljust(8) + m.group(2),
-                content,
-            )
+            # --- Weather station (WSTA) substitution ---
+            # DSSAT opens <WSTA>.WTH from the run folder. Preferred: the unambiguous
+            # 8-char WID00000 placeholder (replaced with the point ID, e.g. so it
+            # resolves to 00000001.WTH). Legacy fallback: patch the WSTA-column
+            # 00000000 -- the token right after the 8-char ID_FIELD -- which leaves
+            # ID_FIELD's own 00000000 untouched.
+            if "WID00000" in content:
+                content = content.replace("WID00000", ID[:8].ljust(8))
+            else:
+                content = re.sub(
+                    r'(?m)^( \d+\s+\S{8}\s+)00000000(\s)',
+                    lambda m: m.group(1) + ID[:8].ljust(8) + m.group(2),
+                    content,
+                )
             # Substitute real per-point coordinates into the *FIELDS tier-2 line.
             # Preserve placeholder widths so DSSAT's fixed-column parser stays aligned.
             def _fit_field(value, width, digits):
@@ -1092,6 +1316,111 @@ if __name__ == '__main__':
                     os.path.join(DSSAT_RUN_DIR, ID, f"results_{ID}.csv")
                 )
             ]
+
+        def write_input_error(ID: str, reason: str) -> None:
+            point_dir = os.path.join(DSSAT_RUN_DIR, ID)
+            os.makedirs(point_dir, exist_ok=True)
+            log_path = os.path.join(point_dir, "_run_error.log")
+            line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ID {ID}: INPUT: {reason}"
+            with open(log_path, "w", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+
+        def soil_input_issue(ID: str) -> Optional[str]:
+            f = os.path.join(DSSAT_RUN_DIR, ID, "SOIL.SOL")
+            if not os.path.exists(f):
+                return "SOIL.SOL is missing"
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    lines = fh.readlines()
+            except Exception:
+                return "SOIL.SOL is empty or unreadable"
+            if not lines:
+                return "SOIL.SOL is empty or unreadable"
+
+            error_lines = [
+                line.strip() for line in lines
+                if line.strip().startswith("*SOIL ERROR") or line.strip().startswith("Source missing") or line.strip().startswith("No Soil ID")
+            ]
+            if error_lines:
+                return " | ".join(error_lines)
+
+            hdr_idx = None
+            for idx, line in enumerate(lines):
+                if re.search(r"^@\s+SLB\b", line):
+                    hdr_idx = idx
+                    break
+            if hdr_idx is None:
+                return "SOIL.SOL has no @ SLB layer table"
+
+            layer_lines = lines[hdr_idx + 1:]
+            layer_lines = [l.strip() for l in layer_lines if l.strip()]
+            layer_lines = [l for l in layer_lines if re.match(r"^\s*\d+\s+", l) or re.match(r"^\d+\s+", l)]
+
+            depths = []
+            for l in layer_lines:
+                m = re.match(r"^\s*(\d+)", l)
+                if m:
+                    try:
+                        depths.append(int(m.group(1)))
+                    except ValueError:
+                        pass
+
+            if not depths:
+                return "SOIL.SOL has no parseable SLB layer depths"
+            if len(depths) > 19:
+                return f"SOIL.SOL has {len(depths)} layers; DSSAT accepts at most 19"
+
+            for d_i in range(1, len(depths)):
+                if depths[d_i] <= depths[d_i - 1]:
+                    return f"SOIL.SOL layer depths are not strictly increasing: {','.join(map(str, depths))}"
+
+            return None
+
+        def weather_input_issue(ID: str) -> Optional[str]:
+            f = os.path.join(DSSAT_RUN_DIR, ID, f"{ID}.WTH")
+            if not os.path.exists(f):
+                return f"{os.path.basename(f)} is missing"
+            if os.path.getsize(f) == 0:
+                return f"{os.path.basename(f)} is empty"
+            return None
+
+        def clear_run_diagnostics(ids_list: list[str]) -> None:
+            artifacts = [
+                "_run_error.log", "dssat_A_stdout_stderr.log", "dssat_B_stdout_stderr.log",
+                "dssat_Q_stdout_stderr.log", "ERROR.OUT", "WARNING.OUT", "INFO.OUT",
+                "Summary.OUT", "summary.csv"
+            ]
+            for ID in ids_list:
+                for art in artifacts:
+                    f_art = os.path.join(DSSAT_RUN_DIR, ID, art)
+                    if os.path.exists(f_art):
+                        try:
+                            os.remove(f_art)
+                        except Exception:
+                            pass
+
+        if ids_to_run:
+            clear_run_diagnostics(ids_to_run)
+
+            valid_ids = []
+            skipped_input_ids = []
+            from typing import Optional
+            for ID in ids_to_run:
+                issue = soil_input_issue(ID)
+                if issue is None:
+                    issue = weather_input_issue(ID)
+                if issue is not None:
+                    write_input_error(ID, issue)
+                    skipped_input_ids.append(ID)
+                else:
+                    valid_ids.append(ID)
+
+            if skipped_input_ids:
+                print(f"Skipping {len(skipped_input_ids)} point(s) with invalid DSSAT inputs; see _run_error.log in each folder.")
+                print(f"  Invalid input IDs: {', '.join(skipped_input_ids[:20])}" +
+                      (f" ... (+{len(skipped_input_ids) - 20} more)" if len(skipped_input_ids) > 20 else ""))
+
+            ids_to_run = valid_ids
 
         print(f"Starting DSSAT execution for {len(ids_to_run)} point(s)...")
 
@@ -1244,6 +1573,10 @@ if __name__ == '__main__':
         print("STEP 4: VISUALIZING RESULTS")
         print("=" * 60)
 
+        # Visualization is best-effort: the results CSV is already written and
+        # combined by this point, so a plotting failure must NEVER abort the run or
+        # the sweep loop. (Parity: the same guard wraps STEP 4 in
+        # dssat_main_pipeline.R via tryCatch - AGENTS S2.)
         try:
             import matplotlib.pyplot as plt
             import matplotlib.cm as cm
@@ -1282,4 +1615,4 @@ if __name__ == '__main__':
                 print(f"Yield map saved -> {FINAL_PLOT_PATH}")
 
         except Exception as exc:
-            print(f"Step 4 visualization failed: {exc}")
+            print(f"Visualization skipped (non-fatal): {exc}")

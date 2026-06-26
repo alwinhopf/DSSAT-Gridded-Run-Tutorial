@@ -96,6 +96,11 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Good for tropical/subtropical regions with intense rainfall
   - Slower than NASA-POWER alone (~5-10s per point)
 
+> The v0.3.0 backends (PRISM, CHELSA-W5E5, AgMERRA/AgCFSR, SILO, MSWX, MSWEP,
+> CRU-JRA, TerraClimate) are catalogued in the **priority table** under the Soil
+> section below. 10 m winds are converted to 2 m (FAO-56, ×0.748) in the shared
+> extractor, and SILO vapour pressure is converted to dewpoint (inverse Magnus).
+
 ---
 
 ## Soil Data Sources
@@ -159,6 +164,58 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Faster than SoilGrids REST API (~2-3s per point)
   - Requires local HWSD database (~2-3 GB)
   - Database: https://www.fao.org/documents/card/en/c/CA12305EN/
+
+### 5. **AgMIP/Han DSSAT Soil Profile Database** (Global cropland, Free, Local `.SOL`)
+- **Coverage**: Global cropland, country files
+- **Spatial Resolution**: 5 arc-min (~10 km)
+- **Data Type**: DSSAT-ready soil profiles to 2 m depth
+- **API Key Required**: No
+- **Optional Dependencies**: Same as the external `.SOL` mapper (`sf`/`geopandas` useful; haversine fallback in Python)
+- **Status**: ✅ Implemented as `AGMIP` / `process_soils_agmip`
+- **Implementation**: Reads a downloaded country `.SOL` master file and selects the nearest source profile for each grid point
+- **Notes**:
+  - Data DOI: https://doi.org/10.7910/DVN/1PEEY0
+  - Source paper: Han, Ines, and Koo (2019), *Environmental Modelling & Software* 119:70-83
+  - This is the most DSSAT-specific global soil source: hydraulic properties are already present in DSSAT format, so the pipeline does not recompute PTFs
+
+---
+
+## Candidate Sources Worth Implementing Next
+
+The following sources were reviewed online in June 2026 and have now been implemented as local/cache-backed backends.
+
+| Priority | Source | Type | Implementation | Main caveat |
+|----------|--------|------|------------------------|-------------|
+| 1 | **[HiHydroSoil v2.0](https://www.futurewater.eu/tools/hihydrosoil/)** | Soil hydraulics, global 250 m | `HIHYDROSOIL` / `process_soils_hihydrosoil`, reading local GeoTIFF/VRT rasters. | Requires local rasters; hydraulic layers are often integer-scaled by 10000, so `integer_scale` defaults to 0.0001. |
+| 2 | **[CHELSA-W5E5 daily](https://www.chelsa-climate.org/datasets/chelsaw5e5)** | Weather, global 30 arcsec (~1 km), 1979-2016 | `CHELSA_W5E5` / `process_weather_chelsa_w5e5`, reading local NetCDF files. | Historical only through 2016; humidity/wind are not required and are written missing unless provided by companion files. |
+| 3 | **[SILO](https://www.longpaddock.qld.gov.au/silo/) + [SLGA](https://www.csiro.au/en/research/natural-environment/land/soil-and-landscape-grid-of-australia)** | Weather + soil, Australia | `SILO` / `process_weather_silo` for local NetCDF weather; `SLGA` / `process_soils_slga` for local soil rasters. | Regional Australia-only pair; data access/download is managed outside the pipeline cache. |
+| 4 | **[AgMERRA / AgCFSR](https://data.giss.nasa.gov/impacts/agmipcf/)** | Weather, global 0.25 degree, 1980-2010 | `AGMERRA` and `AGCFSR` / local NetCDF readers. | Ends in 2010, so it is for historical baselines and AgMIP intercomparison. |
+| 5 | **[PRISM](https://prism.oregonstate.edu/)** | Weather, US 4 km | `PRISM` / `process_weather_prism`, downloading public daily grids into `prism_cache_dir`. | No daily SRAD/wind/RH in this path → those columns are `-99`. NACSE throttles rapid requests, so the backend adds a 1 s inter-request delay and validates each zip (throttled days degrade to a skip, not a crash). |
+| 6 | **WISE30sec** | Soil, global 30 arcsec | `WISE30SEC` / `process_soils_wise30sec`, reading local GeoTIFF/VRT rasters. | Uses WISE30sec's own 7 depth layers — rasters must carry a property token (sand/clay/silt/BD/OC) **and** a depth token `d1`–`d7` in the filename. WISE is natively a map-unit raster + attribute table; rasterize that join to per-property/per-depth grids first. |
+| 7 | **MSWX / MSWEP** | Weather, global ~0.1 degree | `MSWX` local full-weather NetCDF reader; `MSWEP` NASA POWER + local MSWEP rainfall hybrid. | MSWEP is precipitation-only, so it is not a standalone full-weather source. |
+| 8 | **CRU-JRA** | Weather, global 0.5 degree | `CRUJRA` / local NetCDF reader. | Coarser than the other gridded products. |
+| 9 | **TerraClimate** | Weather/climatology, global monthly | `TERRACLIMATE` / local NetCDF reader; each month is disaggregated to continuous daily records (constant T/SRAD/wind, monthly precip spread evenly) so the `.WTH` is runnable. | Carries **no day-to-day variability** (rain intensity, dry spells, heat-stress days) — screening/climatology only, not production. |
+| 10 | **WoSIS** | Soil point profiles | `WOSIS` / processed layer CSV nearest-profile ingestion. | Raw WoSIS exports must be harmonized before use; best for calibration/validation. |
+
+### Regional-coverage fill (dssatutils v0.4.0)
+
+Targeted at regions previously served only by coarse global reanalysis. Two are
+**live downloads** (no local data); the rest read local NetCDF / rasters.
+
+| Source | Function | Type / Coverage | Access | Caveat |
+|--------|----------|-----------------|--------|--------|
+| **APHRODITE** | `process_weather_aphrodite` | Weather, monsoon Asia (0.25-0.5°, gauge precip) | Local NetCDF (rain) + NASA-POWER | Rainfall-only hybrid: T/SRAD/RH/wind from NASA-POWER. |
+| **ANUSPLIN** | `process_weather_anusplin` | Weather, Canada 10 km (1950-2015) | Local NetCDF | All of Canada incl. Prairies above Daymet's ~52°N; no SRAD/RH/wind. |
+| **TAMSAT** | `process_weather_tamsat` | Weather, Africa 4 km rainfall | Local NetCDF (rain) + NASA-POWER | Rainfall-only hybrid; pairs with iSDAsoil. |
+| **GHCN-Daily** | `process_weather_ghcn` | Weather, global station obs | **Live (NOAA)** | Nearest-station snap; per-station record ~11 MB; SRAD/RH/wind = -99. Best as obs/validation. |
+| **Princeton PGF** | `process_weather_pgf` | Weather, global 0.25° | Local NetCDF | Full-variable reanalysis alt. to AgMERRA/CRU-JRA. |
+| **MERRA-2** | `process_weather_merra2` | Weather, global ~0.5° (1980-) | Local NetCDF | Kelvin temps auto-convert. |
+| **GSDE** | `process_soils_gsde` | Soil, global 1 km, 8 layers to 2.3 m | Local rasters (`l1`-`l8` tokens) | Richer vertical profile than HWSD. |
+| **China BNU** | `process_soils_china` | Soil, China 1 km, 8 layers | Local rasters (`l1`-`l8`) | Pairs with CMFD weather. |
+| **FEBR / Embrapa** | `process_soils_febr` | Soil, Brazil point profiles | Harmonized CSV | Nearest-profile (WoSIS mechanism); pairs with Xavier. |
+| **SLC** | `process_soils_slc` | Soil, Canada (top/sub) | Local rasters (`top`/`sub`) | Rasterize the SLC polygon+component join first; pairs with ANUSPLIN. |
+| **ESDB** | `process_soils_esdb` | Soil, Europe full profile (top/sub) | Local rasters (`top`/`sub`) | Full profile vs topsoil-only LUCAS. |
+| **OpenLandMap** | `process_soils_openlandmap` | Soil, global 250 m (0-30/30-60/60-100) | **Live (STAC COG)** | No local data; texture 120 m + BD/OC 250 m sampled over HTTP via the OpenLandMap STAC catalog. |
 
 ---
 

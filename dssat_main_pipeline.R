@@ -119,7 +119,9 @@ DSSAT_BASE <- Sys.getenv("DSSAT_BASE", unset = DSSAT_BASE)
 # cfg_get(key, default) returns the YAML value or the default below.
 local({
   loader_dir <- tryCatch(dirname(this.path::this.path()), error = function(e) getwd())
-  for (cand in c(file.path(loader_dir, "config_loader.R"), "config_loader.R")) {
+  for (cand in c(file.path(CODE_ROOT_DIR, "config_loader.R"),
+                 file.path(loader_dir, "config_loader.R"),
+                 "config_loader.R")) {
     if (file.exists(cand)) { source(cand); break }
   }
 })
@@ -247,14 +249,17 @@ CHIRPS_RESOLUTION  <- as.character(cfg_get("chirps_resolution", "p05"))
 # 3. Soil Settings
 # SOIL_SOURCE: "SSURGO"          — US only, queries USDA SDA web service per point
 #              "SOILGRIDS_10K"   — global, reads a pre-downloaded master .SOL file
+#              "AGMIP"           — global AgMIP/Han DSSAT-ready 5 arc-min .SOL file
 #              "SOILGRIDS_ONLINE"— global, queries SoilGrids REST API per point
 #              "POLARIS"         — US 30 m, streams POLARIS GeoTIFF tiles per point
 SOIL_SOURCE        <- cfg_get("soil_source", "SOILGRIDS_10K")
-# EXTERNAL_SOIL_FILE: only needed when SOIL_SOURCE is "SOILGRIDS_10K".
-# Pre-formatted DSSAT-ready .SOL files at 10 km resolution (by country):
+STATSGO            <- isTRUE(as.logical(cfg_get("statsgo", FALSE)))
+STANDARDIZE_LAYERS <- isTRUE(as.logical(cfg_get("standardize_layers", FALSE)))
+# EXTERNAL_SOIL_FILE: needed when SOIL_SOURCE is "SOILGRIDS_10K" or "AGMIP".
+# Pre-formatted DSSAT-ready .SOL files at 5 arc-min / ~10 km (by country):
 #   Harvard Dataverse: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/1PEEY0
-# Based on: Folberth et al. (2019) Environ. Model. Softw. 111:218-228
-#   https://www.sciencedirect.com/science/article/pii/S1364815218313033
+# Based on: Han et al. (2019) Environ. Model. Softw. 119:70-83
+#   https://doi.org/10.1016/j.envsoft.2019.05.012
 # Download the country file you need, place it under SoilGrids/, and adjust the path below.
 EXTERNAL_SOIL_FILE <- cfg_get("external_soil_file",
                               file.path(INPUT_ROOT_DIR, "SoilGrids", "US.SOL"))
@@ -280,8 +285,23 @@ EOBS_USE_CDS       <- isTRUE(as.logical(cfg_get("eobs_use_cds", FALSE)))
 # Xavier (Brazil) / CMFD (China) only: folders of pre-downloaded NetCDFs.
 XAVIER_NC_DIR      <- cfg_get("xavier_nc_dir", file.path(INPUT_ROOT_DIR, "xavier_netcdf"))
 CMFD_NC_DIR        <- cfg_get("cmfd_nc_dir", file.path(INPUT_ROOT_DIR, "cmfd_netcdf"))
+# Large local/cache-backed weather products.
+CHELSA_NC_DIR      <- cfg_get("chelsa_nc_dir", file.path(INPUT_ROOT_DIR, "chelsa_w5e5_netcdf"))
+AGMERRA_NC_DIR     <- cfg_get("agmerra_nc_dir", file.path(INPUT_ROOT_DIR, "agmerra_netcdf"))
+AGCFSR_NC_DIR      <- cfg_get("agcfsr_nc_dir", file.path(INPUT_ROOT_DIR, "agcfsr_netcdf"))
+SILO_NC_DIR        <- cfg_get("silo_nc_dir", file.path(INPUT_ROOT_DIR, "silo_netcdf"))
+PRISM_CACHE_DIR    <- cfg_get("prism_cache_dir", file.path(INPUT_ROOT_DIR, "prism_cache"))
+MSWX_NC_DIR        <- cfg_get("mswx_nc_dir", file.path(INPUT_ROOT_DIR, "mswx_netcdf"))
+MSWEP_NC_DIR       <- cfg_get("mswep_nc_dir", file.path(INPUT_ROOT_DIR, "mswep_netcdf"))
+CRUJRA_NC_DIR      <- cfg_get("crujra_nc_dir", file.path(INPUT_ROOT_DIR, "crujra_netcdf"))
+TERRACLIMATE_NC_DIR <- cfg_get("terraclimate_nc_dir", file.path(INPUT_ROOT_DIR, "terraclimate_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
 LUCAS_CSV          <- cfg_get("lucas_csv", file.path(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
+# Local/cache-backed soil products.
+HIHYDROSOIL_RASTER_DIR <- cfg_get("hihydrosoil_raster_dir", file.path(INPUT_ROOT_DIR, "HiHydroSoil"))
+SLGA_RASTER_DIR        <- cfg_get("slga_raster_dir", file.path(INPUT_ROOT_DIR, "SLGA"))
+WISE30SEC_RASTER_DIR   <- cfg_get("wise30sec_raster_dir", file.path(INPUT_ROOT_DIR, "WISE30sec"))
+WOSIS_PROFILE_CSV      <- cfg_get("wosis_profile_csv", file.path(INPUT_ROOT_DIR, "WoSIS", "wosis_processed_profiles.csv"))
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
@@ -324,6 +344,7 @@ RESULTS_SUBDIR <- "results"
 GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
+AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
 DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
 
@@ -351,11 +372,26 @@ LAT_COLUMN <- "LAT"
 LONG_COLUMN <- "LONG"
 
 # --- 4a. Weather Extension Settings ---
-EXTEND_WEATHER_DATA <- FALSE     # Set to FALSE to disable filling partial years
-WEATHER_REFERENCE_YEAR <- 2025  # The historic year used to clone data for filling gaps
+EXTEND_WEATHER_DATA <- isTRUE(as.logical(cfg_get("extend_weather_data", FALSE)))     # Set to FALSE to disable filling partial years
+WEATHER_REFERENCE_YEAR <- as.integer(cfg_get("weather_reference_year", 2025))  # The historic year used to clone data for filling gaps
+REPAIR_WEATHER_MISSING_VALUES <- isTRUE(as.logical(cfg_get("repair_weather_missing_values", FALSE)))
+REPAIR_WEATHER_DATE_GAPS <- isTRUE(as.logical(cfg_get("repair_weather_date_gaps", FALSE)))
+REPAIR_WEATHER_TEMPERATURE_INVERSIONS <- isTRUE(as.logical(cfg_get("repair_weather_temperature_inversions", FALSE)))
+AUDIT_WEATHER_QUALITY <- isTRUE(as.logical(cfg_get("audit_weather_quality", FALSE)))
+WEATHER_REPAIR_MAX_GAP_DAYS <- as.integer(cfg_get("weather_repair_max_gap_days", 3))
+WEATHER_REPAIR_WINDOW_DAYS <- as.integer(cfg_get("weather_repair_window_days", 2))
+WEATHER_QUALITY_FLATLINE_DAYS <- as.integer(cfg_get("weather_quality_flatline_days", 10))
+WEATHER_REPAIR_VARIABLES <- as.character(unlist(cfg_get(
+  "weather_repair_variables",
+  c("SRAD", "TMAX", "TMIN", "RAIN", "TDEW", "RH2M", "WIND")
+), use.names = FALSE))
 
-# Ensure your HMX template has "ID_SOIL" or "SOIL_ID" in the SLNO column!
-TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID" 
+# Soil/weather placeholders in the *FIELDS data row of the FileX template:
+#   SID00000 -> per-point soil ID   (preferred; 8-char, ID_SOIL column only)
+#   WID00000 -> per-point weather/WSTA ID (preferred; 8-char, WSTA column only)
+# Legacy templates may instead use SOIL_ID / ID_SOIL for soil and 00000000 for
+# WSTA; both engines still handle those as a fallback (see HANDLE EXPERIMENT FILE).
+TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID"
 
 # --- 5. DSSAT Settings ---
 DSSAT_EXE_PATH <- file.path(DSSAT_BASE, DSSAT_EXE_NAME)
@@ -509,7 +545,7 @@ packages_needed <- c(
   "rstudioapi", "zoo",
   # --- weather / soil helper modules (attached at source time) ---
   "nasapower", "daymetr", "terra", "ncdf4", "httr", "jsonlite", "tidyr",
-  "readr", "soilDB"
+  "readr", "soilDB", "dssatutils", "dssatengine"
 )
 # Source-specific packages that are loaded LAZILY inside their module (so
 # sourcing the file never needs them) — require them only when that source is
@@ -518,10 +554,14 @@ if (WEATHER_SOURCE == "AGERA5") packages_needed <- c(packages_needed, "ecmwfr")
 if (SOIL_SOURCE == "HWSD")      packages_needed <- c(packages_needed, "DBI", "RSQLite")
 
 # Packages installed from GitHub rather than CRAN (name -> repo). None are
-# currently required — the GRIDMET module downloads netCDF directly via httr +
-# terra, so no climateR dependency. Add entries here only if a helper module
-# genuinely `library()`s a GitHub-only package.
-github_pkgs <- list()
+# currently required beyond the shared DSSAT helper packages — the GRIDMET
+# module downloads netCDF directly via httr + terra, so no climateR dependency.
+# Add entries here only if a helper module genuinely `library()`s another
+# GitHub-only package.
+github_pkgs <- list(
+  dssatutils = "alwinhopf/dssatutils",
+  dssatengine = "alwinhopf/dssatengine"
+)
 
 # ---------------------------------------------------------------------------
 # ensure_packages(): install any missing packages (prompting first in an
@@ -664,9 +704,9 @@ library(dssatutils)  # [dssatutils] shared weather/soil sources
 library(dssatengine) # [dssatengine] shared gridded run engine
 # Soil sources that write one Saxton-&-Rawls .SOL per grid point named by point
 # ID (so SOIL_ID == point ID and the per-point combine logic applies).
-PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS")
+PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")
 # Soil sources needing no pre-downloaded external file (queried online).
-KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS")
+KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS", "SSURGO_ALDERMAN")
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
 # [dssatutils] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
@@ -1123,6 +1163,8 @@ if (RUN_STEP_1_SOILS) {
     # iSDAsoil = Africa 30 m; LUCAS = EU topsoil (needs lucas_csv).
     .soil_fn <- switch(SOIL_SOURCE,
       SSURGO   = process_soils_ssurgo,
+      SSURGO_ALDERMAN = function(g, c, i, n, id, la, lo, fm)
+                          process_soils_ssurgo_alderman(g, c, i, n, id, la, lo, fm, STATSGO = STATSGO, standardize_layers = STANDARDIZE_LAYERS),
       GNATSGO  = process_soils_gnatsgo,
       ISDASOIL = process_soils_isdasoil,
       LUCAS    = function(gridfile, csv, indiv, cores, idc, latc, lonc, fmt)
@@ -1171,11 +1213,12 @@ if (RUN_STEP_1_SOILS) {
       }
     }
     
-  } else if (SOIL_SOURCE == "SOILGRIDS_10K") {
+  } else if (SOIL_SOURCE %in% c("SOILGRIDS_10K", "AGMIP")) {
     if (!file.exists(EXTERNAL_SOIL_FILE)) stop("External soil file not found.")
-    process_soils_soilgrids(gridfile, EXTERNAL_SOIL_FILE, soilfile_CSV, 
-                            output_sol_dir = individual_sol_output_folder,
-                            id_col = POINT_ID_COLUMN)
+    .external_sol_fn <- if (SOIL_SOURCE == "AGMIP") process_soils_agmip else process_soils_soilgrids
+    .external_sol_fn(gridfile, EXTERNAL_SOIL_FILE, soilfile_CSV,
+                     output_sol_dir = individual_sol_output_folder,
+                     id_col = POINT_ID_COLUMN)
   } else if (SOIL_SOURCE == "SOILGRIDS_ONLINE") {
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
     if (CHECK_SOIL_DOWNLOADS) {
@@ -1304,6 +1347,30 @@ if (RUN_STEP_1_SOILS) {
                        output_sol_dir = individual_sol_output_folder,
                        id_col = POINT_ID_COLUMN,
                        lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
+  } else if (SOIL_SOURCE == "HIHYDROSOIL") {
+    process_soils_hihydrosoil(gridfile, HIHYDROSOIL_RASTER_DIR,
+                              output_csv_path = soilfile_CSV,
+                              output_sol_dir = individual_sol_output_folder,
+                              id_col = POINT_ID_COLUMN,
+                              lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
+  } else if (SOIL_SOURCE == "SLGA") {
+    process_soils_slga(gridfile, SLGA_RASTER_DIR,
+                       output_csv_path = soilfile_CSV,
+                       output_sol_dir = individual_sol_output_folder,
+                       id_col = POINT_ID_COLUMN,
+                       lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
+  } else if (SOIL_SOURCE == "WISE30SEC") {
+    process_soils_wise30sec(gridfile, WISE30SEC_RASTER_DIR,
+                            output_csv_path = soilfile_CSV,
+                            output_sol_dir = individual_sol_output_folder,
+                            id_col = POINT_ID_COLUMN,
+                            lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
+  } else if (SOIL_SOURCE == "WOSIS") {
+    process_soils_wosis(gridfile, WOSIS_PROFILE_CSV,
+                        output_csv_path = soilfile_CSV,
+                        output_sol_dir = individual_sol_output_folder,
+                        id_col = POINT_ID_COLUMN,
+                        lat_col = LAT_COLUMN, long_col = LONG_COLUMN)
   } else { stop("Unknown SOIL_SOURCE") }
 }
 
@@ -1311,12 +1378,11 @@ if (RUN_STEP_1_SOILS) {
 # STEP 2: WEATHER DATA
 #-----------------------------------------------------------------------
 message("STEP 2: DOWNLOADING WEATHER DATA")
+output_dir <- file.path(CENTRAL_WEATHER_DIR, WEATHER_DIR_NAME)
 if (RUN_STEP_2_WEATHER) {
   dir.create(CENTRAL_WEATHER_DIR, showWarnings = FALSE, recursive = TRUE)
   
   # Uses new naming: [Location]_[Res]_[Source]
-  output_dir <- file.path(CENTRAL_WEATHER_DIR, WEATHER_DIR_NAME)
-  
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   
   # --- SMART RESUME BLOCK ---
@@ -1367,7 +1433,11 @@ if (RUN_STEP_2_WEATHER) {
                 c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR)))
       }
       else if (WEATHER_SOURCE == "AGERA5")
-        do.call(process_weather_agera5, c(common_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+        {
+          agera5_args <- common_args
+          agera5_args$n_cores <- AGERA5_MAX_CONCURRENT_REQUESTS
+          do.call(process_weather_agera5, c(agera5_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+        }
       else if (WEATHER_SOURCE == "DWD")
         do.call(process_weather_dwd, c(common_args, list(dwd_cache_dir = DWD_CACHE_DIR)))
       else if (WEATHER_SOURCE == "EOBS")
@@ -1378,6 +1448,24 @@ if (RUN_STEP_2_WEATHER) {
         do.call(process_weather_xavier, c(common_args, list(xavier_nc_dir = XAVIER_NC_DIR)))
       else if (WEATHER_SOURCE == "CMFD")
         do.call(process_weather_cmfd, c(common_args, list(cmfd_nc_dir = CMFD_NC_DIR)))
+      else if (WEATHER_SOURCE == "CHELSA_W5E5")
+        do.call(process_weather_chelsa_w5e5, c(common_args, list(chelsa_nc_dir = CHELSA_NC_DIR)))
+      else if (WEATHER_SOURCE == "AGMERRA")
+        do.call(process_weather_agmerra, c(common_args, list(agmerra_nc_dir = AGMERRA_NC_DIR)))
+      else if (WEATHER_SOURCE == "AGCFSR")
+        do.call(process_weather_agcfsr, c(common_args, list(agcfsr_nc_dir = AGCFSR_NC_DIR)))
+      else if (WEATHER_SOURCE == "SILO")
+        do.call(process_weather_silo, c(common_args, list(silo_nc_dir = SILO_NC_DIR)))
+      else if (WEATHER_SOURCE == "PRISM")
+        do.call(process_weather_prism, c(common_args, list(prism_cache_dir = PRISM_CACHE_DIR)))
+      else if (WEATHER_SOURCE == "MSWX")
+        do.call(process_weather_mswx, c(common_args, list(mswx_nc_dir = MSWX_NC_DIR)))
+      else if (WEATHER_SOURCE == "MSWEP")
+        do.call(process_weather_mswep, c(common_args, list(mswep_nc_dir = MSWEP_NC_DIR)))
+      else if (WEATHER_SOURCE == "CRUJRA")
+        do.call(process_weather_crujra, c(common_args, list(crujra_nc_dir = CRUJRA_NC_DIR)))
+      else if (WEATHER_SOURCE == "TERRACLIMATE")
+        do.call(process_weather_terraclimate, c(common_args, list(terraclimate_nc_dir = TERRACLIMATE_NC_DIR)))
 
       retry_count <- retry_count + 1
       
@@ -1401,9 +1489,112 @@ if (RUN_STEP_2_WEATHER) {
                       nrow(points_to_process), max_retries))
     }
   }
-  
-  # === WEATHER EXTENSION LOGIC (PARALLEL) ===
-  if (EXTEND_WEATHER_DATA) {
+}
+
+if (REPAIR_WEATHER_MISSING_VALUES) {
+  if (dir.exists(output_dir)) {
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    repair_log <- file.path(output_dir, "weather_repair.log")
+    repair_summary <- dssatutils::repair_weather_missing_values(
+      weather_dir = output_dir,
+      ids = ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      variables = WEATHER_REPAIR_VARIABLES,
+      log_file = repair_log
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather missing-value repair complete: %d value(s) repaired; %d missing value(s) left unrepaired. Log: %s",
+      repaired_values, unrepaired_values, repair_log
+    ))
+  } else {
+    warning(sprintf(
+      "repair_weather_missing_values is TRUE, but weather directory does not exist: %s",
+      output_dir
+    ))
+  }
+}
+
+if (REPAIR_WEATHER_DATE_GAPS) {
+  if (dir.exists(output_dir)) {
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    repair_log <- file.path(output_dir, "weather_repair.log")
+    repair_summary <- dssatutils::repair_weather_date_gaps(
+      weather_dir = output_dir,
+      ids = ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      variables = WEATHER_REPAIR_VARIABLES,
+      log_file = repair_log
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather date-gap repair complete: %d missing day row(s) inserted; %d missing day row(s) left unrepaired. Log: %s",
+      repaired_values, unrepaired_values, repair_log
+    ))
+  } else {
+    warning(sprintf(
+      "repair_weather_date_gaps is TRUE, but weather directory does not exist: %s",
+      output_dir
+    ))
+  }
+}
+
+if (REPAIR_WEATHER_TEMPERATURE_INVERSIONS) {
+  if (dir.exists(output_dir)) {
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    repair_log <- file.path(output_dir, "weather_repair.log")
+    repair_summary <- dssatutils::repair_weather_temperature_inversions(
+      weather_dir = output_dir,
+      ids = ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      log_file = repair_log
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather Tmax/Tmin inversion repair complete: %d day(s) repaired; %d inversion day(s) left unrepaired. Log: %s",
+      repaired_values, unrepaired_values, repair_log
+    ))
+  } else {
+    warning(sprintf(
+      "repair_weather_temperature_inversions is TRUE, but weather directory does not exist: %s",
+      output_dir
+    ))
+  }
+}
+
+if (AUDIT_WEATHER_QUALITY) {
+  if (dir.exists(output_dir)) {
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    repair_log <- file.path(output_dir, "weather_repair.log")
+    audit_csv <- file.path(output_dir, "weather_quality_audit.csv")
+    audit_summary <- dssatutils::audit_weather_quality(
+      weather_dir = output_dir,
+      ids = ids,
+      audit_csv = audit_csv,
+      flatline_days = WEATHER_QUALITY_FLATLINE_DAYS,
+      log_file = repair_log
+    )
+    message(sprintf(
+      "Weather QA audit complete: %d finding row(s). Audit CSV: %s",
+      nrow(audit_summary), audit_csv
+    ))
+  } else {
+    warning(sprintf(
+      "audit_weather_quality is TRUE, but weather directory does not exist: %s",
+      output_dir
+    ))
+  }
+}
+
+# === WEATHER EXTENSION LOGIC (PARALLEL) ===
+if (EXTEND_WEATHER_DATA) {
+  if (dir.exists(output_dir)) {
     all_wth_files <- list.files(output_dir, pattern = "\\.WTH$", full.names = TRUE)
     message("Checking which files need extension...")
     
@@ -1460,6 +1651,11 @@ if (RUN_STEP_2_WEATHER) {
     } else {
       message("All files appear to be already extended.")
     }
+  } else {
+    warning(sprintf(
+      "extend_weather_data is TRUE, but weather directory does not exist: %s",
+      output_dir
+    ))
   }
 }
 
@@ -1560,7 +1756,13 @@ create_folders_and_files <- function(i) {
   # 2. HANDLE EXPERIMENT FILE
   tryCatch({
     content <- readLines(TEMPLATE_FILE_PATH, encoding = "UTF-8")
-    if (!any(grepl(TEMPLATE_SOIL_ID_PLACEHOLDER, content, fixed=TRUE))) {
+    # --- Soil ID substitution ---
+    # Preferred: the unambiguous 8-char SID00000 placeholder that occupies ONLY the
+    # *FIELDS ID_SOIL column. Legacy fallback: the older SOIL_ID / ID_SOIL tokens.
+    # (Mirrors the Python engine so R/Python output stays in parity - AGENTS.md S5.)
+    if (any(grepl("SID00000", content, fixed=TRUE))) {
+      content <- gsub("SID00000", hmx_replacement_id, content, fixed = TRUE)
+    } else if (!any(grepl(TEMPLATE_SOIL_ID_PLACEHOLDER, content, fixed=TRUE))) {
       if(any(grepl("ID_SOIL", content, fixed=TRUE))) {
         if (any(grepl("   ID_SOIL", content, fixed=TRUE))) {
           content <- gsub("   ID_SOIL", sprintf("%-10s", hmx_replacement_id), content, fixed = TRUE)
@@ -1575,7 +1777,16 @@ create_folders_and_files <- function(i) {
         content <- gsub(TEMPLATE_SOIL_ID_PLACEHOLDER, hmx_replacement_id, content, fixed = TRUE)
       }
     }
-    content <- gsub("00000000", ID, content, fixed = TRUE)
+    # --- Weather station (WSTA) substitution ---
+    # Preferred: the unambiguous WID00000 placeholder. Legacy fallback: the blanket
+    # 00000000 -> point ID (kept for un-migrated templates). With WID00000 present
+    # the blanket is skipped, so ID_FIELD's own 00000000 is preserved exactly as in
+    # the Python engine.
+    if (any(grepl("WID00000", content, fixed=TRUE))) {
+      content <- gsub("WID00000", ID, content, fixed = TRUE)
+    } else {
+      content <- gsub("00000000", ID, content, fixed = TRUE)
+    }
     content <- gsub(tools::file_path_sans_ext(TEMPLATE_FILE_NAME), ID, content, fixed = TRUE)
 
     # Substitute real per-point coordinates into the *FIELDS tier-2 line so DSSAT
@@ -1744,6 +1955,14 @@ if (RUN_DSSAT_EXECUTION) {
     produced  <- file.exists(file.path(ids_to_run, paste0("results_", ids_to_run, ".csv")))
     failed_ids <- ids_to_run[!produced]
     if (length(failed_ids) > 0) {
+      message(sprintf("Retrying %d DSSAT point(s) serially after parallel failure: %s",
+                      length(failed_ids), paste(head(failed_ids, 20), collapse = ", ")),
+              if (length(failed_ids) > 20) sprintf(" ... (+%d more)", length(failed_ids) - 20) else "")
+      invisible(lapply(failed_ids, run_simulation_wrapper))
+      produced <- file.exists(file.path(ids_to_run, paste0("results_", ids_to_run, ".csv")))
+    }
+    failed_ids <- ids_to_run[!produced]
+    if (length(failed_ids) > 0) {
       message(sprintf("WARNING: %d of %d point(s) produced NO results_<ID>.csv.",
                       length(failed_ids), length(ids_to_run)))
       message("  Failed IDs: ", paste(head(failed_ids, 20), collapse = ", "),
@@ -1907,7 +2126,12 @@ if (RUN_DSSAT_EXECUTION) {
   
   library(readr); library(dplyr); library(ggplot2); library(sf); library(tools)
   file_path <- FINAL_RESULTS_PATH
-  
+
+  # Visualization is best-effort: the results CSV is already written and combined
+  # by this point, so a plotting failure (bad geometry, missing boundary_sf, a
+  # treatment with all-NA yields, ...) must NEVER abort the run or the sweep loop.
+  # (Parity: the same guard wraps STEP 4 in dssat_main_pipeline.py - AGENTS S2.)
+  tryCatch({
   if (file.exists(file_path)) {
     message("Loading results for final plot...")
     sim_data <- read_csv(file_path, show_col_types = FALSE) 
@@ -1946,6 +2170,9 @@ if (RUN_DSSAT_EXECUTION) {
   } else {
     message(paste("Plotting skipped: '", file_path, "' not found. Did simulations run correctly?"))
   }
+  }, error = function(e) {
+    message(sprintf("Visualization skipped (non-fatal): %s", conditionMessage(e)))
+  })
   message(sprintf("\n%s\nPIPELINE FINISHED!\n%s", paste(rep("*", 60), collapse = ""), paste(rep("*", 60), collapse = "")))
 } else {
   message("Skipping Visualization (HPC Prep Mode)")
