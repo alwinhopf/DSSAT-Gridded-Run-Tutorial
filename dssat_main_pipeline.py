@@ -192,12 +192,21 @@ GRID_BASE_NAME        = f"{PROJECT_NAME}_{RESOLUTION_TAG}"
 BOUNDARY_FILTER_VALUE = STATE_NAME_FILTER
 
 # Weather settings
-WEATHER_SOURCE     = cfg_get("weather_source", "GRIDMET")   # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS
+WEATHER_SOURCE     = cfg_get("weather_source", "GRIDMET")   # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | NASA_POWER_CHIRPS_V3
 WEATHER_START_YEAR = int(cfg_get("weather_start_year", 1982))
 WEATHER_END_YEAR   = int(cfg_get("weather_end_year", 1983))
-# NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p05" (~5.5 km, recommended)
-# or "p25" (~28 km, lighter download).
-CHIRPS_RESOLUTION  = str(cfg_get("chirps_resolution", "p05"))
+# NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p25" (~28 km, default)
+# or "p05" (~5.5 km, much larger download).
+CHIRPS_RESOLUTION  = str(cfg_get("chirps_resolution", "p25"))
+# NASA_POWER_CHIRPS_V3 only: CHIRPS v3 rainfall product/options.
+# product: "rnl" = rain-gauge-adjusted final rainfall; "sat" = satellite-only.
+# fetch_mode: monthly_netcdf is much smaller per request than yearly_netcdf.
+CHIRPS_V3_PRODUCT    = str(cfg_get("chirps_v3_product", "rnl"))
+CHIRPS_V3_STREAM     = str(cfg_get("chirps_v3_stream", "final"))
+CHIRPS_V3_FETCH_MODE = str(cfg_get("chirps_v3_fetch_mode", "monthly_netcdf"))
+CHIRPS_V3_RESOLUTION = str(cfg_get("chirps_v3_resolution", "p05"))
+_CHIRPS_V3_MONTHS_RAW = cfg_get("chirps_v3_months", None)
+CHIRPS_V3_MONTHS = as_int_list(_CHIRPS_V3_MONTHS_RAW) or None
 
 # Soil settings
 SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # SSURGO | SOILGRIDS_10K | AGMIP | SOILGRIDS_ONLINE | POLARIS
@@ -221,7 +230,7 @@ HWSD_DB_FILE       = cfg_get("hwsd_db_file",
                              os.path.join(INPUT_ROOT_DIR, "HWSD", "HWSD2.sqlite"))
 # E-OBS only: folder of pre-downloaded E-OBS NetCDFs (tx/tn/rr/qq...). Set
 # eobs_use_cds: true to fetch an area subset via the Copernicus CDS instead
-# (needs the same ~/.cdsapirc key as AgERA5).
+# (run setup_cds_credentials() once, or provide CDSAPI_KEY / ~/.cdsapirc).
 EOBS_NC_DIR        = cfg_get("eobs_nc_dir",
                              os.path.join(INPUT_ROOT_DIR, "eobs_netcdf"))
 EOBS_USE_CDS       = bool(cfg_get("eobs_use_cds", False))
@@ -266,6 +275,7 @@ DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 # --- 0.6 Dynamic paths ------------------------------------------------------
 GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
+CHIRPS_V3_CACHE_DIR   = os.path.join(OUTPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 4))
 DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
@@ -517,6 +527,7 @@ from dssatutils.weather_nasapower     import process_weather_nasapower
 from dssatutils.weather_gridmet       import process_weather_gridmet
 from dssatutils.weather_openmeteo     import process_weather_openmeteo
 from dssatutils.weather_nasapower_chirps import process_weather_nasapower_chirps
+from dssatutils.weather_chirps_v3     import process_weather_nasapower_chirps_v3
 from dssatutils.weather_agera5        import process_weather_agera5
 from dssatutils.weather_dwd           import process_weather_dwd
 from dssatutils.weather_eobs          import process_weather_eobs
@@ -898,6 +909,22 @@ if __name__ == '__main__':
                 _wc.CHIRPS_RESOLUTION = CHIRPS_RESOLUTION
                 process_weather_nasapower_chirps(
                     **common_args, chirps_cache_dir=CHIRPS_CACHE_DIR)
+            elif WEATHER_SOURCE == "NASA_POWER_CHIRPS_V3":
+                if CHIRPS_V3_MONTHS:
+                    print(
+                        "CHIRPS v3 month subset enabled: "
+                        f"{','.join(map(str, CHIRPS_V3_MONTHS))}. "
+                        "NASA POWER rainfall fills other months."
+                    )
+                process_weather_nasapower_chirps_v3(
+                    **common_args,
+                    chirps_cache_dir=CHIRPS_V3_CACHE_DIR,
+                    chirps_product=CHIRPS_V3_PRODUCT,
+                    chirps_stream=CHIRPS_V3_STREAM,
+                    chirps_fetch_mode=CHIRPS_V3_FETCH_MODE,
+                    chirps_resolution=CHIRPS_V3_RESOLUTION,
+                    chirps_months=CHIRPS_V3_MONTHS,
+                )
             elif WEATHER_SOURCE == "AGERA5":
                 agera5_args = dict(common_args)
                 agera5_args["n_cores"] = AGERA5_MAX_CONCURRENT_REQUESTS

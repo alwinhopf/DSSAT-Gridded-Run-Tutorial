@@ -9,6 +9,59 @@ This file is a resumable handoff: it captures the plan, the confirmed file/funct
 inventory, the exact commands, and the code-review findings so far. Safe to delete
 once migration is complete.
 
+## Current handoff: dssatutils v0.4.0 CDS/source audit (2026-06-30)
+
+The shared package now has a larger public surface than the original migration
+inventory below. As of the v0.4.0 audit:
+
+- R and Python each expose 61 public names; the R `NAMESPACE` and Python
+  `python/dssatutils/__init__.py` export maps match exactly.
+- CDS-backed weather sources are AgERA5, ERA5-Land, and E-OBS when
+  `eobs_use_cds` is enabled.
+- `setup_cds_credentials()` is public in both R and Python. It uses
+  `CDSAPI_KEY` / `CDSAPI_URL`, imports `~/.cdsapirc`, or prompts interactively;
+  the R version also configures `ecmwfr`. `era5land_set_cds_key()` remains as a
+  compatibility alias.
+- Python packaging now has a general `cds` extra for CDS-backed weather sources
+  (`pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`).
+- R E-OBS CDS mode is implemented via `ecmwfr`; local E-OBS NetCDF mode remains
+  the default and needs no key.
+- Deferred AgERA5 cache investigation: current AgERA5 downloads can produce many
+  small cached files. Later, evaluate a larger NetCDF chunking strategy
+  (for example by variable/year/region), including CDS request limits,
+  retry/resume behavior, partial cache invalidation, and R/Python parity before
+  implementing any cache-layout change.
+- Concrete candidate: the CDS time-series product
+  `sis-agrometeorological-indicators-timeseries`
+  ("Agrometeorological indicators time-series from 1979 to present derived from
+  reanalysis"). It is designed for point or small-area AgERA5 extraction and can
+  return CSV or NetCDF-4. Test whether this can replace or complement the
+  current AgERA5 downloader with fewer, larger cache files before changing the
+  package API or cache layout.
+
+Verification commands used for this audit:
+
+```powershell
+cd C:\Users\alwin\Documents\GitHub\dssatutils
+python -m pytest tests/test_new_sources.py tests/test_smoke.py -q
+python -m pytest tests/test_comprehensive.py -q
+Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('tests/testthat/test_new_sources.R', reporter='summary')"
+Rscript -e "for (f in list.files('R', pattern='\\.R$', full.names=TRUE)) parse(f); cat('R parse OK\n')"
+python -m compileall -q python\dssatutils
+```
+
+Full R test-directory execution timed out on this Windows environment, so future
+work should still run it where package dependencies and time budget allow.
+
+When adding a new source or setup helper, update all of these together:
+
+1. R implementation under `dssatutils/R/`.
+2. Python implementation under `dssatutils/python/dssatutils/`.
+3. `dssatutils/NAMESPACE`.
+4. `dssatutils/python/dssatutils/__init__.py`.
+5. `dssatutils/README.md` and tutorial `DATA_SOURCES.md` / `README.md`.
+6. Offline tests in both `tests/testthat/` and `tests/`.
+
 ---
 
 ## Decisions locked in

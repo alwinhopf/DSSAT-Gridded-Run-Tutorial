@@ -36,3 +36,4 @@
 # Python bytecode caches (anywhere, e.g. hpc/__pycache__)
 __pycache__/
 *.pyc
+/chirps_v3_netcdf_cache

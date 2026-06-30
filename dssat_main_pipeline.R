@@ -243,8 +243,26 @@ WEATHER_SOURCE     <- cfg_get("weather_source", "DAYMET")
 # Keep the date range short for a first test (longer ranges = more downloads).
 WEATHER_START_YEAR <- cfg_get("weather_start_year", 1982) #note: nasa_power not suitable/available before 1984
 WEATHER_END_YEAR   <- cfg_get("weather_end_year", 1983)
-# NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p05" (~5.5km) or "p25" (~28km).
-CHIRPS_RESOLUTION  <- as.character(cfg_get("chirps_resolution", "p05"))
+# NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p25" (~28km, default)
+# or "p05" (~5.5km, much larger download).
+CHIRPS_RESOLUTION  <- as.character(cfg_get("chirps_resolution", "p25"))
+# NASA_POWER_CHIRPS_V3 only: CHIRPS v3 rainfall product/options.
+# product: "rnl" = rain-gauge-adjusted final rainfall; "sat" = satellite-only.
+# fetch_mode: monthly_netcdf is much smaller per request than yearly_netcdf.
+CHIRPS_V3_PRODUCT    <- as.character(cfg_get("chirps_v3_product", "rnl"))
+CHIRPS_V3_STREAM     <- as.character(cfg_get("chirps_v3_stream", "final"))
+CHIRPS_V3_FETCH_MODE <- as.character(cfg_get("chirps_v3_fetch_mode", "monthly_netcdf"))
+CHIRPS_V3_RESOLUTION <- as.character(cfg_get("chirps_v3_resolution", "p05"))
+CHIRPS_V3_MONTHS_RAW <- cfg_get("chirps_v3_months", NULL)
+CHIRPS_V3_MONTHS <- if (is.null(CHIRPS_V3_MONTHS_RAW) || length(CHIRPS_V3_MONTHS_RAW) == 0) {
+  NULL
+} else {
+  .m <- suppressWarnings(as.integer(unlist(CHIRPS_V3_MONTHS_RAW, use.names = FALSE)))
+  .m <- unique(.m[!is.na(.m)])
+  if (length(.m) == 0) NULL else .m
+}
+CHIRPS_GEE_PROJECT  <- as.character(cfg_get("chirps_gee_project", ""))
+CHIRPS_DOWNLOAD_TIMEOUT <- cfg_get("chirps_download_timeout", NULL)
 
 # 3. Soil Settings
 # SOIL_SOURCE: "SSURGO"          — US only, queries USDA SDA web service per point
@@ -343,6 +361,7 @@ RESULTS_SUBDIR <- "results"
 # study. These dirs are gitignored — they hold large generated downloads.
 GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
+CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
 DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
@@ -550,7 +569,9 @@ packages_needed <- c(
 # Source-specific packages that are loaded LAZILY inside their module (so
 # sourcing the file never needs them) — require them only when that source is
 # actually selected, so e.g. a Daymet user is never asked to install RSQLite.
-if (WEATHER_SOURCE == "AGERA5") packages_needed <- c(packages_needed, "ecmwfr")
+if (WEATHER_SOURCE == "AGERA5" || (WEATHER_SOURCE == "EOBS" && EOBS_USE_CDS)) {
+  packages_needed <- c(packages_needed, "ecmwfr")
+}
 if (SOIL_SOURCE == "HWSD")      packages_needed <- c(packages_needed, "DBI", "RSQLite")
 
 # Packages installed from GitHub rather than CRAN (name -> repo). None are
@@ -702,6 +723,49 @@ message(sprintf("Using landcover helper scripts from: %s", SCRIPT_DIR))
 
 library(dssatutils)  # [dssatutils] shared weather/soil sources
 library(dssatengine) # [dssatengine] shared gridded run engine
+
+ensure_dssatutils_chirps_v3 <- function() {
+  if (!identical(WEATHER_SOURCE, "NASA_POWER_CHIRPS_V3")) {
+    return(invisible(TRUE))
+  }
+
+  sibling_root <- normalizePath(file.path(CODE_ROOT_DIR, "..", "dssatutils"),
+                                mustWork = FALSE)
+  candidates <- c(
+    file.path(sibling_root, "R", "utils.R"),
+    file.path(sibling_root, "R", "weather_missing_normalization.R"),
+    file.path(sibling_root, "R", "weather_rainfall_merge.R"),
+    file.path(sibling_root, "R", "weather_chirps_v3.R")
+  )
+  if (all(file.exists(candidates))) {
+    for (src in candidates) source(src, local = globalenv())
+    message(sprintf(
+      "Loaded CHIRPS v3 weather helpers from local dssatutils checkout: %s",
+      sibling_root
+    ))
+    return(invisible(TRUE))
+  }
+
+  ns <- asNamespace("dssatutils")
+  has_namespace_v3 <- exists("process_weather_nasapower_chirps_v3", ns, inherits = FALSE) &&
+    exists(".extract_coords", ns, inherits = FALSE) &&
+    exists(".normalize_weather_missing_values", ns, inherits = FALSE)
+  if (has_namespace_v3) {
+    process_weather_nasapower_chirps_v3 <<-
+      get("process_weather_nasapower_chirps_v3", envir = ns)
+    return(invisible(TRUE))
+  }
+
+  if (!exists("process_weather_nasapower_chirps_v3", mode = "function")) {
+    stop("process_weather_nasapower_chirps_v3 is not available. ",
+         "Reinstall/update the dssatutils R package from the local checkout ",
+         "or keep ../dssatutils/R/weather_chirps_v3.R available.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+ensure_dssatutils_chirps_v3()
+
 # Soil sources that write one Saxton-&-Rawls .SOL per grid point named by point
 # ID (so SOIL_ID == point ID and the per-point combine logic applies).
 PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")
@@ -732,7 +796,12 @@ delete_numbered_folders <- function(ids) {
   numbered_dirs <- dirs[basename(dirs) %in% ids]
   if(length(numbered_dirs) > 0) {
     message(sprintf("Deleting %d old simulation folders...", length(numbered_dirs)))
-    sapply(numbered_dirs, unlink, recursive = TRUE)
+    for (attempt in 1:5) {
+      sapply(numbered_dirs, unlink, recursive = TRUE, force = TRUE)
+      remaining <- numbered_dirs[dir.exists(numbered_dirs)]
+      if (length(remaining) == 0) break
+      Sys.sleep(1)
+    }
   }
 }
 
@@ -743,10 +812,14 @@ is_wth_valid <- function(id, dir, end_yr) {
   if (file.info(f)$size == 0) return(FALSE)
   
   tryCatch({
-    lines <- tail(readLines(f, warn = FALSE, encoding = "UTF-8"), 50)
+    lines <- readLines(f, warn = FALSE, encoding = "UTF-8")
     if (length(lines) == 0) return(FALSE)
     data_lines <- grep("^\\s*[0-9]{5,7}\\b", lines, value = TRUE)
     if (length(data_lines) == 0) return(FALSE)
+    fields <- strsplit(trimws(data_lines), "\\s+")
+    if (any(vapply(fields, length, integer(1)) != 8L)) return(FALSE)
+    numeric_values <- suppressWarnings(lapply(fields, function(x) as.numeric(x[-1])))
+    if (any(vapply(numeric_values, function(x) any(is.na(x) | !is.finite(x)), logical(1)))) return(FALSE)
     last_line <- tail(data_lines, 1)
     last_date_str <- regmatches(last_line, regexpr("^\\s*\\d+", last_line))
     if (length(last_date_str) == 0) return(FALSE)
@@ -1164,7 +1237,15 @@ if (RUN_STEP_1_SOILS) {
     .soil_fn <- switch(SOIL_SOURCE,
       SSURGO   = process_soils_ssurgo,
       SSURGO_ALDERMAN = function(g, c, i, n, id, la, lo, fm)
-                          process_soils_ssurgo_alderman(g, c, i, n, id, la, lo, fm, STATSGO = STATSGO, standardize_layers = STANDARDIZE_LAYERS),
+                          process_soils_ssurgo_alderman(
+                            g, c, i, n, id, la, lo, fm,
+                            log_file = file.path(
+                              dirname(c),
+                              paste0(tools::file_path_sans_ext(basename(c)), "_soil.log")
+                            ),
+                            STATSGO = STATSGO,
+                            standardize_layers = STANDARDIZE_LAYERS
+                          ),
       GNATSGO  = process_soils_gnatsgo,
       ISDASOIL = process_soils_isdasoil,
       LUCAS    = function(gridfile, csv, indiv, cores, idc, latc, lonc, fmt)
@@ -1174,7 +1255,7 @@ if (RUN_STEP_1_SOILS) {
       clean_invalid_soils(individual_sol_output_folder, ids)
     }
     
-    max_retries <- if (CHECK_SOIL_DOWNLOADS) SOIL_DOWNLOAD_RETRIES else 1
+    max_retries <- max(1L, SOIL_DOWNLOAD_RETRIES)
     retry_count <- 0
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
     
@@ -1199,16 +1280,27 @@ if (RUN_STEP_1_SOILS) {
       
       retry_count <- retry_count + 1
       
-      if (CHECK_SOIL_DOWNLOADS && retry_count < max_retries) {
+      if (CHECK_SOIL_DOWNLOADS) {
         clean_invalid_soils(individual_sol_output_folder, ids)
-        existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-        missing_count <- sum(!ids %in% existing_files)
-        if (missing_count == 0) {
-          break
-        } else {
-          message(sprintf("%s: %d profiles missing/invalid. Retrying...", SOIL_SOURCE, missing_count))
-        }
+      }
+
+      existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+      missing_count <- sum(!ids %in% existing_files)
+      if (missing_count == 0) {
+        break
+      } else if (retry_count < max_retries) {
+        message(sprintf("%s: %d profiles missing%s. Retrying %d/%d...",
+                        SOIL_SOURCE,
+                        missing_count,
+                        if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
+                        retry_count,
+                        max_retries))
       } else {
+        warning(sprintf("%s: %d profile(s) still missing%s after %d retries. Missing IDs will be skipped during DSSAT execution.",
+                        SOIL_SOURCE,
+                        missing_count,
+                        if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
+                        max_retries))
         break
       }
     }
@@ -1235,7 +1327,7 @@ if (RUN_STEP_1_SOILS) {
       message(sprintf("SoilGrids online mode: %s. Processing %d missing points...",
                       if (SOILGRIDS_MODE == "VRT") "VRT" else "REST API", nrow(points_to_process)))
                       
-      max_retries <- if (CHECK_SOIL_DOWNLOADS) SOIL_DOWNLOAD_RETRIES else 1
+      max_retries <- max(1L, SOIL_DOWNLOAD_RETRIES)
       retry_count <- 0
       
       while (nrow(points_to_process) > 0 && retry_count < max_retries) {
@@ -1271,7 +1363,6 @@ if (RUN_STEP_1_SOILS) {
           existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
           ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
           points_to_process <- points_to_process[!(ids_left %in% existing_left), ]
-          break
         }
       }
       
@@ -1391,6 +1482,13 @@ if (RUN_STEP_2_WEATHER) {
     message("Verifying existing weather files for validity...")
     valid_mask <- vapply(ids, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
     missing_mask <- !valid_mask
+    invalid_existing <- ids[missing_mask & file.exists(file.path(output_dir, paste0(ids, ".WTH")))]
+    if (length(invalid_existing) > 0) {
+      message(sprintf("Deleting %d invalid existing weather file(s) before retry: %s",
+                      length(invalid_existing), paste(head(invalid_existing, 20), collapse = ", ")),
+              if (length(invalid_existing) > 20) sprintf(" ... (+%d more)", length(invalid_existing) - 20) else "")
+      unlink(file.path(output_dir, paste0(invalid_existing, ".WTH")), force = TRUE)
+    }
   } else {
     existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
     missing_mask <- ! (ids %in% existing_files)
@@ -1402,7 +1500,7 @@ if (RUN_STEP_2_WEATHER) {
   } else {
     log_file <- file.path(output_dir, "download_errors.log")
     
-    max_retries <- if (CHECK_WEATHER_DOWNLOADS) WEATHER_DOWNLOAD_RETRIES else 1
+    max_retries <- max(1L, WEATHER_DOWNLOAD_RETRIES)
     retry_count <- 0
     
     while (nrow(points_to_process) > 0 && retry_count < max_retries) {
@@ -1428,9 +1526,25 @@ if (RUN_STEP_2_WEATHER) {
       else if (WEATHER_SOURCE == "GRIDMET") do.call(process_weather_gridmet, c(common_args, list(gridmet_cache_dir = GRIDMET_CACHE_DIR)))
       else if (WEATHER_SOURCE == "OPEN_METEO") do.call(process_weather_openmeteo, common_args)
       else if (WEATHER_SOURCE == "NASA_POWER_CHIRPS") {
-        CHIRPS_RESOLUTION <<- if (exists("CHIRPS_RESOLUTION")) CHIRPS_RESOLUTION else "p05"
+        CHIRPS_RESOLUTION <<- if (exists("CHIRPS_RESOLUTION")) CHIRPS_RESOLUTION else "p25"
         do.call(process_weather_nasapower_chirps,
-                c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR)))
+                c(common_args, list(chirps_cache_dir = CHIRPS_CACHE_DIR,
+                                    timeout = CHIRPS_DOWNLOAD_TIMEOUT)))
+      }
+      else if (WEATHER_SOURCE == "NASA_POWER_CHIRPS_V3") {
+        if (!is.null(CHIRPS_V3_MONTHS)) {
+          message(sprintf("CHIRPS v3 month subset enabled: %s. NASA POWER rainfall fills other months.",
+                          paste(CHIRPS_V3_MONTHS, collapse = ",")))
+        }
+        do.call(process_weather_nasapower_chirps_v3,
+                c(common_args, list(chirps_cache_dir = CHIRPS_V3_CACHE_DIR,
+                                    chirps_product = CHIRPS_V3_PRODUCT,
+                                    chirps_stream = CHIRPS_V3_STREAM,
+                                    chirps_fetch_mode = CHIRPS_V3_FETCH_MODE,
+                                    chirps_resolution = CHIRPS_V3_RESOLUTION,
+                                    chirps_months = CHIRPS_V3_MONTHS,
+                                    chirps_gee_project = CHIRPS_GEE_PROJECT,
+                                    timeout = CHIRPS_DOWNLOAD_TIMEOUT)))
       }
       else if (WEATHER_SOURCE == "AGERA5")
         {
@@ -1480,7 +1594,6 @@ if (RUN_STEP_2_WEATHER) {
         existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
         ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
         points_to_process <- points_to_process[!(ids_left %in% existing_files), ]
-        break
       }
     }
     
@@ -2028,7 +2141,17 @@ if (RUN_DSSAT_EXECUTION) {
       if (length(point_dirs) > 0) {
         message(sprintf("Cleanup: deleting %d per-point run folder(s) under %s",
                         length(point_dirs), DSSAT_RUN_DIR))
-        unlink(point_dirs, recursive = TRUE, force = TRUE)
+        for (attempt in 1:5) {
+          unlink(point_dirs, recursive = TRUE, force = TRUE)
+          remaining <- point_dirs[dir.exists(point_dirs)]
+          if (length(remaining) == 0) break
+          Sys.sleep(1)
+        }
+        remaining <- point_dirs[dir.exists(point_dirs)]
+        if (length(remaining) > 0) {
+          warning(sprintf("Cleanup incomplete: could not delete %d folder(s) due to Windows file locks: %s",
+                          length(remaining), paste(head(remaining, 5), collapse = ", ")))
+        }
       }
     } else {
       message("Cleanup requested, but the combined results CSV was not written — keeping run folders for troubleshooting.")
@@ -2159,7 +2282,8 @@ if (RUN_DSSAT_EXECUTION) {
           coord_sf(crs = 4326) + 
           labs(title = sprintf("Average Simulated Grain Yield (Treatment %d)", trt),
                subtitle = paste(sprintf("Weather Data: %s (%d-%d)", WEATHER_SOURCE, WEATHER_START_YEAR, WEATHER_END_YEAR), sep = "\n")) +
-          theme_minimal() + theme(panel.background = element_rect(fill = "aliceblue", color = NA))
+          theme_minimal() +
+          theme(panel.background = element_rect(fill = "aliceblue", color = NA))
         
         base_plot_path <- tools::file_path_sans_ext(FINAL_PLOT_PATH)
         new_plot_path <- sprintf("%s_treatment%d.png", base_plot_path, trt)

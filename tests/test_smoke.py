@@ -51,11 +51,12 @@ def test_module_imports():
     # These may pull optional heavy deps at import time; skip if absent.
     optional_modules = {"dssatutils.weather_gridmet",          # xarray
                         "dssatutils.weather_nasapower_chirps",  # imports weather_nasapower; xarray lazy
+                        "dssatutils.weather_chirps_v3",         # imports weather_nasapower; xarray lazy
                         "dssatutils.weather_agera5",            # numpy/pandas; cdsapi+xarray lazy
                         "dssatutils.soil_hwsd"}                 # imports soil_soilgrids_online
     for mod in ["dssatutils.weather_daymet", "dssatutils.weather_nasapower", "dssatutils.weather_gridmet",
                 "dssatutils.weather_openmeteo", "dssatutils.weather_nasapower_chirps",
-                "dssatutils.weather_agera5", "dssatutils.soil_hwsd"]:
+                "dssatutils.weather_chirps_v3", "dssatutils.weather_agera5", "dssatutils.soil_hwsd"]:
         try:
             __import__(mod)
         except ModuleNotFoundError:

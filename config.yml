@@ -12,7 +12,7 @@
 
 # --- Project / grid ---
 project_name:         "dssat_spatial_demo"
-grid_spacing_meters:  40000          # 50 km demo; 5000-10000 for production
+grid_spacing_meters:  20000          # 50 km demo; 5000-10000 for production
 crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
 
 # --- Run-folder naming ---
@@ -42,7 +42,8 @@ reuse_cropland_grid:    true         # reuse saved cropland grid for same projec
 
 # --- Weather ---
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
-# | NASA_POWER_CHIRPS (global, NASA POWER + high-res CHIRPS rainfall, 50S-50N)
+# | NASA_POWER_CHIRPS (global, NASA POWER + CHIRPS v2 rainfall, 50S-50N)
+# | NASA_POWER_CHIRPS_V3 (global, NASA POWER + CHIRPS v3 rainfall, 60S-60N)
 # | AGERA5 (global 0.1deg, ag-tuned; needs a free Copernicus CDS API key)
 # | DWD (Germany; quality-controlled stations, keyless; SRAD from sunshine duration)
 # | EOBS (Europe 0.1deg gridded; carries daily global radiation; see eobs_* keys)
@@ -53,9 +54,14 @@ weather_source:       "NASA_POWER"
 weather_start_year:   1992           # NASA_POWER not available before 1984
 weather_end_year:     1992
 chirps_resolution:    "p05"          # NASA_POWER_CHIRPS only: p05 (~5.5km) | p25 (~28km, lighter)
+chirps_v3_product:    "rnl"          # NASA_POWER_CHIRPS_V3 only: rnl (gauge-adjusted final) | sat (satellite-only)
+chirps_v3_stream:     "final"        # NASA_POWER_CHIRPS_V3 only: final | prelim (prelim supports sat/yearly only)
+chirps_v3_fetch_mode: "monthly_netcdf" # NASA_POWER_CHIRPS_V3 only: monthly_netcdf (recommended) | yearly_netcdf
+chirps_v3_resolution: "p05"          # NASA_POWER_CHIRPS_V3 only: currently p05 daily rainfall
+chirps_v3_months:     []             # NASA_POWER_CHIRPS_V3 only: [] = all months; e.g. [10,11,12,1,2,3,4] to limit downloads
 agera5_max_concurrent_requests: 4    # AgERA5 only: concurrent CDS requests; 4 is a conservative max
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
-eobs_use_cds:         false          # EOBS only: true = fetch an area subset via Copernicus CDS (needs ~/.cdsapirc)
+eobs_use_cds:         false          # EOBS only: true = fetch via Copernicus CDS; run setup_cds_credentials() once
 xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)
 cmfd_nc_dir:          ""             # CMFD only: folder of CMFD NetCDFs temp/prec/srad/shum/pres/wind (blank = cmfd_netcdf/)
 

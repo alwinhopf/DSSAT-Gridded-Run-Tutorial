@@ -131,7 +131,20 @@ parse_filex <- function(exp) {
 #              FALSE = a minimal recommended pair (faster, fewer runs).
 ALL_SOURCES <- TRUE
 PRUNE_UNRUNNABLE <- TRUE        # drop sources whose deps/keys/files are missing (preflight)
-HAS_CDS  <- file.exists(path.expand("~/.cdsapirc")) || nzchar(Sys.getenv("CDSAPI_KEY"))
+has_cds_credentials <- function() {
+  file.exists(path.expand("~/.cdsapirc")) || nzchar(Sys.getenv("CDSAPI_RC")) ||
+    nzchar(Sys.getenv("CDSAPI_KEY"))
+}
+HAS_CDS <- has_cds_credentials()
+if (!HAS_CDS && ALL_SOURCES && requireNamespace("dssatutils", quietly = TRUE)) {
+  HAS_CDS <- tryCatch({
+    dssatutils::setup_cds_credentials(prompt = interactive(), quiet = TRUE)
+    has_cds_credentials()
+  }, error = function(e) {
+    if (interactive()) message("Copernicus CDS setup skipped: ", conditionMessage(e))
+    FALSE
+  })
+}
 HAS_HWSD <- file.exists(file.path(PROJECT_ROOT, "HWSD", "HWSD2.bil")) || nzchar(Sys.getenv("HWSD_RASTER_FILE"))
 
 region_of <- function(lat, lon) {
@@ -145,7 +158,8 @@ is_conus <- function(lat, lon) lon >= -125 && lon <= -66 && lat >= 24 && lat <= 
 
 # Every gridded source feasible for a site, honouring each source's coverage:
 #   DAYMET (N.Am, 1980+) | GRIDMET (CONUS, 1979+) | OPEN_METEO (global, 1940+)
-#   NASA_POWER (global, 1984+) | NASA_POWER_CHIRPS (50S-50N, 1984+) | AGERA5 (global, key)
+#   NASA_POWER (global, 1984+) | NASA_POWER_CHIRPS (50S-50N, 1984+)
+#   NASA_POWER_CHIRPS_V3 (60S-60N, 1984+) | AGERA5 (global, key)
 #   SSURGO/SOILGRIDS_10K (US) | SOILGRIDS_ONLINE (global) | HWSD (global, files)
 select_sources <- function(region, lat, lon, year) {
   if (is.na(region)) return(NULL)
@@ -162,6 +176,7 @@ select_sources <- function(region, lat, lon, year) {
   if (year >= 1940)                                wx <- c(wx, "OPEN_METEO")
   if (year >= 1984)                                wx <- c(wx, "NASA_POWER")
   if (year >= 1984 && abs(lat) <= 50)              wx <- c(wx, "NASA_POWER_CHIRPS")
+  if (year >= 1984 && abs(lat) <= 60)              wx <- c(wx, "NASA_POWER_CHIRPS_V3")
   if (HAS_CDS && year >= 1979)                     wx <- c(wx, "AGERA5")
   if (region == "US")                              soil <- c(soil, "SSURGO", "SOILGRIDS_10K")
   soil <- c(soil, "SOILGRIDS_ONLINE")
@@ -304,8 +319,9 @@ source_status <- function(src) {
     OPEN_METEO        = need_pkgs("httr","jsonlite"),
     NASA_POWER        = need_pkgs("httr","jsonlite"),
     NASA_POWER_CHIRPS = need_pkgs("terra","ncdf4"),
+    NASA_POWER_CHIRPS_V3 = need_pkgs("terra","ncdf4"),
     AGERA5            = { m <- need_pkgs("ecmwfr","terra")
-                         k <- if (!HAS_CDS) "set ~/.cdsapirc (CDS key)" else ""
+                         k <- if (!HAS_CDS) "run setup_cds_credentials() or set CDSAPI_KEY" else ""
                          paste(Filter(nzchar, c(m, k)), collapse = "; ") },
     SSURGO            = need_pkgs("sf","httr"),
     SOILGRIDS_10K     = if (file.exists(file.path(PROJECT_ROOT, "SoilGrids", "US.SOL"))) "" else "missing SoilGrids/US.SOL",

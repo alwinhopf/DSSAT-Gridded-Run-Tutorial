@@ -95,6 +95,11 @@ if (length(weather_list) == 0 || length(soil_list) == 0)
 
 sanitize <- function(x) gsub("[^A-Za-z0-9_\\-]", "_", x)
 
+has_cds_credentials <- function() {
+  file.exists(path.expand("~/.cdsapirc")) || nzchar(Sys.getenv("CDSAPI_RC")) ||
+    nzchar(Sys.getenv("CDSAPI_KEY"))
+}
+
 # --- 1. Periods ------------------------------------------------------------
 # Each "START-END" entry overrides the weather years. With no period factor we
 # use one window taken from base/config (label kept for the output table).
@@ -157,15 +162,31 @@ combos$valid <- TRUE
 combos$skip_reason <- ""
 soft_warnings <- character()
 if (VALIDATE) {
-  cdsrc <- file.exists(path.expand("~/.cdsapirc")) || nzchar(Sys.getenv("CDSAPI_RC")) ||
-           nzchar(Sys.getenv("CDSAPI_KEY"))
+  eobs_uses_cds <- isTRUE(as.logical(base_cfg$eobs_use_cds))
+  needs_cds <- any(combos$weather_source == "AGERA5") ||
+    (eobs_uses_cds && any(combos$weather_source == "EOBS"))
+  cdsrc <- has_cds_credentials()
+  if (!cdsrc && needs_cds && requireNamespace("dssatutils", quietly = TRUE)) {
+    cdsrc <- tryCatch({
+      dssatutils::setup_cds_credentials(prompt = interactive(), quiet = FALSE)
+      has_cds_credentials()
+    }, error = function(e) {
+      soft_warnings <<- c(
+        soft_warnings,
+        paste("Copernicus CDS setup skipped:", conditionMessage(e))
+      )
+      FALSE
+    })
+  }
   warned_us <- FALSE; warned_rest <- FALSE
   for (i in seq_len(nrow(combos))) {
     w <- combos$weather_source[i]; s <- combos$soil_source[i]
     # Hard-invalid: drop the combination.
     if (w == "AGERA5" && !cdsrc) {
-      combos$valid[i] <- FALSE; combos$skip_reason[i] <- "AGERA5 needs a Copernicus CDS key (~/.cdsapirc)"
-    } else if (w %in% c("NASA_POWER", "NASA_POWER_CHIRPS") && combos$year_start[i] < 1984) {
+      combos$valid[i] <- FALSE; combos$skip_reason[i] <- "AGERA5 needs Copernicus CDS credentials; run setup_cds_credentials() or set CDSAPI_KEY"
+    } else if (w == "EOBS" && eobs_uses_cds && !cdsrc) {
+      combos$valid[i] <- FALSE; combos$skip_reason[i] <- "EOBS CDS mode needs Copernicus CDS credentials; run setup_cds_credentials() or set CDSAPI_KEY"
+    } else if (w %in% c("NASA_POWER", "NASA_POWER_CHIRPS", "NASA_POWER_CHIRPS_V3") && combos$year_start[i] < 1984) {
       combos$valid[i] <- FALSE
       combos$skip_reason[i] <- sprintf("%s has no data before 1984 (period starts %d)", w, combos$year_start[i])
     }

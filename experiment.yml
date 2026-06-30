@@ -40,7 +40,7 @@ base:
 # paired with every soil_source (and every period, if given). Add/remove entries
 # to grow or shrink it.
 #
-# weather_source: DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | AGERA5 | CHELSA_W5E5 | AGMERRA | AGCFSR | SILO | PRISM | MSWX | MSWEP | CRUJRA | TERRACLIMATE
+# weather_source: DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | NASA_POWER_CHIRPS_V3 | AGERA5 | CHELSA_W5E5 | AGMERRA | AGCFSR | SILO | PRISM | MSWX | MSWEP | CRUJRA | TERRACLIMATE
 #   The defaults below (DAYMET, OPEN_METEO) are keyless and cover 1982. NASA_POWER
 #   has no data before 1984, so it is only valid once you move the window to 1984+
 #   AND use a template whose planting year matches (see the period note below).
@@ -58,7 +58,7 @@ factors:
   # the FAO HWSD raster+db files; SOILGRIDS_ONLINE (VRT) needs python rasterio;
   # NASA_POWER/NASA_POWER_CHIRPS need years ≥ 1984. SSURGO/GRIDMET are US-only.
   # SOILGRIDS_10K and AGMIP need a local country .SOL file. Trim this list for a faster run.
-  weather_source: ["DAYMET", "GRIDMET", "OPEN_METEO", "NASA_POWER", "NASA_POWER_CHIRPS", "AGERA5"]
+  weather_source: ["DAYMET", "GRIDMET", "OPEN_METEO", "NASA_POWER", "NASA_POWER_CHIRPS", "NASA_POWER_CHIRPS_V3", "AGERA5"]
   soil_source:    ["SSURGO", "SOILGRIDS_10K", "SOILGRIDS_ONLINE", "HWSD"]
   # Minimal keyless set (out-of-box, 1982 demo): comment the lines above & use:
   # weather_source: ["DAYMET", "OPEN_METEO"]

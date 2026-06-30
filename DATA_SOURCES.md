@@ -70,16 +70,16 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Spatial Resolution**: 0.1° (~11 km)
 - **Temporal Resolution**: Daily (1979–present, 10-day lag)
 - **API Key Required**: Yes (Copernicus Data Store CDS account)
-- **Optional Dependencies**: `cdsapi` Python package
+- **Optional Dependencies**: Python `cdsapi` via `dssatutils[cds]`; R `ecmwfr`
 - **Status**: ⚠️ Requires CDS API credentials
 - **Implementation**: CDS API requests
 - **Notes**:
   - Requires free CDS account setup: https://cds.climate.copernicus.eu/
-  - Create `~/.cdsapi` config file with credentials
+  - Run `dssatutils::setup_cds_credentials()` in R or `dssatutils.setup_cds_credentials()` in Python, or create `~/.cdsapirc`
+  - Accept the AgERA5 dataset licence once in the CDS web UI
   - High-quality fusion of ERA5 + station data
-  - Slower (~5-10s per point due to API overhead)
-  - Monthly data then interpolated to daily
-  - 10-day lag (data published ~mid-month)
+  - Daily agrometeorological indicators downloaded once per variable-year and cached
+  - Requests are queued server-side; transient CDS/DNS failures should be retried with the same cache directory
 
 ### 6. **NASA-POWER CHIRPS Hybrid** (Global, Free)
 - **Coverage**: Global (focus on tropics/subtropics for CHIRPS)
@@ -105,20 +105,21 @@ This document outlines all weather and soil data sources available in `dssatutil
 
 ## Soil Data Sources
 
-### 1. **SoilGrids Online** (Global, Free, REST API)
+### 1. **SoilGrids Online** (Global, Free, REST API or VRT)
 - **Coverage**: Global
 - **Spatial Resolution**: 250 m (finer resolution available)
 - **Data Type**: Soil properties (sand/silt/clay, organic matter, pH, etc.)
 - **API Key Required**: No
-- **Optional Dependencies**: `sf`, `dplyr`, `httr` (R); `geopandas`, `requests` (Python)
-- **Status**: ⚠️ Slow REST API (~10-30s per point) with coverage gaps
-- **Implementation**: REST API calls to ISRIC SoilGrids service
+- **Optional Dependencies**: `sf`, `dplyr`, `httr`, `terra` for VRT (R); `geopandas`, `requests`, `rasterio` for VRT (Python)
+- **Status**: ✅ Implemented; REST is slow/rate-limited, VRT is preferred for batch runs
+- **Implementation**: ISRIC SoilGrids REST API or GDAL VRT raster sampling
 - **Notes**:
-  - One HTTP request per point (no batch mode)
+  - Select via `soilgrids_mode` in the tutorial `config.yml`; direct package calls use merged `dssatutils` `config.yml` (`soil.soilgrids_online.use_rest_api`)
+  - REST mode makes one HTTP request per point
+  - VRT mode streams global SoilGrids rasters and samples all points locally
   - Coverage gaps over water, deserts, some urban areas
   - Expected to produce partial results (some points may fail)
-  - REST API is slow but does not require local data
-  - Python implementation faster than R for parallel requests
+  - REST API is slow but does not require local data; VRT needs GDAL-backed raster support
   - **CI Recommendation**: Skip or set long timeout (>1 min for 3 points)
 
 ### 2. **SoilGrids (Offline)** (Global, Free, Local VRT/GeoTIFF)
@@ -292,18 +293,22 @@ install.packages("httr")  # For HTTP GET requests
 ```
 
 ### **AgERA5 (Setup Required)**
-```bash
+```r
 # 1. Create free CDS account at https://cds.climate.copernicus.eu/
-# 2. Create ~/.cdsapi file with credentials:
-cat > ~/.cdsapi << EOF
-url: https://cds.climate.copernicus.eu/api/v2
-key: XXXX:YYYYYYYYYYYYYY
-EOF
-chmod 600 ~/.cdsapi
-
-# 3. Install cdsapi
-pip install cdsapi
+# 2. Copy your Personal Access Token from your CDS profile.
+# 3. Configure credentials for R and Python clients:
+library(dssatutils)
+setup_cds_credentials()
 ```
+
+For Python-only environments, install the CDS extra and run:
+
+```python
+from dssatutils import setup_cds_credentials
+setup_cds_credentials()
+```
+
+Accept the AgERA5 dataset licence in the CDS web UI before the first run.
 
 ### **SoilGrids Offline (Advanced)**
 ```bash

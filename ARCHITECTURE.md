@@ -88,19 +88,28 @@ API. Its sole responsibility: fetch public weather/soil data and write DSSAT-for
 
 | Domain | Functions (identical names in R and Python) |
 |---|---|
-| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_era5_land`, `process_weather_nasapower_chirps`, `process_weather_dwd`, `process_weather_eobs`, `process_weather_xavier`, `process_weather_cmfd` |
-| Soil | `process_soils_ssurgo`, `process_soils_ssurgo_alderman`, `process_soils_gnatsgo`, `process_soils_isdasoil`, `process_soils_lucas`, `process_soils_polaris`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd` |
+| Weather | `process_weather_daymet`, `process_weather_gridmet`, `process_weather_nasapower`, `process_weather_openmeteo`, `process_weather_agera5`, `process_weather_era5_land`, `process_weather_nasapower_chirps`, `process_weather_nasapower_chirps_v3`, `process_weather_dwd`, `process_weather_eobs`, `process_weather_xavier`, `process_weather_cmfd`, plus local/raster products such as CHELSA-W5E5, AgMERRA/AgCFSR, SILO, PRISM, MSWX/MSWEP, CRU-JRA, TerraClimate, APHRODITE, ANUSPLIN, TAMSAT, GHCN, PGF, and MERRA-2. |
+| Soil | `process_soils_ssurgo`, `process_soils_ssurgo_alderman`, `process_soils_gnatsgo`, `process_soils_isdasoil`, `process_soils_lucas`, `process_soils_polaris`, `process_soils_soilgrids`, `process_soils_soilgrids_online`, `process_soils_hwsd`, plus AgMIP/Han, HiHydroSoil, SLGA, WISE30sec, WoSIS, GSDE, China BNU, FEBR, SLC, ESDB, and OpenLandMap. |
+| Credentials | `setup_cds_credentials` and compatibility alias `era5land_set_cds_key` are public in both R and Python. They configure CDS-backed sources from `CDSAPI_KEY` / `CDSAPI_URL`, an existing `~/.cdsapirc`, or an interactive prompt. |
 
 Coverage: Daymet = North America; GridMET/SSURGO/gNATSGO = USA; DWD = Germany;
 E-OBS / LUCAS = Europe; Xavier (BR-DWGD) = Brazil; CMFD = China; iSDAsoil = Africa;
-NASA POWER / Open-Meteo / AgERA5 / ERA5-Land / SoilGrids / HWSD2 = global. AgERA5 and
-ERA5-Land require a Copernicus CDS key; CHIRPS fuses NASA POWER with high-resolution
+NASA POWER / Open-Meteo / AgERA5 / ERA5-Land / SoilGrids / HWSD2 = global. AgERA5,
+ERA5-Land, and optional E-OBS CDS mode require a Copernicus CDS token; run
+`setup_cds_credentials()` once before using them. CHIRPS fuses NASA POWER with high-resolution
 rainfall (50S–50N). gNATSGO is the gap-free 30 m US grid; POLARIS is a 30 m probabilistic
 disaggregation of SSURGO (USA); iSDAsoil is 30 m Africa; LUCAS is measured EU topsoil
 (extrapolated below 20 cm); DWD estimates SRAD from sunshine duration; E-OBS and Xavier
 carry daily global radiation directly; CMFD is aggregated from 3-hourly.
 
 - Function names are identical across R and Python by design.
+- Provider defaults that are not study-specific live in the shared package
+  `config.yml` and are merged with consumer config files. Current package-level
+  defaults include Open-Meteo throttling, CHIRPS v3 settings, SoilGrids
+  REST/VRT behavior, and the CDS API URL.
+- Public exports are hand-maintained in `dssatutils/NAMESPACE` and
+  `python/dssatutils/__init__.py`; keep them in parity and run the export audit
+  whenever a source or helper is added.
 - Versioned with git tags; **consumers pin to a tag** (`@vX.Y.Z`), never `main`, so
   upstream changes never silently break a pipeline until the pin is deliberately bumped.
 - Product of the extraction migration that de-duplicated download code formerly copied
@@ -194,7 +203,7 @@ stand.
 | # | Improvement | Problem it solves | Effort |
 |---|---|---|---|
 | 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, v0.3.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT-SubField-MILP-Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`; `dssatcalibrator` can use its public executor behind `execution.backend: dssatengine`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix, explicit `treatment_list` support, and fail-loud DSSAT execution). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
-| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (existing gridded consumers remain pinned to `dssatengine@v0.2.0`; `dssatcalibrator[shared]` pins `dssatengine@v0.3.0`; shared utilities remain `dssatutils@v0.2.0`). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
+| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (existing gridded consumers remain pinned to `dssatengine@v0.2.0`; `dssatcalibrator[shared]` pins `dssatengine@v0.3.0`; tutorial setup now installs `dssatutils[cds]@v0.4.0`; other consumers should bump deliberately after validation). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
 | 3 | **Centralize `dssat_templates/` genotype files.** The same `.CUL/.ECO/.SPE/.CDE` are duplicated across most repos. Ship them from `DSSAT48` (resolved via `DSSATPRO.V48`) or a small shared `dssat-templates` package; keep only project-specific FileX locally. | Genotype edits (e.g. the cereal-rye `TKFH = -25°C` ecotype) must currently be hand-synced. | Medium |
 | 4 | ✅ **Done — spaced folder names removed**; current repo names still preserve historical capitalization/hyphens where already published, so new repos should use `snake_case` but old repo names are not churned. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
 | 5 | ✅ **Done — workspace index README** exists at the workspace root (`README.md`), with a repo table (tier / language / purpose). | New contributors no longer have to open each folder to learn what it is. | Low (done) |

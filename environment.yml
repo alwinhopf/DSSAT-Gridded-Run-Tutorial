@@ -32,7 +32,7 @@ dependencies:
   - pip:
       # Shared package pins. Bump these deliberately when validating a new
       # workspace release; avoid branch pins so clean installs are reproducible.
-      - dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.2.0
+      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0
       - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.2.0
-      # Optional: AgERA5 weather source (requires Copernicus CDS credentials).
-      # - cdsapi==0.7.3
+      # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
+      # still require user credentials; run setup_cds_credentials() once.

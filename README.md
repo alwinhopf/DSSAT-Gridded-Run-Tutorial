@@ -156,7 +156,9 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication during the first `pip` install), or install using your PAT directly:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.2.0"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     Use the CDS extra for Copernicus-backed weather sources:
+     `pip install "dssatutils[cds] @ git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.4.0"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -176,6 +178,26 @@ then install every pinned package — CRAN dependencies **and** the
 ```r
 renv::restore()
 ```
+
+Optional for Copernicus CDS weather sources (`AGERA5`, `ERA5_LAND`, and E-OBS
+CDS mode): with `dssatutils` v0.4.0 or newer, configure the CDS Personal Access
+Token once after restore:
+
+```r
+library(dssatutils)
+setup_cds_credentials()
+```
+
+Python users can run the same setup helper:
+
+```python
+from dssatutils import setup_cds_credentials
+setup_cds_credentials()
+```
+
+The helper uses `CDSAPI_KEY` / `CDSAPI_URL`, imports an existing `~/.cdsapirc`,
+or prompts in an interactive session. It writes a `cdsapi`-compatible
+`.cdsapirc`; the R helper also stores the token for `ecmwfr`.
 
 This replaces the old manual `install.packages(..., type = "binary")` /
 `devtools::install_local(...)` dance. The project `.Rprofile` sets
@@ -625,11 +647,20 @@ soilgrids_mode: "VRT"    # GDAL virtual rasters
 
 Both modes project points to SoilGrids' native Interrupted Goode's Homolosine CRS, compute DSSAT physics with Saxton & Rawls (2006), and write identical `.SOL` output (the file header records which mode produced it). Points that fall on a SoilGrids no-data cell (e.g. over water) are masked and skipped with a warning rather than producing invalid soil. For grids beyond a handful of points, prefer `VRT`: it reads 36 rasters (6 properties × 6 depths) total regardless of point count, whereas `REST` makes one rate-limited request per point.
 
-> **Direct override:** the underlying `USE_REST_API` flag in `soil_soilgrids_online.R` / `.py` still works if you call the module directly (`TRUE` = REST, `FALSE` = VRT); `soilgrids_mode` simply sets it for you from the central config.
+Direct package calls use the merged `dssatutils` `config.yml` default
+(`soil.soilgrids_online.use_rest_api`; `false` = VRT, `true` = REST). The
+pipeline-level `soilgrids_mode` key remains the recommended control for normal
+tutorial runs.
 
 ---
 
 ## Weather data sources
+
+Use `weather_source: "NASA_POWER_CHIRPS_V3"` for NASA POWER with CHIRPS v3
+daily rainfall. v3 options are `chirps_v3_product` (`rnl` gauge-adjusted final
+or `sat` satellite-only), `chirps_v3_stream` (`final` or `prelim`), and
+`chirps_v3_fetch_mode` (`monthly_netcdf` recommended because yearly v3 files are
+large).
 
 Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 
@@ -640,7 +671,7 @@ Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
 | `GRIDMET` | Contiguous US | ~4 km daily | High spatial resolution for US; requires `terra`, `ncdf4`, and `httr` |
 | `OPEN_METEO` | Global (1940–present) | ~9–11 km daily (ERA5/ERA5-Land) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Daily dewpoint and RH are not available (written as `-99`). Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
 | `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
-| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless** — needs a free [Copernicus CDS](https://cds.climate.copernicus.eu/) API key in `~/.cdsapirc`, **plus a one-time licence acceptance** for the dataset (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python) / `ecmwfr`+`terra` (R). |
+| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the dataset licence once (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python, install `dssatutils[cds]`) / `ecmwfr`+`terra` (R). |
 | `CHELSA_W5E5` | Global (1979–2016) | 30 arcsec (~1 km) daily | Topographically downscaled daily climate forcing. Requires local NetCDFs (`chelsa_nc_dir`) with `tasmax`, `tasmin`, `pr`, and `rsds`. |
 | `AGMERRA` / `AGCFSR` | Global (1980–2010) | 0.25° daily | AgMIP-standard historical climate forcing for benchmark/intercomparison studies. Requires local NetCDFs (`agmerra_nc_dir` / `agcfsr_nc_dir`). |
 | `SILO` | Australia (1889–present) | Australian gridded daily | Australian regional weather source. Requires local SILO NetCDFs via `silo_nc_dir`. |
@@ -656,20 +687,27 @@ Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give
 
 > **GridMET variables (Wind, Humidity, PET) note:** Standard DSSAT runs require only solar radiation, temperature, and precipitation. However, if using advanced evapotranspiration (such as FAO-56 Penman-Monteith, `MEEVP` = 'F' or 'G' in DSSAT simulation controls), the model consumes daily wind speed (`WIND` in `.WTH` files) and relative humidity/dewpoint (`TDEW`). GridMET's wind speed (`vs`) and specific humidity (`sph`) can be converted to dewpoint and wind speed to make Penman-Monteith crop-water simulations highly accurate, bypassing empirical temperature-based approximations (e.g. `Tmin - 2.5` for dewpoint). The GridMET reference evapotranspiration (`pet`) is not directly consumed by standard DSSAT configurations since DSSAT simulates crop transpiration and potential/actual ET dynamically based on crop leaf area index, canopy cover, and water balance.
 
-### AgERA5 one-time setup (Copernicus CDS)
+### Copernicus CDS one-time setup
 
-`AGERA5` needs a free Copernicus CDS account and **three** one-time steps:
+`AGERA5`, `ERA5_LAND`, and E-OBS CDS mode need a free Copernicus CDS account and
+**three** one-time steps:
 
 1. **Register** at https://cds.climate.copernicus.eu/ and copy your *Personal Access Token* from your profile.
-2. **Create `~/.cdsapirc`** (Linux/macOS) or `%USERPROFILE%\.cdsapirc` (Windows):
+2. **Run the dssatutils setup helper**, or set `CDSAPI_KEY` / `CDSAPI_URL`
+   yourself:
+   ```r
+   library(dssatutils)
+   setup_cds_credentials()
    ```
-   url: https://cds.climate.copernicus.eu/api
-   key: <your-personal-access-token>
-   ```
+   The helper writes `~/.cdsapirc` (Linux/macOS) or `%USERPROFILE%\.cdsapirc`
+   (Windows) and configures `ecmwfr` for R.
 3. **Accept the dataset licence** (otherwise the first request fails with `403 … required licences not accepted`): open
    https://cds.climate.copernicus.eu/datasets/sis-agrometeorological-indicators?tab=download and accept the licence(s) under *Manage licences*.
 
-Then `pip install cdsapi` (Python) or `install.packages("ecmwfr")` (R) and set `weather_source: "AGERA5"`. Requests are queued server-side, so the first run for a new area/period can take minutes; downloads are cached under `agera5_netcdf_cache/`.
+Then install the CDS client dependency (`pip install "dssatutils[cds] ..."` for
+Python, `install.packages("ecmwfr")` for R) and set the desired weather source.
+Requests are queued server-side, so the first run for a new area/period can take
+minutes; downloads are cached under the source cache directory.
 
 ---
 
@@ -786,8 +824,9 @@ paths without running DSSAT.
 
 Before running, the orchestrator screens every combination and prints the plan:
 
-- **Drops impossible combinations** — `AGERA5` without a Copernicus key
-  (`~/.cdsapirc`), or `NASA_POWER` with a period starting before 1984.
+- **Drops impossible combinations** — `AGERA5` without a configured Copernicus
+  CDS token (`setup_cds_credentials()`, `CDSAPI_KEY`, or `~/.cdsapirc`), or
+  `NASA_POWER` with a period starting before 1984.
 - **Warns on risky ones** — `GRIDMET`/`SSURGO` are US-only; `SOILGRIDS_ONLINE`
   (REST) is rate-limited and may throttle under high `max_parallel`.
 
@@ -910,7 +949,7 @@ Rscript validate_against_observed.R --check
 ```
 === Source preflight (this machine) ===
  source            runnable note
- AGERA5            NO       install R pkg(s): ecmwfr
+ AGERA5            NO       install R pkg(s): ecmwfr; then run setup_cds_credentials()
  DAYMET            yes
  GRIDMET           yes
  ...
@@ -1129,7 +1168,7 @@ project_name:         "dssat_spatial_demo"
 grid_spacing_meters:  50000          # 50 km demo; 5000–10000 for production
 crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
 
-weather_source:       "DAYMET"       # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO
+weather_source:       "DAYMET"       # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | NASA_POWER_CHIRPS_V3
 weather_start_year:   1982
 weather_end_year:     1983
 
@@ -1692,11 +1731,11 @@ install.packages(c("terra", "DBI", "RSQLite"))       # HWSD
 
 # Weather (match your WEATHER_SOURCE)
 install.packages("daymetr")                          # DAYMET
-install.packages("nasapower")                        # NASA_POWER / NASA_POWER_CHIRPS
+install.packages("nasapower")                        # NASA_POWER / NASA_POWER_CHIRPS / NASA_POWER_CHIRPS_V3
 install.packages(c("terra", "ncdf4", "httr"))        # GRIDMET
 install.packages(c("httr", "jsonlite"))              # OPEN_METEO
-install.packages(c("nasapower", "terra"))            # NASA_POWER_CHIRPS
-install.packages(c("ecmwfr", "terra"))               # AGERA5 (+ a Copernicus CDS key)
+install.packages(c("nasapower", "terra"))            # NASA_POWER_CHIRPS / NASA_POWER_CHIRPS_V3
+install.packages(c("ecmwfr", "terra"))               # CDS weather; then run setup_cds_credentials()
 ```
 
 ---
