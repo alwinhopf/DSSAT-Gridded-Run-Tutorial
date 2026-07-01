@@ -10,7 +10,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  DSSATUTILS_COMMIT: '9fe0cbdd2340b35db0ac3a3d342a13315cfca99a'
+  DSSATUTILS_REF: 'v0.4.0'
 
 jobs:
   comprehensive-tests:
@@ -51,7 +51,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pandas numpy geopandas shapely
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${DSSATUTILS_COMMIT}"
+          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${DSSATUTILS_REF}"
       
       - name: Run Python comprehensive tests
         if: matrix.test-type == 'python'
@@ -93,7 +93,7 @@ jobs:
         if: matrix.test-type == 'r'
         run: |
           R --slave -e "install.packages(c('remotes', 'parallel', 'doParallel', 'sf', 'terra'), repos='https://cran.r-project.org/')"
-          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatutils.git', ref='${DSSATUTILS_COMMIT}')"
+          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatutils.git', ref='${DSSATUTILS_REF}')"
         continue-on-error: true
       
       - name: Run R comprehensive tests
