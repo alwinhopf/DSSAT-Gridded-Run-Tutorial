@@ -150,15 +150,20 @@ packages, which install straight from GitHub (no side-by-side clones needed).
 3. **Rtools** — [matching your R version](https://cran.r-project.org/bin/windows/Rtools/).
    Most packages install as binaries, but Rtools is a safe fallback for any
    source build.
-4. **Git** — [git-scm.com](https://git-scm.com/download/win). Because `dssatutils` and `dssatengine` are **private repositories**, you must authenticate Git with your GitHub account to install them:
+4. **Git** — [git-scm.com](https://git-scm.com/download/win). The shared
+   packages `dssatutils` and `dssatengine` install from GitHub. If Git prompts
+   for authentication (for private repos, rate limits, or account-specific access),
+   authenticate once with your GitHub account:
    * **For R / `renv`:**
      Generate a Personal Access Token (PAT) by running `usethis::create_github_token()` in R.
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
-     Ensure your Git Credential Manager is active (it will prompt for authentication during the first `pip` install), or install using your PAT directly:
+     Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
+     `pip install "git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     PAT fallback:
      `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.4.0"`
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -1494,7 +1499,7 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 | `mpi4py` import error on HPC | Built against wrong MPI library | Rebuild: `pip install --no-cache-dir --no-binary :all: mpi4py` after loading the correct MPI module |
 | Results CSV is empty after run | Parsing failed; DSSAT wrote `.OUT` only | Check per-point `LUN.LST`; enable CSV output in the `*OUTPUTS` section of your template |
 | Custom DSSAT installation not found | Default assumptions (e.g. `C:/DSSAT48`) do not match your setup | For the gridded pipeline, specify `DSSAT_EXE` and `standard_dssat_dir` in `config.yml` / `config.yaml` or set the `DSSAT_EXE` environment variable |
-| Private package clone failures | Authentication mismatch on `dssatutils` / `dssatengine` | Verify that your GitHub Personal Access Token (PAT) is set in R via `gitcreds` or `~/.Renviron` (`GITHUB_PAT`), or your SSH keys are configured for `pip` |
+| Shared package clone failures | Authentication mismatch on `dssatutils` / `dssatengine`, missing access, or GitHub rate limits | Verify that Git Credential Manager, a GitHub Personal Access Token (PAT) via `gitcreds` / `GITHUB_PAT`, or SSH keys are configured for the install path you are using |
 
 ---
 

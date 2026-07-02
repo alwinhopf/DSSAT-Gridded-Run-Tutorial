@@ -23,11 +23,11 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Spatial Resolution**: 1 km grid
 - **Temporal Resolution**: Daily (1980–present)
 - **API Key Required**: No
-- **Optional Dependencies**: `daymetR` R package (must install separately)
-- **Status**: ⚠️ Optional dep missing in dssatutils (leap_year function)
+- **Optional Dependencies**: `daymetr` R package
+- **Status**: ✅ Implemented; requires the R `daymetr` package on the R path
 - **Implementation**: Raster download via ORNL DAAC
 - **Notes**:
-  - Requires `daymetR` package: `install.packages("daymetR")`
+  - Requires `daymetr` package: `install.packages("daymetr")`
   - Only covers US territory (CONUS, Alaska, Hawaii)
   - Very high quality: ground station interpolation
   - Can be slow for large regions (~30s for single point)
@@ -52,7 +52,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Temporal Resolution**: Daily (1979–present)
 - **API Key Required**: No
 - **Optional Dependencies**: `xarray`, `netCDF4` Python packages
-- **Status**: ⚠️ Requires httr for HTTP GET requests (missing in R env)
+- **Status**: ✅ Implemented; requires NetCDF-capable dependencies (`xarray`/`netCDF4` in Python, `httr`/`ncdf4` in R)
 - **Implementation**: NetCDF remote files via Thredds server
 - **Notes**:
   - Requires optional deps: `pip install xarray netcdf4`
@@ -87,7 +87,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Temporal Resolution**: Daily (1981–present)
 - **API Key Required**: No
 - **Optional Dependencies**: None (requests only)
-- **Status**: ⚠️ Coordinate handling issue in R (needs debugging)
+- **Status**: ✅ Implemented as a NASA-POWER + CHIRPS rainfall hybrid
 - **Implementation**: Hybrid NASA-POWER (temp/humidity) + CHIRPS (rainfall)
 - **Notes**:
   - Combines NASA-POWER weather with high-res rainfall from CHIRPS
@@ -128,7 +128,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Data Type**: Soil properties (same as SoilGrids Online)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra`/`raster` (R); `geopandas`, `rasterio` (Python)
-- **Status**: ⚠️ Function signature issue in comprehensive test
+- **Status**: ✅ Implemented for local SoilGrids raster/VRT inputs
 - **Implementation**: Local GeoTIFF files via GDAL
 - **Notes**:
   - Requires pre-downloaded SoilGrids GeoTIFF files (~30 GB for global)
@@ -142,7 +142,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Data Type**: Detailed soil properties (USDA Soil Taxonomy)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra` (R); `geopandas`, `shapely` (Python)
-- **Status**: ⚠️ Function signature issue in comprehensive test
+- **Status**: ✅ Implemented for local SSURGO / gSSURGO-style inputs
 - **Implementation**: Local SQLite database via USDA NRCS Web Soil Survey
 - **Notes**:
   - Highest quality soil data for US (30 m resolution)
@@ -157,7 +157,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Data Type**: Coarser soil properties (FAO Harmonized World Soil Database)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra`/`raster` (R); `geopandas`, `rasterio` (Python)
-- **Status**: ⚠️ Function signature issue in comprehensive test
+- **Status**: ✅ Implemented in `dssatutils` for local HWSD raster + database inputs
 - **Implementation**: Local SQLite database
 - **Notes**:
   - Coarser than SoilGrids (1 km) and SSURGO (30 m) but global coverage

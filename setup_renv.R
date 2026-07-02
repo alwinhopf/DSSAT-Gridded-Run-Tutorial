@@ -55,9 +55,8 @@ renv::install(pkgs)
 #
 # The GitHub fallback uses "user/repo" rather than a tag because the package
 # versions can move ahead before release tags are cut. The resolved SHA is still
-# frozen into renv.lock by the snapshot below. The repos are public, so no PAT is
-# required; GitHub's unauthenticated API limit (60 req/hr) is plenty for two
-# installs. If you later make them private, set a PAT once first:
+# frozen into renv.lock by the snapshot below. If GitHub prompts for
+# authentication (private repo access or rate limits), set a PAT once first:
 #   usethis::create_github_token(); gitcreds::gitcreds_set()
 #
 # PREREQUISITE for fresh machines: commit + push any local edits to dssatutils /
@@ -80,4 +79,3 @@ for (pkg in c("dssatutils", "dssatengine")) {
 renv::snapshot(type = "all", prompt = FALSE)
 
 message("\nrenv.lock written. Commit it so a fresh machine can `renv::restore()`.")
-
