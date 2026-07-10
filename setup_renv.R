@@ -48,26 +48,31 @@ pkgs <- c(
 renv::install(pkgs)
 
 # --- Shared Git packages: dssatutils + dssatengine -------------------------
-# These live in their own GitHub repos and are reused across projects. During
-# local development, prefer sibling checkouts if they exist; on a fresh machine,
-# install from GitHub main and let renv pin the exact commit in renv.lock via the
-# snapshot below.
+# These live in their own GitHub repos and are reused across projects. Fresh
+# installs use release tags, not branch names, so the environment is reproducible
+# without relying on whatever happens to be on `main`.
 #
-# The GitHub fallback uses "user/repo" rather than a tag because the package
-# versions can move ahead before release tags are cut. The resolved SHA is still
-# frozen into renv.lock by the snapshot below. If GitHub prompts for
-# authentication (private repo access or rate limits), set a PAT once first:
+# For active shared-package development only, set USE_LOCAL_SHARED_PACKAGES=1 to
+# install from sibling checkouts instead of the pinned tags below, then snapshot
+# the resulting lockfile deliberately.
+#
+# If the repos are private, set a PAT once first:
 #   usethis::create_github_token(); gitcreds::gitcreds_set()
-#
-# PREREQUISITE for fresh machines: commit + push any local edits to dssatutils /
-# dssatengine FIRST, otherwise the GitHub install won't include them.
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
-for (pkg in c("dssatutils", "dssatengine")) {
+shared_refs <- c(
+  dssatutils = "v0.4.0",
+  # Release-tag blocker: the dssatengine package is version 0.4.0, but the
+  # remote currently has no v0.4.0 tag. Pin the verified release commit until
+  # that tag is pushed.
+  dssatengine = "84b6e50895e7e2e2a4b02553d2705f4d879d269b"
+)
+use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
+for (pkg in names(shared_refs)) {
   local_dir <- file.path(workspace_root, pkg)
-  target <- if (file.exists(file.path(local_dir, "DESCRIPTION"))) {
+  target <- if (use_local_shared && file.exists(file.path(local_dir, "DESCRIPTION"))) {
     local_dir
   } else {
-    paste0("alwinhopf/", pkg)
+    paste0("alwinhopf/", pkg, "@", shared_refs[[pkg]])
   }
   message(sprintf("Installing shared package '%s' from %s", pkg, target))
   renv::install(target, prompt = FALSE)

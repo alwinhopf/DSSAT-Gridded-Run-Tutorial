@@ -6,7 +6,7 @@
 # Use:
 #   conda install -c conda-forge conda-lock
 #   conda-lock -f environment.yml -p win-64 -p linux-64
-#   conda-lock install -n dssat_grid conda-lock.yml
+#   conda-lock install -n dssat_grid conda_lock.yml
 #
 # For HPC systems where mpi4py must be built against the cluster MPI, create the
 # conda-lock environment first, then install mpi4py after loading the MPI module:

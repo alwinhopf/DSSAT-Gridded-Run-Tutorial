@@ -83,11 +83,11 @@ if (os_system == "Windows") {
   # Quick summary for macOS Apple Silicon (M1/M2/M3/M4/M5):
   #
   #   brew install gcc cmake git
-  #   git clone https://github.com/DSSAT/dssat-csm-os.git
-  #   git clone https://github.com/DSSAT/dssat-csm-data.git
+  #   git clone https://github.com/DSSAT/dssat-csm-os.git dssat_csm_os
+  #   git clone https://github.com/DSSAT/dssat-csm-data.git dssat_csm_data
   #   mkdir -p ~/Documents/GitHub/DSSAT48
-  #   cp -r ~/Documents/GitHub/dssat-csm-data/. ~/Documents/GitHub/DSSAT48/
-  #   cd ~/Documents/GitHub/dssat-csm-os && mkdir build && cd build
+  #   cp -r ~/Documents/GitHub/dssat_csm_data/. ~/Documents/GitHub/DSSAT48/
+  #   cd ~/Documents/GitHub/dssat_csm_os && mkdir build && cd build
   #   cmake .. -DCMAKE_BUILD_TYPE=RELEASE \
   #            -DCMAKE_Fortran_COMPILER=$(which gfortran) -G "Unix Makefiles"
   #   make -j$(sysctl -n hw.logicalcpu)
@@ -96,7 +96,7 @@ if (os_system == "Windows") {
   #   cp ~/Documents/GitHub/DSSAT48/{MODEL.ERR,OUTPUT.CDE,DATA.CDE} \
   #      ~/Documents/GitHub/DSSAT48/StandardData/
   #   sed 's|/usr/local|/Users/YOUR_USERNAME/Documents/GitHub/DSSAT48|g' \
-  #       ~/Documents/GitHub/dssat-csm-os/Data/DSSATPRO.L48 \
+  #       ~/Documents/GitHub/dssat_csm_os/Data/DSSATPRO.L48 \
   #       > ~/Documents/GitHub/DSSAT48/DSSATPRO.L48
   #   echo 'export PATH="/Users/YOUR_USERNAME/Documents/GitHub/DSSAT48:$PATH"' >> ~/.zprofile
   #   source ~/.zprofile

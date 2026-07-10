@@ -5,11 +5,11 @@
 # available, unless you explicitly update the lock file.
 #
 # Install this environment as "YOURENV" with:
-#     conda-lock install -n YOURENV conda-lock.yml
+#     conda-lock install -n YOURENV conda_lock.yml
 # To update a single package to the latest version compatible with the version constraints in the source:
-#     conda-lock lock  --lockfile conda-lock.yml --update PACKAGE
+#     conda-lock lock  --lockfile conda_lock.yml --update PACKAGE
 # To re-solve the entire environment, e.g. after changing a version constraint in the source file:
-#     conda-lock -f environment.yml --lockfile conda-lock.yml
+#     conda-lock -f environment.yml --lockfile conda_lock.yml
 version: 1
 metadata:
   content_hash:
@@ -7089,7 +7089,7 @@ package:
   category: main
   optional: false
 - name: dssatengine
-  version: 0.1.0
+  version: 0.4.0
   manager: pip
   platform: linux-64
   dependencies:
@@ -7105,16 +7105,16 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatengine.git@11a3037c4488aeb61c6085d2f9670b347e6a252d
+  url: git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
   hash:
-    sha256: 11a3037c4488aeb61c6085d2f9670b347e6a252d
+    sha256: 84b6e50895e7e2e2a4b02553d2705f4d879d269b
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatengine.git@11a3037c4488aeb61c6085d2f9670b347e6a252d
+    url: git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
   category: main
   optional: false
 - name: dssatengine
-  version: 0.1.0
+  version: 0.4.0
   manager: pip
   platform: win-64
   dependencies:
@@ -7130,16 +7130,16 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatengine.git@11a3037c4488aeb61c6085d2f9670b347e6a252d
+  url: git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
   hash:
-    sha256: 11a3037c4488aeb61c6085d2f9670b347e6a252d
+    sha256: 84b6e50895e7e2e2a4b02553d2705f4d879d269b
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatengine.git@11a3037c4488aeb61c6085d2f9670b347e6a252d
+    url: git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
   category: main
   optional: false
 - name: dssatutils
-  version: 0.1.0
+  version: 0.4.0
   manager: pip
   platform: linux-64
   dependencies:
@@ -7155,16 +7155,16 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatutils.git@552ebe10a88892e769725156b1688f1cb19a4d4f
+  url: git+https://github.com/alwinhopf/dssatutils.git@bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   hash:
-    sha256: 552ebe10a88892e769725156b1688f1cb19a4d4f
+    sha256: bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatutils.git@552ebe10a88892e769725156b1688f1cb19a4d4f
+    url: git+https://github.com/alwinhopf/dssatutils.git@bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   category: main
   optional: false
 - name: dssatutils
-  version: 0.1.0
+  version: 0.4.0
   manager: pip
   platform: win-64
   dependencies:
@@ -7180,11 +7180,11 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatutils.git@552ebe10a88892e769725156b1688f1cb19a4d4f
+  url: git+https://github.com/alwinhopf/dssatutils.git@bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   hash:
-    sha256: 552ebe10a88892e769725156b1688f1cb19a4d4f
+    sha256: bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatutils.git@552ebe10a88892e769725156b1688f1cb19a4d4f
+    url: git+https://github.com/alwinhopf/dssatutils.git@bb5ab63dc460ba176c6d6ced885cad138ed2c2cf
   category: main
   optional: false

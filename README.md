@@ -172,8 +172,8 @@ packages, which install straight from GitHub (no side-by-side clones needed).
 ### 2 — Clone the project and restore the R environment
 
 ```powershell
-git clone https://github.com/alwinhopf/DSSAT-Gridded-Run-Tutorial.git
-cd DSSAT-Gridded-Run-Tutorial
+git clone https://github.com/alwinhopf/DSSAT-Gridded-Run-Tutorial.git DSSAT_Gridded_Run_Tutorial
+cd DSSAT_Gridded_Run_Tutorial
 ```
 
 Open the folder in RStudio (the project's `.Rprofile` auto-bootstraps `renv`),
@@ -1576,16 +1576,16 @@ which gfortran && gfortran --version
 
 ```bash
 cd ~/Documents/GitHub
-git clone https://github.com/DSSAT/dssat-csm-os.git
-git clone https://github.com/DSSAT/dssat-csm-data.git
+git clone https://github.com/DSSAT/dssat-csm-os.git dssat_csm_os
+git clone https://github.com/DSSAT/dssat-csm-data.git dssat_csm_data
 mkdir -p ~/Documents/GitHub/DSSAT48
-cp -r ~/Documents/GitHub/dssat-csm-data/. ~/Documents/GitHub/DSSAT48/
+cp -r ~/Documents/GitHub/dssat_csm_data/. ~/Documents/GitHub/DSSAT48/
 ```
 
 #### Part 3 — Compile
 
 ```bash
-cd ~/Documents/GitHub/dssat-csm-os
+cd ~/Documents/GitHub/dssat_csm_os
 mkdir build && cd build
 cmake .. \
   -DCMAKE_BUILD_TYPE=RELEASE \
@@ -1619,7 +1619,7 @@ Replace `YOUR_USERNAME` with your macOS username throughout.
 
 ```bash
 sed 's|/usr/local|/Users/YOUR_USERNAME/Documents/GitHub/DSSAT48|g' \
-    ~/Documents/GitHub/dssat-csm-os/Data/DSSATPRO.L48 \
+    ~/Documents/GitHub/dssat_csm_os/Data/DSSATPRO.L48 \
     > ~/Documents/GitHub/DSSAT48/DSSATPRO.L48
 grep "StandardData" ~/Documents/GitHub/DSSAT48/DSSATPRO.L48
 ```
@@ -1670,12 +1670,12 @@ Resources: https://github.com/DSSAT/dssat-csm-os · https://dssat.net/forum/ · 
 sudo apt-get install gcc gfortran cmake git   # Debian / Ubuntu
 # or: sudo yum install gcc gcc-gfortran cmake git   # RHEL / Rocky / CentOS
 
-git clone https://github.com/DSSAT/dssat-csm-os.git
-git clone https://github.com/DSSAT/dssat-csm-data.git
+git clone https://github.com/DSSAT/dssat-csm-os.git dssat_csm_os
+git clone https://github.com/DSSAT/dssat-csm-data.git dssat_csm_data
 sudo mkdir -p /opt/DSSAT48
-sudo cp -r dssat-csm-data/. /opt/DSSAT48/
+sudo cp -r dssat_csm_data/. /opt/DSSAT48/
 
-cd dssat-csm-os && mkdir build && cd build
+cd dssat_csm_os && mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=RELEASE \
          -DCMAKE_Fortran_COMPILER=$(which gfortran) \
          -G "Unix Makefiles"

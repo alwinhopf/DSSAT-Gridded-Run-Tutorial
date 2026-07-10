@@ -3,7 +3,7 @@
 # Source of truth for Python dependencies. Generate a reproducible lock with:
 #   conda install -c conda-forge conda-lock
 #   conda-lock -f environment.yml -p win-64 -p linux-64
-#   conda-lock install -n dssat_grid conda-lock.yml
+#   conda-lock install -n dssat_grid conda_lock.yml
 #
 # HPC note: mpi4py is intentionally left to pip so it can be built against the
 # cluster's MPI. After activating, run:
@@ -33,6 +33,8 @@ dependencies:
       # Shared package pins. Bump these deliberately when validating a new
       # workspace release; avoid branch pins so clean installs are reproducible.
       - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.2.0
+      # dssatengine is package-version 0.4.0; pin the verified release commit
+      # until the matching v0.4.0 Git tag is pushed.
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
       # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
       # still require user credentials; run setup_cds_credentials() once.

@@ -4,7 +4,7 @@
 > workspace fit together, the role of each, the data they exchange, and a prioritized
 > set of suggested structural improvements.
 >
-> **Last verified:** 2026-06-18 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
+> **Last verified:** 2026-07-10 · **Vantage point:** `DSSAT_Gridded_Run_Tutorial`
 > (the canonical engine).
 
 ## Contents
@@ -149,7 +149,7 @@ Key capabilities:
 | **dssat_lca_tea** | Python **and** R (full parity) | Numbered **LCA/TEA pipeline** (`pipeline_01`…`07`, `pipeline_99_run_master`) on DSSAT yields: ISO-14044 LCA + bottom-up HEFA techno-economic analysis for camelina/carinata SAF. `test_excel_parity` validates against client Excel workbooks; see `PIPELINE_REVIEW.md`. |
 | **dssatcalibrator** | Python **and** R (full parity) | General **config-driven** framework to calibrate DSSAT-CSM for a new environment / crop / scenario via Monte-Carlo sampling + Bayesian techniques: spawns many perturbed runs in parallel and fits parameter set(s) to a central observations store (LAI, biomass, grain yield, phenology) across one or many experiments (one `config.yaml` read by both languages; mirrored `run_calibration.{py,R}`). **Now the workspace's single calibration repo:** the former R-only `DSSAT_Calibration` (CroptimizR / AgMIP-stepwise) is superseded by this package's R twin, and in-season LAI assimilation (the former `DSSAT_LAI_Assimilation` scaffold) is a **mode** here (satellite LAI source → coupled recalibration / `nowcast` forecast), not a separate repo. |
 | **DSSAT_ML_Phenology_Prediction** | R (`torch`, xgboost, lightgbm) | **22-model hybrid phenology pipeline** (`pipeline/00`…`13`) — DSSAT physics, SMC-MCMC assimilation, GBMs, sequence DL (LSTM/CNN/Transformer/PINN), Worrall model-guided LSTMs. `features.R` is the single feature source; `MODELS_AND_FEATURES.md` is authoritative. |
-| **DSSAT-SubField-MILP-Analysis** | Python (+R companion) | Subfield (50 m) cover-crop bioenergy modeling + **MILP optimization** for spatial placement. Two tracks (single-season vs corn-soy rotation). Application orchestrators write engine overlay configs and shell out to this sibling repo's `dssat_main_pipeline.{py,R}` through `DSSAT_ENGINE_DIR`; `README_bioenergy.md` documents FileX/soil column-alignment fixes. |
+| **DSSAT_SubField_MILP_Analysis** | Python (+R companion) | Subfield (50 m) cover-crop bioenergy modeling + **MILP optimization** for spatial placement. Two tracks (single-season vs corn-soy rotation). Application orchestrators write engine overlay configs and shell out to this sibling repo's `dssat_main_pipeline.{py,R}` through `DSSAT_ENGINE_DIR`; `README_bioenergy.md` documents FileX/soil column-alignment fixes. |
 | **pythia** | Python | Vendored **third-party** DSSAT-Pythia tool (independent gridded runner). Not part of the layered stack — treated as read-only upstream; see its own install guide. |
 
 ---
@@ -177,7 +177,7 @@ shapefile / boundary / CDL-NLCD raster
 
 ## 7. Dependency matrix
 
-Engine logic now lives in the shared **`dssatengine`** package (R + Python, v0.3.0); the
+Engine logic now lives in the shared **`dssatengine`** package (R + Python, 0.4.0); the
 "Engine" column records how each repo obtains it — import, `ENGINE_DIR` reference, or not
 at all. **No repo carries a hand-copied engine fork anymore.**
 
@@ -188,7 +188,7 @@ at all. **No repo carries a hand-copied engine fork anymore.**
 | dssat_lca_tea | ✓ (via yields) | — (reads DSSAT output CSVs) | — (consumes CSVs) |
 | dssatcalibrator | ✓ | optional (`[acquire]`) | optional executor (`[shared]`) |
 | DSSAT_ML_Phenology_Prediction | ✓ | ✓ | — (own pipeline) |
-| DSSAT-SubField-MILP-Analysis | ✓ | ✓ | imports |
+| DSSAT_SubField_MILP_Analysis | ✓ | ✓ | imports |
 | pythia | — | — | — (independent third-party tool) |
 
 ---
@@ -202,10 +202,10 @@ stand.
 
 | # | Improvement | Problem it solves | Effort |
 |---|---|---|---|
-| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, current release v0.4.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` consumes it inside `dssat_main_pipeline.{R,py}`; `DSSAT-SubField-MILP-Analysis` shells out to that sibling gridded engine with overlay configs; `Bioenergy` references it via `ENGINE_DIR`; `dssatcalibrator` can use its public executor behind `execution.backend: dssatengine`. No hand-copied engine forks remain — a fix lands once and reaches consumers through their selected engine environment (e.g. the leading-space `DSSBatch` fix, explicit `treatment_list` support, and fail-loud DSSAT execution). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
-| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests (existing gridded consumers remain pinned to `dssatengine@v0.2.0`; `dssatcalibrator[shared]` pins `dssatengine@v0.3.0`; tutorial setup now installs `dssatutils[cds]@v0.4.0`; other consumers should bump deliberately after validation). | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
+| 1 | ✅ **Done — engine extracted into the shared `dssatengine` package** (R + Python, 0.4.0), the way `dssatutils` was. `DSSAT_Gridded_Run_Tutorial` and `DSSAT_SubField_MILP_Analysis` now import it (zero local engine defs); `Bioenergy` references it via `ENGINE_DIR`; `dssatcalibrator` can use its public executor behind `execution.backend: dssatengine`. No hand-copied forks remain — a fix lands once and reaches every consumer (e.g. the leading-space `DSSBatch` fix, explicit `treatment_list` support, and fail-loud DSSAT execution). | A bug fixed in one fork never reaching the others — now resolved. | High (done) |
+| 2 | ✅ **Done — dependency versions are recorded** in `dssatengine/DEPENDENCIES.md` and committed manifests. Consumers pin `dssatutils@v0.4.0`; `dssatengine` consumers currently pin the verified 0.4.0 release commit `84b6e508...` until the matching remote tag is pushed; `USE_LOCAL_SHARED_PACKAGES=1` opts into sibling checkouts for development. | Today you can't tell which repo runs which code without diffing. Makes results reproducible and upgrades deliberate. | Low (done) |
 | 3 | **Centralize `dssat_templates/` genotype files.** The same `.CUL/.ECO/.SPE/.CDE` are duplicated across most repos. Ship them from `DSSAT48` (resolved via `DSSATPRO.V48`) or a small shared `dssat-templates` package; keep only project-specific FileX locally. | Genotype edits (e.g. the cereal-rye `TKFH = -25°C` ecotype) must currently be hand-synced. | Medium |
-| 4 | ✅ **Done — spaced folder names removed**; current repo names still preserve historical capitalization/hyphens where already published, so new repos should use `snake_case` but old repo names are not churned. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
+| 4 | ✅ **Done — spaced and hyphenated local folder names removed**; current local repo names use underscores while preserving existing capitalization. New repos should use `snake_case`. | A whole class of shell-glob / `cd` quoting bugs — now removed. | Low–Medium (done) |
 | 5 | ✅ **Done — workspace index README** exists at the workspace root (`README.md`), with a repo table (tier / language / purpose). | New contributors no longer have to open each folder to learn what it is. | Low (done) |
 | 6 | **Decide an R↔Python parity policy.** `dssatutils`, `dssat_lca_tea`, and the engine all maintain mirrored implementations by hand. Either (a) declare one language canonical and generate/wrap the other, or (b) add cross-language parity tests (camelina already has `test_excel_parity` — extend the idea). | Halves maintenance and prevents the two implementations from quietly diverging. | Medium |
 | 7 | **Repository hygiene.** Commit-ignore and purge transient state: `*_cache/`, `dssat_runs/`, `.RData`, `.Rhistory`, `.DS_Store`, and leftover `.migration_backup_*/` dirs. Verify each repo's `.gitignore` covers them. | Shrinks repos, removes machine-specific noise from diffs, prevents accidental cache commits. | Low |

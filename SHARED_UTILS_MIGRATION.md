@@ -314,7 +314,7 @@ made to either consumer repo. Findings that REQUIRED fixing the pre-written scri
   files (keeps landcover). Also fixed a portability bug: replaced `mapfile`
   (bash 4+) with a `while read` loop since macOS /bin/bash is 3.2.
 - Both repos were essentially clean before stopping (ML had only an untracked
-  scratch/dssat-csm-os/, unrelated; Gridded clean).
+  scratch/dssat_csm_os/, unrelated; Gridded clean).
 - `03_phase3_gridded.sh` was NOT changed this session; the Gridded pipeline uses
   the clean literal `source(file.path(SCRIPT_DIR, "weather_*.R"))` form that its
   sed already matches. Still review its diff after running.
