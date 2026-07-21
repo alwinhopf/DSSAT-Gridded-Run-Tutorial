@@ -131,7 +131,7 @@ def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):
 def test_r_override_yaml_is_merged_over_central_defaults(tmp_path):
     rscript = shutil.which("Rscript")
     if rscript is None:
-        return
+        pytest.skip("Rscript is not installed")
     override = tmp_path / "study.yml"
     override.write_text("project_name: override_study\nweather_start_year: 2001\n", encoding="utf-8")
     env = os.environ.copy()
@@ -143,7 +143,12 @@ def test_r_override_yaml_is_merged_over_central_defaults(tmp_path):
     )
     result = subprocess.run(
         [rscript, "--vanilla", "-e", code], cwd=ROOT, env=env,
-        check=True, capture_output=True, text=True,
+        check=False, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, (
+        "R config loader failed.\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
     )
     assert [line.strip() for line in result.stdout.splitlines()[-2:]] == [
         "override_study", "NASA_POWER"
