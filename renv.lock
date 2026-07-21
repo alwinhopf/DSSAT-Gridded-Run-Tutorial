@@ -1,6 +1,6 @@
 {
   "R": {
-    "Version": "4.6.0",
+    "Version": "4.5.3",
     "Repositories": [
       {
         "Name": "CRAN",
@@ -157,88 +157,6 @@
       "NeedsCompilation": "yes",
       "Author": "Brian Ripley [aut, cre, cph], Bill Venables [aut, cph], Douglas M. Bates [ctb], Kurt Hornik [trl] (partial port ca 1998), Albrecht Gebhardt [trl] (partial port ca 1998), David Firth [ctb] (support functions for polr)",
       "Maintainer": "Brian Ripley <Brian.Ripley@R-project.org>",
-      "Repository": "CRAN"
-    },
-    "R.methodsS3": {
-      "Package": "R.methodsS3",
-      "Version": "1.8.2",
-      "Source": "Repository",
-      "Depends": [
-        "R (>= 2.13.0)"
-      ],
-      "Imports": [
-        "utils"
-      ],
-      "Suggests": [
-        "codetools"
-      ],
-      "Title": "S3 Methods Simplified",
-      "Authors@R": "c(person(\"Henrik\", \"Bengtsson\", role=c(\"aut\", \"cre\", \"cph\"), email = \"henrikb@braju.com\"))",
-      "Author": "Henrik Bengtsson [aut, cre, cph]",
-      "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Description": "Methods that simplify the setup of S3 generic functions and S3 methods.  Major effort has been made in making definition of methods as simple as possible with a minimum of maintenance for package developers.  For example, generic functions are created automatically, if missing, and naming conflict are automatically solved, if possible.  The method setMethodS3() is a good start for those who in the future may want to migrate to S4.  This is a cross-platform package implemented in pure R that generates standard S3 methods.",
-      "License": "LGPL (>= 2.1)",
-      "LazyLoad": "TRUE",
-      "URL": "https://github.com/HenrikBengtsson/R.methodsS3",
-      "BugReports": "https://github.com/HenrikBengtsson/R.methodsS3/issues",
-      "NeedsCompilation": "no",
-      "Repository": "CRAN"
-    },
-    "R.oo": {
-      "Package": "R.oo",
-      "Version": "1.27.1",
-      "Source": "Repository",
-      "Depends": [
-        "R (>= 2.13.0)",
-        "R.methodsS3 (>= 1.8.2)"
-      ],
-      "Imports": [
-        "methods",
-        "utils"
-      ],
-      "Suggests": [
-        "tools"
-      ],
-      "Title": "R Object-Oriented Programming with or without References",
-      "Authors@R": "c(person(\"Henrik\", \"Bengtsson\", role=c(\"aut\", \"cre\", \"cph\"), email = \"henrikb@braju.com\"))",
-      "Author": "Henrik Bengtsson [aut, cre, cph]",
-      "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Description": "Methods and classes for object-oriented programming in R with or without references.  Large effort has been made on making definition of methods as simple as possible with a minimum of maintenance for package developers.  The package has been developed since 2001 and is now considered very stable.  This is a cross-platform package implemented in pure R that defines standard S3 classes without any tricks.",
-      "License": "LGPL (>= 2.1)",
-      "LazyLoad": "TRUE",
-      "URL": "https://henrikbengtsson.github.io/R.oo/, https://github.com/HenrikBengtsson/R.oo",
-      "BugReports": "https://github.com/HenrikBengtsson/R.oo/issues",
-      "NeedsCompilation": "no",
-      "Repository": "CRAN"
-    },
-    "R.utils": {
-      "Package": "R.utils",
-      "Version": "2.13.0",
-      "Source": "Repository",
-      "Depends": [
-        "R (>= 2.14.0)",
-        "R.oo"
-      ],
-      "Imports": [
-        "methods",
-        "utils",
-        "tools",
-        "R.methodsS3"
-      ],
-      "Suggests": [
-        "datasets",
-        "digest (>= 0.6.10)"
-      ],
-      "Title": "Various Programming Utilities",
-      "Authors@R": "c(person(\"Henrik\", \"Bengtsson\", role=c(\"aut\", \"cre\", \"cph\"), email = \"henrikb@braju.com\"))",
-      "Author": "Henrik Bengtsson [aut, cre, cph]",
-      "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
-      "Description": "Utility functions useful when programming and developing R packages.",
-      "License": "LGPL (>= 2.1)",
-      "LazyLoad": "TRUE",
-      "URL": "https://henrikbengtsson.github.io/R.utils/, https://github.com/HenrikBengtsson/R.utils",
-      "BugReports": "https://github.com/HenrikBengtsson/R.utils/issues",
-      "NeedsCompilation": "no",
       "Repository": "CRAN"
     },
     "R6": {
@@ -1043,12 +961,14 @@
     "dssatengine": {
       "Package": "dssatengine",
       "Version": "0.4.0",
-      "Source": "GitHub",
+      "Source": "Local",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
       "Authors@R": "person(\"Alwin\", \"Hopf\", email = \"alwinhopf@gmail.com\", role = c(\"aut\", \"cre\"))",
+      "Author": "Alwin Hopf",
+      "Maintainer": "Alwin Hopf <alwinhopf@gmail.com>",
       "Description": "Modular soil and weather download, folder building, and execution logic  for running the DSSAT crop model spatially/on a grid. Shared across multiple projects.",
-      "License": "MIT",
+      "License": "MIT + file LICENSE",
       "Encoding": "UTF-8",
       "Imports": [
         "sf",
@@ -1060,34 +980,23 @@
         "doParallel",
         "pbapply",
         "DSSAT",
-        "R.utils",
-        "processx",
-        "terra",
-        "ncdf4",
-        "httr",
-        "jsonlite",
         "readr",
-        "soilDB",
         "dssatutils"
       ],
       "RoxygenNote": "7.3.1",
-      "Author": "Alwin Hopf [aut, cre]",
-      "Maintainer": "Alwin Hopf <alwinhopf@gmail.com>",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteUsername": "alwinhopf",
-      "RemoteRepo": "dssatengine",
-      "RemoteRef": "main",
-      "RemoteSha": "e70af0f315d63a54f893e74590f70df20ebfc474"
+      "RemoteType": "local",
+      "RemoteUrl": "../dssatengine"
     },
     "dssatutils": {
       "Package": "dssatutils",
       "Version": "0.4.0",
-      "Source": "GitHub",
+      "Source": "Local",
       "Type": "Package",
       "Title": "Shared Weather and Soil Download Utilities for DSSAT",
       "Authors@R": "person(\"Alwin\", \"Hopf\", email = \"alwinhopf@gmail.com\", role = c(\"aut\", \"cre\"))",
-      "Description": "Reusable functions that download weather and soil data from a range of public sources (Daymet, GridMET, NASA POWER, Open-Meteo, AgERA5, NASA POWER + CHIRPS, DWD station data, E-OBS European grids, BR-DWGD/Xavier Brazil grids, CMFD China grids; SSURGO, gNATSGO, iSDAsoil Africa, LUCAS Europe topsoil, SoilGrids, SoilGrids 2.0 online, POLARIS, FAO HWSD2) and write them as DSSAT .WTH and .SOL files for spatial / gridded crop-model runs. Shared by the DSSAT Gridded Run Tutorial and DSSAT ML Phenology Prediction projects so the download logic lives in one versioned place.",
+      "Author": "Alwin Hopf",
+      "Maintainer": "Alwin Hopf <alwinhopf@gmail.com>",
+      "Description": "Reusable functions that download weather and soil data from a range of public sources (Daymet, GridMET, NASA POWER, Open-Meteo, AgERA5, NASA POWER + CHIRPS v2/v3, DWD station data, E-OBS European grids, BR-DWGD/Xavier Brazil grids, CMFD China grids, CHELSA-W5E5, AgMERRA, AgCFSR, SILO, PRISM, MSWX, MSWEP, CRU-JRA, TerraClimate, APHRODITE Asia, ANUSPLIN Canada, TAMSAT Africa, GHCN-Daily stations, Princeton PGF, MERRA-2; SSURGO, gNATSGO, iSDAsoil Africa, LUCAS Europe topsoil, SoilGrids, SoilGrids 2.0 online, POLARIS, FAO HWSD2, AgMIP/Han global DSSAT soil profiles, HiHydroSoil, SLGA, WISE30sec, WoSIS, GSDE, China BNU, FEBR/Embrapa Brazil, Soil Landscapes of Canada, European Soil Database, OpenLandMap) and write them as DSSAT .WTH and .SOL files for spatial / gridded crop-model runs. Shared by the DSSAT Gridded Run Tutorial and DSSAT ML Phenology Prediction projects so the download logic lives in one versioned place.",
       "License": "MIT + file LICENSE",
       "Encoding": "UTF-8",
       "Imports": [
@@ -1096,7 +1005,6 @@
         "soilDB",
         "sf",
         "terra",
-        "ncdf4",
         "httr",
         "jsonlite",
         "dplyr",
@@ -1104,6 +1012,7 @@
         "stringr",
         "readr",
         "lubridate",
+        "yaml",
         "foreach",
         "doParallel",
         "pbapply",
@@ -1114,17 +1023,14 @@
         "DBI",
         "RSQLite",
         "odbc",
-        "RODBC"
+        "RODBC",
+        "getPass",
+        "readxl",
+        "testthat (>= 3.0.0)"
       ],
       "RoxygenNote": "7.3.1",
-      "Author": "Alwin Hopf [aut, cre]",
-      "Maintainer": "Alwin Hopf <alwinhopf@gmail.com>",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteUsername": "alwinhopf",
-      "RemoteRepo": "dssatutils",
-      "RemoteRef": "main",
-      "RemoteSha": "a21eb72940db62da4ad7e4dc501fb806cfe037f8"
+      "RemoteType": "local",
+      "RemoteUrl": "../dssatutils"
     },
     "e1071": {
       "Package": "e1071",
@@ -2074,47 +1980,6 @@
       "Maintainer": "Gabor Csardi <csardi.gabor@gmail.com>",
       "Repository": "CRAN"
     },
-    "processx": {
-      "Package": "processx",
-      "Version": "3.9.0",
-      "Source": "Repository",
-      "Title": "Execute and Control System Processes",
-      "Authors@R": "c( person(\"Gábor\", \"Csárdi\", , \"csardi.gabor@gmail.com\", role = c(\"aut\", \"cre\", \"cph\"), comment = c(ORCID = \"0000-0001-7098-9676\")), person(\"Winston\", \"Chang\", role = \"aut\"), person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"), comment = c(ROR = \"03wc8by49\")), person(\"Ascent Digital Services\", role = c(\"cph\", \"fnd\")) )",
-      "Description": "Tools to run system processes in the background.  It can check if a background process is running; wait on a background process to finish; get the exit status of finished processes; kill background processes. It can read the standard output and error of the processes, using non-blocking connections. 'processx' can poll a process for standard output or error, with a timeout. It can also poll several processes at once.",
-      "License": "MIT + file LICENSE",
-      "URL": "https://processx.r-lib.org, https://github.com/r-lib/processx",
-      "BugReports": "https://github.com/r-lib/processx/issues",
-      "Depends": [
-        "R (>= 3.4.0)"
-      ],
-      "Imports": [
-        "ps (>= 1.9.3)",
-        "R6",
-        "utils"
-      ],
-      "Suggests": [
-        "callr (>= 3.7.3)",
-        "cli (>= 3.3.0)",
-        "codetools",
-        "covr",
-        "curl",
-        "debugme",
-        "parallel",
-        "rlang (>= 1.0.2)",
-        "testthat (>= 3.0.0)",
-        "webfakes",
-        "withr"
-      ],
-      "Config/Needs/website": "tidyverse/tidytemplate",
-      "Config/testthat/edition": "3",
-      "Config/usethis/last-upkeep": "2025-04-25",
-      "Encoding": "UTF-8",
-      "RoxygenNote": "7.3.3",
-      "NeedsCompilation": "yes",
-      "Author": "Gábor Csárdi [aut, cre, cph] (ORCID: <https://orcid.org/0000-0001-7098-9676>), Winston Chang [aut], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>), Ascent Digital Services [cph, fnd]",
-      "Maintainer": "Gábor Csárdi <csardi.gabor@gmail.com>",
-      "Repository": "CRAN"
-    },
     "progress": {
       "Package": "progress",
       "Version": "1.2.3",
@@ -2171,46 +2036,6 @@
       "NeedsCompilation": "yes",
       "Author": "David Meyer [aut, cre] (ORCID: <https://orcid.org/0000-0002-5196-3048>), Christian Buchta [aut]",
       "Maintainer": "David Meyer <David.Meyer@R-project.org>",
-      "Repository": "CRAN"
-    },
-    "ps": {
-      "Package": "ps",
-      "Version": "1.9.3",
-      "Source": "Repository",
-      "Title": "List, Query, Manipulate System Processes",
-      "Authors@R": "c( person(\"Jay\", \"Loden\", role = \"aut\"), person(\"Dave\", \"Daeschler\", role = \"aut\"), person(\"Giampaolo\", \"Rodola'\", role = \"aut\"), person(\"Gábor\", \"Csárdi\", , \"csardi.gabor@gmail.com\", role = c(\"aut\", \"cre\")), person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\"), comment = c(ROR = \"03wc8by49\")) )",
-      "Description": "List, query and manipulate all system processes, on 'Windows', 'Linux' and 'macOS'.",
-      "License": "MIT + file LICENSE",
-      "URL": "https://github.com/r-lib/ps, https://ps.r-lib.org/",
-      "BugReports": "https://github.com/r-lib/ps/issues",
-      "Depends": [
-        "R (>= 3.4)"
-      ],
-      "Imports": [
-        "utils"
-      ],
-      "Suggests": [
-        "callr",
-        "covr",
-        "curl",
-        "pillar",
-        "pingr",
-        "processx (>= 3.1.0)",
-        "R6",
-        "rlang",
-        "testthat (>= 3.0.0)",
-        "webfakes",
-        "withr"
-      ],
-      "Biarch": "true",
-      "Config/Needs/website": "tidyverse/tidytemplate",
-      "Config/testthat/edition": "3",
-      "Config/usethis/last-upkeep": "2025-04-28",
-      "Encoding": "UTF-8",
-      "RoxygenNote": "7.3.3",
-      "NeedsCompilation": "yes",
-      "Author": "Jay Loden [aut], Dave Daeschler [aut], Giampaolo Rodola' [aut], Gábor Csárdi [aut, cre], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>)",
-      "Maintainer": "Gábor Csárdi <csardi.gabor@gmail.com>",
       "Repository": "CRAN"
     },
     "purrr": {

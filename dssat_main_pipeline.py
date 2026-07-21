@@ -85,18 +85,19 @@ else:
     DSSAT_BASE     = os.path.expanduser("~/Documents/GitHub/DSSAT48")
     DSSAT_EXE_NAME = "dscsm048"
 
+# A sibling checkout is the portable developer/workspace layout on every OS.
+_SIBLING_DSSAT = Path(CODE_ROOT_DIR).parent / "DSSAT48"
+if _SIBLING_DSSAT.is_dir():
+    DSSAT_BASE = str(_SIBLING_DSSAT)
+
 DSSAT_BASE = os.environ.get("DSSAT_BASE", DSSAT_BASE)
 
 # --- Shared config overlay (config.yml) -------------------------------------
-# Loads config.yml (if present) so R and Python share one set of settings.
-# cfg_get(key, default) returns the YAML value or the default below.
-try:
-    import sys as _sys
-    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from config_loader import cfg_get
-except Exception:  # noqa: BLE001
-    def cfg_get(key, default):
-        return default
+# The repository config is mandatory; DSSAT_CONFIG_FILE may select a partial
+# override that is merged over it by config_loader.
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config_loader import cfg_get
 
 
 def resolve_config_path(path, base=CODE_ROOT_DIR) -> str:
@@ -107,6 +108,12 @@ def resolve_config_path(path, base=CODE_ROOT_DIR) -> str:
     if not p.is_absolute():
         p = Path(base) / p
     return str(p.resolve())
+
+
+DSSAT_BASE = os.environ.get(
+    "DSSAT_BASE", resolve_config_path(cfg_get("dssat_base", DSSAT_BASE))
+)
+DSSAT_EXE_NAME = str(cfg_get("dssat_executable_name", DSSAT_EXE_NAME))
 
 
 def as_int_list(value) -> list[int]:
@@ -207,6 +214,7 @@ CHIRPS_V3_FETCH_MODE = str(cfg_get("chirps_v3_fetch_mode", "monthly_netcdf"))
 CHIRPS_V3_RESOLUTION = str(cfg_get("chirps_v3_resolution", "p05"))
 _CHIRPS_V3_MONTHS_RAW = cfg_get("chirps_v3_months", None)
 CHIRPS_V3_MONTHS = as_int_list(_CHIRPS_V3_MONTHS_RAW) or None
+CHIRPS_GEE_PROJECT = str(cfg_get("chirps_gee_project", "")) or None
 
 # Soil settings
 SOIL_SOURCE        = cfg_get("soil_source", "SSURGO")   # SSURGO | SOILGRIDS_10K | AGMIP | SOILGRIDS_ONLINE | POLARIS
@@ -321,11 +329,13 @@ if isinstance(WEATHER_REPAIR_VARIABLES, str):
 #   WID00000 -> per-point weather/WSTA ID (preferred; 8-char, WSTA column only)
 # Legacy templates may instead use SOIL_ID / ID_SOIL for soil and 00000000 for
 # WSTA; both engines still handle those as a fallback (see _create_folders_and_files).
-TEMPLATE_SOIL_ID_PLACEHOLDER = "SOIL_ID"
+TEMPLATE_SOIL_ID_PLACEHOLDER = str(cfg_get("template_soil_id_placeholder", "SOIL_ID"))
 
 # --- 0.8 DSSAT settings -----------------------------------------------------
-DSSAT_EXE_PATH     = os.environ.get("DSSAT_EXE",
-                                    os.path.join(DSSAT_BASE, DSSAT_EXE_NAME))
+_CONFIGURED_DSSAT_EXE = resolve_config_path(cfg_get("dssat_exe_path", ""))
+DSSAT_EXE_PATH = os.environ.get(
+    "DSSAT_EXE", _CONFIGURED_DSSAT_EXE or os.path.join(DSSAT_BASE, DSSAT_EXE_NAME)
+)
 # Single canonical template dir shared by ALL workflows. Genotype + FileX
 # templates live ONLY in DSSAT_Gridded_Run_Tutorial/dssat_templates (this repo) -
 # runs do NOT fall back to the DSSAT48 install for these, so copy any new
@@ -363,7 +373,7 @@ SEQUENCE_START  = int(cfg_get("sequence_start", 1))
 SEQUENCE_END    = int(cfg_get("sequence_end", 1))
 
 # --- 0.10 HPC & switches ----------------------------------------------------
-ZIP_FOR_HPC         = False
+ZIP_FOR_HPC         = bool(cfg_get("zip_for_hpc", False))
 RUN_STEP_1_SOILS    = bool(cfg_get("run_step_1_soils", True))
 RUN_STEP_2_WEATHER  = bool(cfg_get("run_step_2_weather", True))
 RUN_DSSAT_EXECUTION = bool(cfg_get("run_dssat_execution", True))
@@ -924,6 +934,7 @@ if __name__ == '__main__':
                     chirps_fetch_mode=CHIRPS_V3_FETCH_MODE,
                     chirps_resolution=CHIRPS_V3_RESOLUTION,
                     chirps_months=CHIRPS_V3_MONTHS,
+                    chirps_gee_project=CHIRPS_GEE_PROJECT,
                 )
             elif WEATHER_SOURCE == "AGERA5":
                 agera5_args = dict(common_args)
@@ -1491,7 +1502,30 @@ if __name__ == '__main__':
                 "dssat_exe_path": DSSAT_EXE_PATH,
             })
 
+        # Include already-completed point CSVs when resuming. Previously a
+        # fully resumed run had no new futures, so ``all_results`` stayed empty
+        # and the pipeline incorrectly reported that no results existed.
         all_results = []
+        if RESUME_DSSAT_RUNS:
+            for ID in all_ids:
+                cached_path = os.path.join(DSSAT_RUN_DIR, ID, f"results_{ID}.csv")
+                if not os.path.exists(cached_path):
+                    continue
+                try:
+                    cached = pd.read_csv(
+                        cached_path,
+                        dtype={
+                            "point_id": str,
+                            "soil_profile_id": str,
+                            "weather_station_id": str,
+                            "dssat_file_id": str,
+                        },
+                    )
+                    if not cached.empty:
+                        all_results.append(cached)
+                except Exception as exc:
+                    print(f"WARNING: could not read cached result for ID {ID}: {exc}")
+
         with ProcessPoolExecutor(max_workers=DSSAT_CORES,
                                  mp_context=_mp_ctx) as pool:
             futures = {pool.submit(_run_one_point, t): t["ID"] for t in tasks}
@@ -1503,6 +1537,23 @@ if __name__ == '__main__':
                         all_results.append(res)
                 except Exception as exc:
                     print(f"ERROR on ID {ID}: {exc}")
+
+        produced_ids = [
+            ID for ID in all_ids
+            if os.path.exists(os.path.join(DSSAT_RUN_DIR, ID, f"results_{ID}.csv"))
+        ]
+        produced_set = set(produced_ids)
+        failed_ids = [ID for ID in all_ids if ID not in produced_set]
+        if failed_ids:
+            print(
+                f"WARNING: {len(failed_ids)} of {len(all_ids)} point(s) produced "
+                "no results_<ID>.csv."
+            )
+            print(
+                f"  Failed IDs: {', '.join(failed_ids[:20])}"
+                + (f" ... (+{len(failed_ids) - 20} more)" if len(failed_ids) > 20 else "")
+            )
+            print(f"  See _run_error.log in each failed folder under: {DSSAT_RUN_DIR}")
 
         os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
         if all_results:
@@ -1529,7 +1580,10 @@ if __name__ == '__main__':
             final_data.to_csv(FINAL_RESULTS_PATH, index=False, na_rep="")
             print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
-            print("WARNING: No results produced.")
+            raise RuntimeError(
+                "DSSAT execution produced zero point results. Per-point run "
+                f"folders were preserved for diagnosis under: {DSSAT_RUN_DIR}"
+            )
 
         if CLEANUP_RUN_FOLDERS:
             print("Cleaning up run folders...")

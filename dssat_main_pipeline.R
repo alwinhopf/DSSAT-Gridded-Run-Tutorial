@@ -109,14 +109,17 @@ if (os_system == "Windows") {
   DSSAT_EXE_NAME <- "dscsm048"
 }
 
+# A sibling checkout is the portable developer/workspace layout on every OS.
+sibling_dssat <- file.path(dirname(CODE_ROOT_DIR), "DSSAT48")
+if (dir.exists(sibling_dssat)) DSSAT_BASE <- sibling_dssat
+
 # Environment-variable override (recommended — keeps paths out of version control):
 #   Sys.setenv(DSSAT_EXE  = "/full/path/to/dscsm048")   # overrides both BASE + NAME
 #   Sys.setenv(DSSAT_BASE = "/path/to/DSSAT48")          # overrides base folder only
 DSSAT_BASE <- Sys.getenv("DSSAT_BASE", unset = DSSAT_BASE)
 
-# --- Shared config overlay (config.yml) ---
-# Loads config.yml (if present) so R and Python share one set of settings.
-# cfg_get(key, default) returns the YAML value or the default below.
+# --- Shared central config (config.yml) ---
+# DSSAT_CONFIG_FILE may name a partial override merged over the repository file.
 local({
   loader_dir <- tryCatch(dirname(this.path::this.path()), error = function(e) getwd())
   for (cand in c(file.path(CODE_ROOT_DIR, "config_loader.R"),
@@ -125,7 +128,7 @@ local({
     if (file.exists(cand)) { source(cand); break }
   }
 })
-if (!exists("cfg_get")) cfg_get <- function(key, default) default
+if (!exists("cfg_get")) stop("Could not load config_loader.R from ", CODE_ROOT_DIR)
 
 resolve_config_path <- function(path, base = CODE_ROOT_DIR) {
   path <- trimws(as.character(if (is.null(path)) "" else path))
@@ -133,6 +136,12 @@ resolve_config_path <- function(path, base = CODE_ROOT_DIR) {
   if (grepl("^([A-Za-z]:|/|\\\\\\\\|~)", path)) return(normalizePath(path, mustWork = FALSE))
   normalizePath(file.path(base, path), mustWork = FALSE)
 }
+
+DSSAT_BASE <- Sys.getenv(
+  "DSSAT_BASE",
+  unset = resolve_config_path(cfg_get("dssat_base", DSSAT_BASE), CODE_ROOT_DIR)
+)
+DSSAT_EXE_NAME <- as.character(cfg_get("dssat_executable_name", DSSAT_EXE_NAME))
 
 # --- Project-root aware paths (portable across machines/HPC) ---
 # CODE_ROOT_DIR holds code/templates/static resources. OUTPUT_ROOT_DIR holds
@@ -410,10 +419,11 @@ WEATHER_REPAIR_VARIABLES <- as.character(unlist(cfg_get(
 #   WID00000 -> per-point weather/WSTA ID (preferred; 8-char, WSTA column only)
 # Legacy templates may instead use SOIL_ID / ID_SOIL for soil and 00000000 for
 # WSTA; both engines still handle those as a fallback (see HANDLE EXPERIMENT FILE).
-TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID"
+TEMPLATE_SOIL_ID_PLACEHOLDER <- as.character(cfg_get("template_soil_id_placeholder", "SOIL_ID"))
 
 # --- 5. DSSAT Settings ---
-DSSAT_EXE_PATH <- file.path(DSSAT_BASE, DSSAT_EXE_NAME)
+CONFIGURED_DSSAT_EXE <- resolve_config_path(cfg_get("dssat_exe_path", ""), CODE_ROOT_DIR)
+DSSAT_EXE_PATH <- if (nzchar(CONFIGURED_DSSAT_EXE)) CONFIGURED_DSSAT_EXE else file.path(DSSAT_BASE, DSSAT_EXE_NAME)
 DSSAT_EXE_PATH <- Sys.getenv("DSSAT_EXE", unset = DSSAT_EXE_PATH)
 TEMPLATE_DIR <- resolve_config_path(cfg_get("template_dir", file.path(INPUT_ROOT_DIR, "dssat_templates")), CODE_ROOT_DIR)
 TEMPLATE_FILE_NAME <- cfg_get("template_file_name", "UFGA8201.MZX")  # DEMO PLACEHOLDER — replace with your own experiment file
@@ -459,7 +469,7 @@ SEQUENCE_END <- cfg_get("sequence_end", 1)
 
 # --- 6b. HPC Settings ---
 # Set to TRUE to zip the run folder and delete the original (for cloud upload)
-ZIP_FOR_HPC <- FALSE 
+ZIP_FOR_HPC <- isTRUE(as.logical(cfg_get("zip_for_hpc", FALSE)))
 
 # --- 7. Switches ---
 RUN_STEP_1_SOILS <- isTRUE(as.logical(cfg_get("run_step_1_soils", TRUE))) # Set to FALSE to only use already downloaded soil files
@@ -2123,7 +2133,11 @@ if (RUN_DSSAT_EXECUTION) {
     write_csv(final_data, FINAL_RESULTS_PATH)
     message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
   } else {
-    message("WARNING: No results were produced. Check DSSAT logs in the per-point run folders.")
+    stop(
+      "DSSAT execution produced zero point results. Per-point run folders were preserved for diagnosis under: ",
+      DSSAT_RUN_DIR,
+      call. = FALSE
+    )
   }
 
   # --- 3.8. Optional cleanup of per-point run folders --------------------------

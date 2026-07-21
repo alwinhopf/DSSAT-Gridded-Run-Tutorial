@@ -1,54 +1,67 @@
-"""config_loader.py
+"""Load the shared gridded-pipeline configuration.
 
-Lightweight, dependency-tolerant loader for the shared config.yml.
+``config.yml`` beside this module is the canonical set of defaults.  A file
+named by ``DSSAT_CONFIG_FILE`` is a *partial override* merged over those
+defaults.  This keeps study-specific YAML files small without falling back to
+different hidden defaults in the R and Python pipelines.
 
-Imported near the top of SECTION 0 in dssat_main_pipeline.py. Exposes one
-function, cfg_get(key, default), returning the value from config.yml if present,
-otherwise the supplied default. If config.yml or PyYAML is missing, every call
-returns the default, so the pipeline runs exactly as before.
-
-This is the Python twin of config_loader.R: both read the same config.yml so the
-R and Python SECTION-0 settings cannot drift apart.
+This module is mirrored by :mod:`config_loader.R`; keep their precedence and
+blank-value behavior aligned.
 """
 import os
 
 _CONFIG = {}
 
 
+def _deep_merge(base, override):
+    """Return a recursive mapping merge without mutating either input."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _read_yaml(path, yaml):
+    with open(path, "r", encoding="utf-8-sig") as fh:
+        cfg = yaml.safe_load(fh) or {}
+    if not isinstance(cfg, dict):
+        raise ValueError(f"Top level must be a YAML mapping: {path}")
+    return {str(k).lstrip("\ufeff"): v for k, v in cfg.items()}
+
+
 def _find_and_load():
     here = os.path.dirname(os.path.abspath(__file__))
-    # Highest priority: an explicit path in the DSSAT_CONFIG_FILE env var. This
-    # lets an orchestrator (e.g. run_experiment.R) point each parallel run at its
-    # own private config file without touching the shared config.yml.
+    base_path = os.path.join(here, "config.yml")
     env_path = os.environ.get("DSSAT_CONFIG_FILE", "")
-    candidates = [
-        os.path.join(here, "config.yml"),
-        os.path.join(os.getcwd(), "config.yml"),
-        "config.yml",
-    ]
-    if env_path and os.path.isfile(env_path):
-        path = env_path
-    else:
-        if env_path:
-            print(f"[config_loader] DSSAT_CONFIG_FILE set but not found ({env_path}) - falling back to config.yml search.")
-        path = next((p for p in candidates if os.path.isfile(p)), None)
-    if path is None:
-        print("[config_loader] No config.yml found - using in-script defaults.")
-        return {}
     try:
         import yaml  # PyYAML
-    except ImportError:
-        print("[config_loader] PyYAML not installed - using in-script defaults.")
-        return {}
+    except ImportError as exc:
+        raise RuntimeError(
+            "PyYAML is required to load the central config.yml; install the "
+            "project requirements before running the pipeline."
+        ) from exc
+    if not os.path.isfile(base_path):
+        raise FileNotFoundError(f"Canonical pipeline config not found: {base_path}")
+    if env_path and not os.path.isfile(env_path):
+        raise FileNotFoundError(
+            f"DSSAT_CONFIG_FILE points to a missing file: {env_path}"
+        )
     try:
-        with open(path, "r", encoding="utf-8-sig") as fh:
-            cfg = yaml.safe_load(fh) or {}
-        cfg = {str(k).lstrip("\ufeff"): v for k, v in cfg.items()}
-        print(f"[config_loader] Loaded {len(cfg)} settings from {path}")
+        cfg = _read_yaml(base_path, yaml)
+        loaded = [base_path]
+        if env_path and os.path.abspath(env_path) != os.path.abspath(base_path):
+            cfg = _deep_merge(cfg, _read_yaml(env_path, yaml))
+            loaded.append(env_path)
+        print(
+            f"[config_loader] Loaded {len(cfg)} settings from "
+            + " + ".join(loaded)
+        )
         return cfg
     except Exception as exc:  # noqa: BLE001
-        print(f"[config_loader] Failed to parse {path} ({exc}) - using defaults.")
-        return {}
+        raise RuntimeError(f"Failed to load pipeline configuration: {exc}") from exc
 
 
 _CONFIG = _find_and_load()

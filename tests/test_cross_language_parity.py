@@ -1,4 +1,12 @@
+import os
+import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,8 +18,12 @@ def _read(path: Path) -> str:
 
 
 def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
-    r_src = _read(WORKSPACE / "dssatutils" / "R" / "soil_ssurgo.R")
-    py_src = _read(WORKSPACE / "dssatutils" / "python" / "dssatutils" / "soil_ssurgo.py")
+    r_path = WORKSPACE / "dssatutils" / "R" / "soil_ssurgo.R"
+    py_path = WORKSPACE / "dssatutils" / "python" / "dssatutils" / "soil_ssurgo.py"
+    if not r_path.exists() or not py_path.exists():
+        pytest.skip("workspace sibling dssatutils is not checked out")
+    r_src = _read(r_path)
+    py_src = _read(py_path)
 
     for marker in ("no-coverage", "no-soil", "no-layers", "_download_failures.csv"):
         assert marker in r_src
@@ -19,8 +31,12 @@ def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
 
 
 def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
-    r_src = _read(WORKSPACE / "dssatengine" / "R" / "engine.R")
-    py_src = _read(WORKSPACE / "dssatengine" / "python" / "dssatengine" / "engine.py")
+    r_path = WORKSPACE / "dssatengine" / "R" / "engine.R"
+    py_path = WORKSPACE / "dssatengine" / "python" / "dssatengine" / "engine.py"
+    if not r_path.exists() or not py_path.exists():
+        pytest.skip("workspace sibling dssatengine is not checked out")
+    r_src = _read(r_path)
+    py_src = _read(py_path)
 
     for src in (r_src, py_src):
         assert "_run_error.log" in src
@@ -71,3 +87,64 @@ def test_cropland_mask_config_and_outputs_are_aligned():
 
     for marker in markers[:5]:
         assert marker in cfg
+
+
+def _config_keys_used(path: Path) -> set[str]:
+    return set(re.findall(r"cfg_get\([\"']([^\"']+)", _read(path)))
+
+
+def test_every_runtime_setting_is_declared_in_central_yaml():
+    """Prevent new user settings from being hidden only in pipeline code."""
+    cfg = yaml.safe_load((ROOT / "config.yml").read_text(encoding="utf-8"))
+    declared = set(cfg)
+    used = (
+        _config_keys_used(ROOT / "dssat_main_pipeline.py")
+        | _config_keys_used(ROOT / "dssat_main_pipeline.R")
+    )
+    # This removed key is read only to emit a migration error when supplied.
+    used.discard("treatments")
+    assert used <= declared, f"settings missing from config.yml: {sorted(used - declared)}"
+    for source in ("dssat_main_pipeline.py", "dssat_main_pipeline.R"):
+        text = _read(ROOT / source)
+        assert re.search(r"ZIP_FOR_HPC\s*(?:=|<-)\s*.*cfg_get\([\"']zip_for_hpc", text)
+
+
+def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):
+    override = tmp_path / "study.yml"
+    override.write_text("project_name: override_study\nweather_start_year: 2001\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["DSSAT_CONFIG_FILE"] = str(override)
+    code = (
+        "import config_loader; "
+        "print(config_loader.cfg_get('project_name', 'missing')); "
+        "print(config_loader.cfg_get('weather_source', 'missing'))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=ROOT, env=env,
+        check=True, capture_output=True, text=True,
+    )
+    assert [line.strip() for line in result.stdout.splitlines()[-2:]] == [
+        "override_study", "NASA_POWER"
+    ]
+
+
+def test_r_override_yaml_is_merged_over_central_defaults(tmp_path):
+    rscript = shutil.which("Rscript")
+    if rscript is None:
+        return
+    override = tmp_path / "study.yml"
+    override.write_text("project_name: override_study\nweather_start_year: 2001\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["DSSAT_CONFIG_FILE"] = str(override)
+    code = (
+        "source('config_loader.R'); "
+        "cat(cfg_get('project_name','missing'),'\\n'); "
+        "cat(cfg_get('weather_source','missing'),'\\n')"
+    )
+    result = subprocess.run(
+        [rscript, "--vanilla", "-e", code], cwd=ROOT, env=env,
+        check=True, capture_output=True, text=True,
+    )
+    assert [line.strip() for line in result.stdout.splitlines()[-2:]] == [
+        "override_study", "NASA_POWER"
+    ]

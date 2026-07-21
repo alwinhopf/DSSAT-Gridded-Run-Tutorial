@@ -281,7 +281,7 @@ unzip -o shapefile/tl_2024_us_state.zip -d shapefile
 
 ### 4 — Place a DSSAT template file
 
-Copy a known-good experiment file (e.g., `UFGA8201.MZX` from your DSSAT `Maize/` folder) into `dssat_templates/`, then set `TEMPLATE_FILE_NAME` in Section 0 of the pipeline script. `UFGA8201.MZX` is a maize file bundled with DSSAT for testing. Any valid DSSAT experiment file works (`.MZX`, `.WHX`, `.SBX`, `.SQX`, etc.) — match the extension to your `CROP_EXTENSION` and `RUN_MODE` settings.
+Copy a known-good experiment file (e.g., `UFGA8201.MZX` from your DSSAT `Maize/` folder) into `dssat_templates/`, then set `template_file_name` in `config.yml`. `UFGA8201.MZX` is a maize file bundled with DSSAT for testing. Any valid DSSAT experiment file works (`.MZX`, `.WHX`, `.SBX`, `.SQX`, etc.) — match the extension to `crop_extension` and `run_mode`.
 
 ### 5 — Source the pipeline
 
@@ -308,9 +308,9 @@ After the run completes, look for:
 
 - DSSAT path not found → confirm `Sys.setenv(DSSAT_EXE = ...)` is set correctly.
 - Missing boundary shapefile → download the TIGER/Line file (Step 3 above) or point the script to your own boundary.
-- Template/run-mode mismatch (e.g., `RUN_MODE = "sequence"` but template is `*.MZX`) → see [Background: DSSAT inputs](#background-dssat-inputs-and-run-folder-anatomy) and update `RUN_MODE` or `TEMPLATE_FILE_NAME` in Section 0.
+- Template/run-mode mismatch (e.g., `run_mode: "sequence"` but the template is `*.MZX`) → see [Background: DSSAT inputs](#background-dssat-inputs-and-run-folder-anatomy) and update `run_mode` or `template_file_name` in `config.yml`.
 
-Once the demo works, customise settings in **SECTION 0: MASTER CONFIGURATION** of `dssat_main_pipeline.R`.
+Once the demo works, customise settings in the central **`config.yml`** file.
 
 ---
 
@@ -423,32 +423,28 @@ Useful for precision-agriculture field-scale simulations, research station netwo
 
 ## Defining your spatial domain (pipeline modes)
 
-All three modes produce the same standardised point shapefile (with `ID` / `LAT` / `LONG` columns) that the rest of the pipeline consumes. You can switch modes without changing anything after Section 0.
+All three modes produce the same standardised point shapefile (with `ID` / `LAT` / `LONG` columns) that the rest of the pipeline consumes.
 
-The controlling flag in `dssat_main_pipeline.R` Section 0:
+Set the controlling flag in `config.yml`:
 
-```r
-USE_EXISTING_POINT_SHAPEFILE <- FALSE   # MODE A — generate a regular grid
-USE_EXISTING_POINT_SHAPEFILE <- TRUE    # MODE B / C — supply your own points
+```yaml
+use_existing_point_shapefile: false   # MODE A — generate a regular grid
+# use_existing_point_shapefile: true  # MODE B / C — supply your own points
 ```
 
 ---
 
 ### Mode A — Regular grid from a boundary polygon (default demo)
 
-The pipeline reads a boundary shapefile, filters to the region(s) you want, and places points on a regular grid at `GRID_SPACING_METERS` spacing.
+The pipeline reads a boundary shapefile, filters to the region(s) you want, and places points on a regular grid at `grid_spacing_meters` spacing.
 
-```r
-# SECTION 0 of dssat_main_pipeline.R
-USE_EXISTING_POINT_SHAPEFILE <- FALSE
-
-BOUNDARY_SHAPEFILE_NAME  <- "tl_2024_us_state.shp"
-ENABLE_BOUNDARY_FILTER   <- TRUE
-BOUNDARY_FILTER_COLUMN   <- "NAME"
-STATE_NAME_FILTER        <- c("Montana")      # one or more state names
-
-GRID_SPACING_METERS      <- 50000            # 50 km → ~60 points (fast demo)
-                                              # 5000  → ~6 000 points (production)
+```yaml
+use_existing_point_shapefile: false
+boundary_shapefile_name: "tl_2024_us_state.shp"
+enable_boundary_filter: true
+boundary_filter_column: "NAME"
+state_name_filter: ["Montana"]
+grid_spacing_meters: 50000  # 50 km fast demo; 5000 for production
 ```
 
 ---
@@ -457,10 +453,9 @@ GRID_SPACING_METERS      <- 50000            # 50 km → ~60 points (fast demo)
 
 Supply any point or polygon shapefile. Polygons are auto-converted to centroids.
 
-```r
-USE_EXISTING_POINT_SHAPEFILE  <- TRUE
-EXISTING_POINT_SHAPEFILE_PATH <- file.path(MAIN_PROJECT_DIR,
-                                            "gridpoints", "my_study_sites.shp")
+```yaml
+use_existing_point_shapefile: true
+existing_point_shapefile_path: "gridpoints/my_study_sites.shp"
 ```
 
 The `load_existing_points()` function handles the rest automatically:
@@ -583,17 +578,16 @@ Outputs in `gridpoints/`:
 
 ##### Feed into Mode B
 
-```r
-USE_EXISTING_POINT_SHAPEFILE  <- TRUE
-EXISTING_POINT_SHAPEFILE_PATH <- file.path(MAIN_PROJECT_DIR,
-                                 "gridpoints", "montana_cropland_5k_above_threshold.shp")
+```yaml
+use_existing_point_shapefile: true
+existing_point_shapefile_path: "gridpoints/montana_cropland_5k_above_threshold.shp"
 ```
 
 ---
 
 ## Soil data sources
 
-Set `SOIL_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
+Set `soil_source` in `config.yml`.
 
 | Value | Coverage | Method | Notes |
 |-------|----------|--------|-------|
@@ -667,7 +661,7 @@ or `sat` satellite-only), `chirps_v3_stream` (`final` or `prelim`), and
 `chirps_v3_fetch_mode` (`monthly_netcdf` recommended because yearly v3 files are
 large).
 
-Set `WEATHER_SOURCE` in Section 0 of `dssat_main_pipeline.R`.
+Set `weather_source` in `config.yml`.
 
 | Value | Coverage | Approx. resolution | Notes |
 |-------|----------|--------------------|-------|
@@ -1135,15 +1129,12 @@ When building each point folder, the pipeline performs simple string replacement
 
 ### Run folder naming
 
-`DSSAT_RUN_NAME` controls the run directory name under `dssat_runs/`. Configure in Section 0:
+The run-name keys control the directory under `dssat_runs/`:
 
-```r
-RUN_TAG        <- "run1"      # appended to the base name; leave "" for default
-RUN_NAME_STYLE <- "grid"      # "grid"     => <GRID_BASE_NAME>_<RUN_TAG>
-                               #              e.g., dssat_spatial_demo_50km_run1
-                               # "scenario" => <GRID_BASE_NAME>_<WEATHER>_<SOIL>_<RUN_TAG>
-                               #              e.g., dssat_spatial_demo_50km_DAYMET_SSURGO_run1
-RUN_NAME_OVERRIDE <- ""       # if non-empty, this exact string is used as the run folder name
+```yaml
+run_tag: "run1"          # appended to the generated base name
+run_name_style: "grid"   # grid | scenario
+run_name_override: ""    # non-empty value is used verbatim
 ```
 
 ---
@@ -1187,49 +1178,36 @@ treatment_end:        4
 treatment_list:       []             # optional explicit non-contiguous IDs
 ```
 
-**How precedence works:** every key in `config.yml` **overrides** the matching in-script default in SECTION 0. Any key you delete (or leave blank, `""`) falls back to the SECTION 0 default. `config.yml` is therefore fully optional — delete it and both pipelines run exactly on their built-in defaults. If PyYAML / the R `yaml` package is missing, the loader prints a notice and silently uses the in-script defaults.
+**How precedence works:** the repository `config.yml` is the complete shared
+default for R and Python. Set `DSSAT_CONFIG_FILE` to a study-specific YAML file
+to merge only that study's overrides over the repository defaults. `DSSAT_EXE`
+and `DSSAT_BASE` environment variables have highest priority for machine-local
+paths. Missing or malformed configuration fails immediately instead of silently
+running with hidden defaults. PyYAML (Python) or `yaml` (R) is therefore a
+required dependency.
 
-> The in-script **SECTION 0** values (below) remain the authoritative fallback and documentation of every setting. For most runs you only need to touch `config.yml`. The HPC MPI runner is configured separately via command-line flags (see [HPC execution](#hpc-execution-mpi--slurm)), not `config.yml`.
-
-### Editing SECTION 0 directly (alternative)
-
-The main entrypoint is `dssat_main_pipeline.R`. If you prefer not to use `config.yml`, edit **SECTION 0: MASTER CONFIGURATION** directly.
-
-Key settings:
-
-```r
-# --- Spatial domain ---
-USE_EXISTING_POINT_SHAPEFILE  <- FALSE       # TRUE = Mode B/C; FALSE = Mode A
-BOUNDARY_SHAPEFILE_NAME       <- "tl_2024_us_state.shp"
-STATE_NAME_FILTER             <- c("Montana")
-GRID_SPACING_METERS           <- 50000
-
-# --- Weather ---
-WEATHER_SOURCE     <- "DAYMET"               # "DAYMET", "NASA_POWER", "GRIDMET", or "OPEN_METEO"
-WEATHER_START_YEAR <- 1999
-WEATHER_END_YEAR   <- 2001
-
-# --- Soil ---
-SOIL_SOURCE        <- "SSURGO"               # "SSURGO", "SOILGRIDS_10K", or "SOILGRIDS_ONLINE"
-
-# --- DSSAT template ---
-TEMPLATE_FILE_NAME <- "UFGA8201.MZX"        # DEMO PLACEHOLDER — replace with your file
-RUN_MODE           <- "experiment"           # "experiment" or "sequence"
-TREATMENT_START    <- 1
-TREATMENT_END      <- 4
-
-# --- Execution mode ---
-RUN_DSSAT_EXECUTION <- TRUE                  # FALSE = HPC prep only (no local execution)
-ZIP_FOR_HPC         <- FALSE                 # TRUE = zip run folder for HPC upload
-```
+Do not edit SECTION 0 in either pipeline for normal customization. It contains
+configuration plumbing and derived values; all user-facing knobs belong in
+`config.yml`. The HPC MPI runner remains configured by command-line flags (see
+[HPC execution](#hpc-execution-mpi--slurm)).
 
 ### Common first customisations (after the demo works)
 
-- **Spatial scope:** change `GRID_SPACING_METERS`, `STATE_NAME_FILTER`, or switch to `USE_EXISTING_POINT_SHAPEFILE <- TRUE`.
-- **Weather:** change `WEATHER_SOURCE` and extend `WEATHER_START_YEAR` / `WEATHER_END_YEAR`.
-- **Soil:** change `SOIL_SOURCE`; if using `SOILGRIDS_10K`, set `EXTERNAL_SOIL_FILE`.
-- **Crop:** update `CROP_EXTENSION` and `TEMPLATE_FILE_NAME` to match your crop module.
-- **HPC prep:** set `RUN_DSSAT_EXECUTION <- FALSE` and `ZIP_FOR_HPC <- TRUE`.
+- **Spatial scope:** change `grid_spacing_meters`, `state_name_filter`, or set `use_existing_point_shapefile: true`.
+- **Weather:** change `weather_source`, `weather_start_year`, and `weather_end_year`.
+- **Soil:** change `soil_source`; for `SOILGRIDS_10K`, set `external_soil_file`.
+- **Crop:** update `crop_extension` and `template_file_name` together.
+- **HPC prep:** set `run_dssat_execution: false` and `zip_for_hpc: true`.
+
+### R/Python parity note
+
+Both pipelines consume the same merged YAML and run the same engine contract.
+Two internal optimizations remain implementation-specific: Python can opt into
+symlinked support files with `use_symlinks`, while R currently copies them; R
+currently exposes pipeline-level download validation/retry switches, while
+Python relies on provider logging plus pre-run input validation. These do not
+change scientific output schemas. Keep `use_symlinks: false` for identical,
+portable run-folder contents.
 
 ### Running non-interactively (command line)
 
@@ -1245,9 +1223,9 @@ Before running hundreds or thousands of points, validate a **tiny run** end-to-e
 
 ### Recommended validation flow
 
-1. Reduce to 5–20 points: increase `GRID_SPACING_METERS`, tighten `STATE_NAME_FILTER`, or use a small existing shapefile.
-2. Keep the run minimal: `TREATMENT_START == TREATMENT_END`, 2–3 years of weather.
-3. Set `CLEANUP_RUN_FOLDERS <- FALSE` so you can inspect DSSAT logs afterwards.
+1. Reduce to 5–20 points: increase `grid_spacing_meters`, tighten `state_name_filter`, or use a small existing shapefile.
+2. Keep the run minimal: set equal `treatment_start` / `treatment_end` and use 2–3 weather years.
+3. Set `cleanup_run_folders: false` so you can inspect DSSAT logs afterwards.
 4. Click **Source** in RStudio.
 
 ### What a successful run looks like
@@ -1263,7 +1241,7 @@ Inspect `dssat_runs/<RUN_NAME>/00000001/` and confirm:
 ### If it fails
 
 - Inspect `LUN.LST` (and any `*.LST` / `*.OUT`) inside the point folder — DSSAT errors are described there.
-- Set `DSSAT_CORES <- 1` to make debugging simpler.
+- Set `dssat_cores: 1` to make debugging simpler.
 - Confirm your template is configured to write **CSV outputs** (`summary.csv`), since the parser expects them.
 
 ---
@@ -1278,9 +1256,18 @@ The repository ships two test scripts under `tests/`, plus a GitHub Actions CI w
 
 ```bash
 # from the repo root, in your Python environment
-python -m pytest tests/test_smoke.py -v
+python -m pytest -m "not integration and not slow" -v
 #   or as a plain script:
 python tests/test_smoke.py
+```
+
+The provider-heavy comprehensive module is deliberately marked `integration`.
+Run it explicitly when you want real downloads (several minutes and potentially
+large cached NetCDFs):
+
+```bash
+python -m pytest tests/test_e2e_comprehensive.py -m integration -v -s
+DSSAT_RUN_LIVE_E2E=1 Rscript --vanilla tests/test_e2e.R
 ```
 
 ### Live global-source test (internet required, no DSSAT)
@@ -1294,7 +1281,10 @@ python tests/test_global_sources.py --keep   # keep the output dir for inspectio
 
 ### Continuous integration
 
-`.github/workflows/smoke.yml` runs the offline smoke test and byte-compiles all Python modules on every push and pull request, so import errors and `.WTH` formatting regressions are caught automatically.
+`.github/workflows/smoke.yml` runs the offline Python tests, byte-compiles the
+Python modules, and validates R configuration/syntax on Ubuntu, macOS, and
+Windows. This catches platform-specific path/config regressions on every push
+and pull request; live DSSAT runs still require a runner with DSSAT installed.
 
 ---
 
@@ -1302,7 +1292,7 @@ python tests/test_global_sources.py --keep   # keep the output dir for inspectio
 
 ### Option A1: Run from R (default)
 
-If `RUN_DSSAT_EXECUTION <- TRUE` in Section 0, the pipeline runs DSSAT per point in parallel using `doParallel`, parses outputs, and writes the merged results CSV and yield map automatically.
+With `run_dssat_execution: true` in `config.yml`, the pipeline runs DSSAT per point in parallel, parses outputs, and writes the merged results CSV and yield map automatically.
 
 ### Option A2: Run the MPI runner locally
 
@@ -1374,7 +1364,7 @@ squeue -u $USER
 
 ### 2 — Build run folders and zip (R)
 
-In Section 0 set `RUN_DSSAT_EXECUTION <- FALSE` and `ZIP_FOR_HPC <- TRUE`, then:
+Set `run_dssat_execution: false` and `zip_for_hpc: true` in `config.yml`, then:
 
 ```bash
 Rscript dssat_main_pipeline.R
@@ -1492,9 +1482,9 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 | `No .SQX file found` (MPI runner) | MPI runner expects `.SQX`; you have a `.MZX` | Switch to a `.SQX` template or extend the runner to support seasonal FileX |
 | `DSSAT completed but no parsable outputs` | `summary.csv` missing or empty | Rerun with `--cleanup_mode never`; inspect `*.LST` / `LUN.LST`; ensure template writes CSV outputs |
 | `No data returned from NASA-POWER` | Point is over ocean or invalid coordinates | Filter out water pixels before running or use Mode C |
-| Weather download stalls or rate-limit errors | Too many parallel requests | Set `N_CORES_TO_USE <- 1`; SoilGrids REST back-off retry handles 429 errors automatically |
+| Weather download stalls or rate-limit errors | Too many parallel requests | Set `weather_cores: 1`; SoilGrids REST back-off retry handles 429 errors automatically |
 | Soil processing skips many points | Critical data (sand/clay/BD) is NA | Check `soil_processing_errors.log` in the soil output folder; consider switching soil source |
-| Soil ID mismatch in DSSAT log | Placeholder `SOIL_ID` not replaced | Check `TEMPLATE_SOIL_ID_PLACEHOLDER` in Section 0; confirm the placeholder string is in your template |
+| Soil ID mismatch in DSSAT log | Placeholder `SOIL_ID` not replaced | Check `template_soil_id_placeholder` in `config.yml`; confirm the placeholder string is in your template |
 | Weather does not cover full simulation period | Simulation years extend beyond downloaded range | For sequence runs: a 10-year rotation needs at least 10 + `NYERS` years of weather; extend `WEATHER_END_YEAR` or use the weather extension functions |
 | `mpi4py` import error on HPC | Built against wrong MPI library | Rebuild: `pip install --no-cache-dir --no-binary :all: mpi4py` after loading the correct MPI module |
 | Results CSV is empty after run | Parsing failed; DSSAT wrote `.OUT` only | Check per-point `LUN.LST`; enable CSV output in the `*OUTPUTS` section of your template |
@@ -1509,8 +1499,8 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 - **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap. All `.WTH`/`.SOL` writes are skipped if the file already exists, so re-runs resume cheaply.
 - Use **scratch storage** (fast local SSD or parallel filesystem) for `base_dir` — DSSAT creates many small files per run.
 - Use `--cleanup_mode always` in production to remove transient DSSAT files after each point.
-- Always **debug with a single point** first (`DSSAT_CORES <- 1`).
-- For very large domains, set `ZIP_FOR_HPC <- TRUE` and run on HPC rather than locally.
+- Always **debug with a single point** first (`dssat_cores: 1`).
+- For very large domains, set `zip_for_hpc: true` and run on HPC rather than locally.
 
 ---
 
@@ -1519,8 +1509,8 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 - Record DSSAT version and executable path used.
 - Record the template file(s) and all cultivar/ecotype/species files.
 - Record soil and weather data sources and year ranges.
-- Save the `README_CONFIG.txt` written by the pipeline to the run folder (it captures key Section 0 settings automatically).
-- Commit Section 0 changes to version control so every run can be traced back to a specific configuration.
+- Save the `README_CONFIG.txt` written by the pipeline to the run folder (it captures key configuration automatically).
+- Commit the study YAML so every run can be traced back to a specific configuration.
 
 ---
 

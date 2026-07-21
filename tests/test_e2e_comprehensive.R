@@ -5,6 +5,10 @@
 # - Uses synthetic/mocked data to avoid flaky network calls in CI
 # - Skips sources with missing optional deps or API keys gracefully
 
+if (Sys.getenv("DSSAT_RUN_LIVE_E2E", "") != "1") {
+  message("Skipping live comprehensive R downloads; set DSSAT_RUN_LIVE_E2E=1 to run them.")
+} else local({
+
 suppressPackageStartupMessages({
   library(parallel)
   library(doParallel)
@@ -37,6 +41,10 @@ log_test <- function(status, name, msg = "") {
   }
 }
 
+utils_repo <- normalizePath(file.path(getwd(), "..", "dssatutils"), mustWork = FALSE)
+if (dir.exists(utils_repo) && requireNamespace("pkgload", quietly = TRUE)) {
+  pkgload::load_all(utils_repo, quiet = TRUE)
+}
 if (!requireNamespace("dssatutils", quietly = TRUE)) {
   message("dssatutils not installed; skipping comprehensive E2E.")
   quit(status = 0)
@@ -459,3 +467,4 @@ if (FAILED > 0) {
   message("ALL TESTS PASSED (or skipped due to missing optional deps).")
   quit(status = 0)
 }
+})

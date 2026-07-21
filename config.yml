@@ -3,8 +3,10 @@
 #
 # Both the R pipeline (dssat_main_pipeline.R) and the Python port
 # (dssat_main_pipeline.py) read this file at the top of SECTION 0. Any key
-# present here OVERRIDES the in-script default; any key you delete falls back
-# to the script default, so this file is fully optional.
+# present here defines the shared R/Python default. A file selected with
+# DSSAT_CONFIG_FILE is merged over this mapping, so study configs only need to
+# contain values they change. Keep user-adjustable settings here rather than in
+# the pipeline source files.
 #
 # This prevents the R-vs-Python SECTION-0 settings from drifting apart: edit
 # once here and both pipelines pick it up.
@@ -12,8 +14,28 @@
 
 # --- Project / grid ---
 project_name:         "dssat_spatial_demo"
-grid_spacing_meters:  20000          # 50 km demo; 5000-10000 for production
+grid_spacing_meters:  20000          # 20 km demo; 5000-10000 for production
 crop_extension:       "MZ"           # MZ=maize, WH=wheat, SB=soybean, ...
+
+# --- Roots and directories ---
+# Blank paths use portable locations derived from this repository. Relative
+# paths are resolved against the repository, not the caller's current folder.
+input_root_dir:        ""
+output_root_dir:       ""
+shapefile_dir:         ""
+gridpoints_dir:        ""
+weather_root_dir:      ""
+soil_root_dir:         ""
+runs_root_dir:         ""
+results_root_dir:      ""
+template_dir:          ""
+
+# DSSAT executable discovery. Blank values use platform defaults and the
+# sibling ../DSSAT48 checkout when available. Environment variables DSSAT_EXE
+# and DSSAT_BASE have highest priority and are convenient for CI/HPC.
+dssat_base:            ""
+dssat_executable_name: ""
+dssat_exe_path:        ""
 
 # --- Run-folder naming ---
 run_tag:              ""             # e.g. "run1"; "" = default naming
@@ -59,11 +81,22 @@ chirps_v3_stream:     "final"        # NASA_POWER_CHIRPS_V3 only: final | prelim
 chirps_v3_fetch_mode: "monthly_netcdf" # NASA_POWER_CHIRPS_V3 only: monthly_netcdf (recommended) | yearly_netcdf
 chirps_v3_resolution: "p05"          # NASA_POWER_CHIRPS_V3 only: currently p05 daily rainfall
 chirps_v3_months:     []             # NASA_POWER_CHIRPS_V3 only: [] = all months; e.g. [10,11,12,1,2,3,4] to limit downloads
+chirps_gee_project:   ""             # GEE mode only: Google Earth Engine project ID
+chirps_download_timeout: null         # seconds; null = dssatutils package default
 agera5_max_concurrent_requests: 4    # AgERA5 only: concurrent CDS requests; 4 is a conservative max
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
 eobs_use_cds:         false          # EOBS only: true = fetch via Copernicus CDS; run setup_cds_credentials() once
 xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)
 cmfd_nc_dir:          ""             # CMFD only: folder of CMFD NetCDFs temp/prec/srad/shum/pres/wind (blank = cmfd_netcdf/)
+chelsa_nc_dir:        ""
+agmerra_nc_dir:       ""
+agcfsr_nc_dir:        ""
+silo_nc_dir:          ""
+prism_cache_dir:      ""
+mswx_nc_dir:          ""
+mswep_nc_dir:         ""
+crujra_nc_dir:        ""
+terraclimate_nc_dir:  ""
 
 soil_source:          "SSURGO_ALDERMAN"  # SSURGO | GNATSGO | ISDASOIL | LUCAS | SOILGRIDS_10K | SOILGRIDS_ONLINE | HWSD | SSURGO_ALDERMAN
 statsgo:              false
@@ -77,9 +110,16 @@ lucas_csv:            ""                # LUCAS only: downloaded ESDAC LUCAS top
 soilgrids_mode:       "REST"            # SOILGRIDS_ONLINE only: REST (keyless, rate-limited) | VRT (needs rasterio; batch-friendly, better coverage)
 hwsd_raster_file:     ""                # HWSD only: FAO HWSD2 raster of mapping-unit IDs (blank = HWSD/HWSD2.bil)
 hwsd_db_file:         ""                # HWSD only: FAO HWSD2 attribute DB - the FAO MS Access .mdb directly OR a converted .sqlite (blank = HWSD/HWSD2.sqlite)
+polaris_stat:         "p50"
+polaris_cache_dir:    ""
+hihydrosoil_raster_dir: ""
+slga_raster_dir:      ""
+wise30sec_raster_dir: ""
+wosis_profile_csv:    ""
 
 # --- DSSAT template / run mode ---
 template_file_name:   "UFGA9201.MZX"
+template_soil_id_placeholder: "SOIL_ID"
 run_mode:             "experiment"   # experiment | sequence
 # Use treatment_start/treatment_end for a contiguous range. Use treatment_list
 # only when you need explicit non-contiguous IDs, e.g. [1, 5, 10].
@@ -104,6 +144,7 @@ dssat_cores:          "auto"
 #   at scale). true: copy those ~27 files into every folder for self-contained
 #   runs (auto-forced when ZIP_FOR_HPC is set, since folders move to another host).
 bundle_genotype_files: false
+use_symlinks:          false  # portable default; Python can opt in, with copy fallback
 
 # --- Pipeline step switches ---
 # Set individual steps to false to skip them (e.g. when re-running on cached data).
@@ -114,6 +155,17 @@ run_dssat_execution: true   # false = HPC prep mode (creates folders but does no
 # --- Weather extension ---
 extend_weather_data:     false  # set to true to fill partial years by climatological repeat
 weather_reference_year:  2025  # the historic year used as the repeat source
+
+# Optional, conservative weather repair/QA. Repairs only short gaps with valid
+# neighbors; audit is flag-only. Keep disabled unless the study calls for it.
+repair_weather_missing_values: false
+repair_weather_date_gaps: false
+repair_weather_temperature_inversions: false
+audit_weather_quality: false
+weather_repair_max_gap_days: 3
+weather_repair_window_days: 2
+weather_quality_flatline_days: 10
+weather_repair_variables: ["SRAD", "TMAX", "TMIN", "RAIN", "TDEW", "RH2M", "WIND"]
 
 # --- Stop / Resume / HPC ---
 resume_dssat_runs:    false  # set to true to skip points whose results_{ID}.csv already exists

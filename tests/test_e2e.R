@@ -4,6 +4,10 @@
 # - Runs weather (Open-Meteo) + soil (SoilGrids) download via dssatutils
 # - Validates that .WTH/.SOL files are written and well-formed
 
+if (Sys.getenv("DSSAT_RUN_LIVE_E2E", "") != "1") {
+  message("Skipping live R downloads; set DSSAT_RUN_LIVE_E2E=1 to run them.")
+} else local({
+
 suppressPackageStartupMessages({
   opts <- options(stringsAsFactors = FALSE)
   library(parallel)    # Required by dssatutils weather/soil functions for parallelization
@@ -20,6 +24,10 @@ check <- function(cond, msg) {
   }
 }
 
+utils_repo <- normalizePath(file.path(getwd(), "..", "dssatutils"), mustWork = FALSE)
+if (dir.exists(utils_repo) && requireNamespace("pkgload", quietly = TRUE)) {
+  pkgload::load_all(utils_repo, quiet = TRUE)
+}
 if (!requireNamespace("dssatutils", quietly = TRUE)) {
   message("dssatutils not installed; skipping E2E test. Install dssatutils and rerun.")
   quit(status = 0)
@@ -131,3 +139,4 @@ if (requireNamespace("dssatutils", quietly = TRUE)) {
 
 message("ALL E2E CHECKS PASSED.")
 quit(status = 0)
+})

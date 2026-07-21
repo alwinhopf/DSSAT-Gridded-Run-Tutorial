@@ -11,17 +11,22 @@ Run: pytest tests/test_e2e_comprehensive.py -v
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
 from pathlib import Path
 import pandas as pd
 import pytest
 
-# Add repo to path
+# Add the sibling package source ahead of any older installed copy.
 _HERE = Path(__file__).parent
 _REPO = _HERE.parent
+_WORKSPACE = _REPO.parent
+sys.path.insert(0, str(_WORKSPACE / "dssatutils" / "python"))
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "python_scripts"))
+
+pytestmark = pytest.mark.integration
 
 try:
     import dssatutils
@@ -282,7 +287,6 @@ class TestSoilSources:
         csv_path = sol_dir / "soil_map.csv"
         
         try:
-            # REST API can take 1-2 minutes for 3 global points
             dssatutils.process_soils_soilgrids_online(
                 gridfile=gdf,
                 soilfile_csv_path=str(csv_path),
@@ -296,9 +300,10 @@ class TestSoilSources:
             
             for sol_file in sols:
                 _check_sol_file(sol_file)
-        except Exception as e:
-            # REST API is slow and fragile; gracefully skip
-            pytest.skip(f"SoilGrids REST API timeout or network error: {e}")
+        except RuntimeError as e:
+            if "No soil data extracted" in str(e):
+                pytest.skip(f"SoilGrids provider returned no data: {e}")
+            raise
 
     @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_soilgrids"),
                         reason="process_soils_soilgrids not available")
@@ -310,20 +315,31 @@ class TestSoilSources:
         gdf = make_gdf(GLOBAL_POINTS)
         csv_path = sol_dir / "soil_map.csv"
         
-        try:
-            dssatutils.process_soils_soilgrids(
-                gridfile=gdf,
-                soilfile_csv_path=str(csv_path),
-                output_sol_dir=str(sol_dir),
-                id_col="ID",
-            )
-            
-            sols = list(sol_dir.glob("*.SOL"))
-            if len(sols) > 0:
-                for sol_file in sols:
-                    _check_sol_file(sol_file)
-        except Exception as e:
-            pytest.skip(f"SoilGrids skipped: {e}")
+        master = sol_dir / "dummy_master.SOL"
+        master.write_text(
+            "*SOILS: Test Soils Master\n"
+            "*TEST0001     TEST_SOIL       52.000    5.000\n"
+            "@SITE        COUNTRY          LAT     LONG SCS FAMILY\n"
+            " TEST_SOIL   World         52.000    5.000\n"
+            "@ SCOM  SALB  SLU1  SLDR  SLRO  SLNF  SLPF  SMHB  SMPX  SMKE\n"
+            "    BN   .13     6    .6    73     1     1 IB001 IB001 IB001\n"
+            "@  SLB  SLMH  SLLL  SDUL  SSAT  SRGF  SSKS  SBDM  SLOC  SLCL  SLSI  SLCF  SLNI  SLHW  SLHB  SCEC  SADC\n"
+            "     5   -99 0.100 0.200 0.300  1.00  10.0  1.40  1.00  20.0  40.0   0.0   -99   -99   -99   -99   -99\n"
+            "    15   -99 0.100 0.200 0.300  0.80  10.0  1.40  0.80  20.0  40.0   0.0   -99   -99   -99   -99   -99\n",
+            encoding="utf-8",
+        )
+        dssatutils.process_soils_soilgrids(
+            grid_points=gdf,
+            source_sol_file=str(master),
+            output_csv_path=str(csv_path),
+            output_sol_dir=str(sol_dir),
+            id_col="ID",
+            numeric_only_ids=False,
+        )
+        sols = list(sol_dir.glob("*.SOL"))
+        assert sols, "offline SoilGrids fixture produced no .SOL files"
+        for sol_file in sols:
+            _check_sol_file(sol_file)
 
     @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_ssurgo"),
                         reason="process_soils_ssurgo not available")
@@ -335,20 +351,21 @@ class TestSoilSources:
         gdf = make_gdf(US_POINTS)
         csv_path = sol_dir / "soil_map.csv"
         
-        try:
-            dssatutils.process_soils_ssurgo(
-                gridfile=gdf,
-                soilfile_csv_path=str(csv_path),
-                output_sol_dir=str(sol_dir),
-                id_col="ID",
-            )
-            
-            sols = list(sol_dir.glob("*.SOL"))
-            if len(sols) > 0:
-                for sol_file in sols:
-                    _check_sol_file(sol_file)
-        except Exception as e:
-            pytest.skip(f"SSURGO skipped: {e}")
+        ok = dssatutils.process_soils_ssurgo(
+            grid_points=gdf,
+            output_dir_csv=str(csv_path),
+            output_dir_individual=str(sol_dir),
+            n_cores=1,
+            id_col="ID",
+            lat_col="LAT",
+            long_col="LONG",
+        )
+        sols = list(sol_dir.glob("*.SOL"))
+        if not ok and not sols:
+            pytest.skip("SSURGO provider unavailable for the test coordinates")
+        assert sols, "SSURGO reported success but produced no .SOL files"
+        for sol_file in sols:
+            _check_sol_file(sol_file)
 
     @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_hwsd"),
                         reason="process_soils_hwsd not available")
@@ -360,20 +377,38 @@ class TestSoilSources:
         gdf = make_gdf(GLOBAL_POINTS)
         csv_path = sol_dir / "soil_map.csv"
         
-        try:
-            dssatutils.process_soils_hwsd(
-                gridfile=gdf,
-                soilfile_csv_path=str(csv_path),
-                output_sol_dir=str(sol_dir),
-                id_col="ID",
+        rasterio = pytest.importorskip("rasterio")
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        raster = sol_dir / "dummy_hwsd.tif"
+        with rasterio.open(
+            raster, "w", driver="GTiff", width=10, height=10, count=1,
+            dtype="int16", crs="EPSG:4326", transform=from_origin(-180, 90, 36, 18),
+        ) as dst:
+            dst.write(np.ones((10, 10), dtype="int16"), 1)
+        database = sol_dir / "dummy_hwsd.sqlite"
+        with sqlite3.connect(database) as con:
+            con.execute(
+                "CREATE TABLE HWSD2_LAYERS (HWSD2_SMU_ID INTEGER, SEQUENCE INTEGER, "
+                "SHARE REAL, TOPDEP REAL, BOTDEP REAL, SAND REAL, CLAY REAL, SILT REAL, "
+                "BULK REAL, ORG_CARBON REAL, COARSE REAL)"
             )
-            
-            sols = list(sol_dir.glob("*.SOL"))
-            if len(sols) > 0:
-                for sol_file in sols:
-                    _check_sol_file(sol_file)
-        except Exception as e:
-            pytest.skip(f"HWSD skipped: {e}")
+            con.execute(
+                "INSERT INTO HWSD2_LAYERS VALUES (1,1,100,0,200,40,20,40,1.4,1.0,0)"
+            )
+        dssatutils.process_soils_hwsd(
+            grid_points=gdf,
+            hwsd_raster_file=str(raster),
+            hwsd_db_file=str(database),
+            output_csv_path=str(csv_path),
+            output_sol_dir=str(sol_dir),
+            id_col="ID", lat_col="LAT", long_col="LONG",
+        )
+        sols = list(sol_dir.glob("*.SOL"))
+        assert sols, "synthetic HWSD fixture produced no .SOL files"
+        for sol_file in sols:
+            _check_sol_file(sol_file)
 
 # --- VALIDATION HELPERS ---
 
