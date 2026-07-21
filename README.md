@@ -1284,7 +1284,10 @@ python tests/test_global_sources.py --keep   # keep the output dir for inspectio
 `.github/workflows/smoke.yml` runs the offline Python tests, byte-compiles the
 Python modules, and validates R configuration/syntax on Ubuntu, macOS, and
 Windows. This catches platform-specific path/config regressions on every push
-and pull request; live DSSAT runs still require a runner with DSSAT installed.
+and pull request. The workflow installs the R `yaml` dependency with
+`Rscript --vanilla`, matching the cross-language parity subprocess rather than
+the repository's `renv`-activated interactive environment. Live DSSAT runs
+still require a runner with DSSAT installed.
 
 ---
 

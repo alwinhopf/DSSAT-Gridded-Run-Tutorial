@@ -38,7 +38,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install R parity dependency
-        run: Rscript -e 'install.packages("yaml")'
+        # Match the --vanilla R process launched by the parity test. Without
+        # this flag, the repository .Rprofile activates renv and installs yaml
+        # into a project library that the test intentionally does not load.
+        run: >-
+          Rscript --vanilla -e
+          'install.packages("yaml", repos="https://cloud.r-project.org");
+          stopifnot(requireNamespace("yaml", quietly=TRUE))'
 
       - name: Install minimal deps
         # Only what the offline smoke test needs; heavy/optional geo + MPI deps
@@ -67,10 +73,13 @@ jobs:
         with:
           use-public-rspm: true
       - name: Install YAML dependency
-        run: Rscript -e 'install.packages("yaml")'
+        run: >-
+          Rscript --vanilla -e
+          'install.packages("yaml", repos="https://cloud.r-project.org");
+          stopifnot(requireNamespace("yaml", quietly=TRUE))'
       - name: Validate central config and R syntax
         run: >-
-          Rscript -e 'source("config_loader.R");
+          Rscript --vanilla -e 'source("config_loader.R");
           stopifnot(cfg_get("weather_source", "") != "");
           parse(file="dssat_main_pipeline.R");
           parse(file="tests/test_e2e.R");
