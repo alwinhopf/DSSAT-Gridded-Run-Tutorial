@@ -40,6 +40,8 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import json
+import hashlib
 from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
@@ -191,9 +193,9 @@ REUSE_CROPLAND_GRID   = bool(cfg_get("reuse_cropland_grid", True))
 
 # --- 0.5 Auto-naming convention ---------------------------------------------
 if GRID_SPACING_METERS < 1000:
-    RESOLUTION_TAG = f"{GRID_SPACING_METERS}m"
+    RESOLUTION_TAG = f"{GRID_SPACING_METERS:g}m"
 else:
-    RESOLUTION_TAG = f"{GRID_SPACING_METERS // 1000}km"
+    RESOLUTION_TAG = f"{GRID_SPACING_METERS / 1000:g}km"
 
 GRID_BASE_NAME        = f"{PROJECT_NAME}_{RESOLUTION_TAG}"
 BOUNDARY_FILTER_VALUE = STATE_NAME_FILTER
@@ -379,6 +381,62 @@ RUN_STEP_2_WEATHER  = bool(cfg_get("run_step_2_weather", True))
 RUN_DSSAT_EXECUTION = bool(cfg_get("run_dssat_execution", True))
 CLEANUP_RUN_FOLDERS = bool(cfg_get("cleanup_run_folders", False))
 RESUME_DSSAT_RUNS   = bool(cfg_get("resume_dssat_runs", False))
+
+
+def _sha256_file(path: str) -> str | None:
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return None
+    digest = hashlib.sha256()
+    with p.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _sha256_dataset(path: str) -> str | None:
+    """Hash a file-backed spatial dataset, including shapefile sidecars."""
+    p = Path(path)
+    if p.suffix.lower() != ".shp":
+        return _sha256_file(str(p))
+    members = sorted(x for x in p.parent.glob(p.stem + ".*") if x.is_file())
+    if not members:
+        return None
+    digest = hashlib.sha256()
+    for member in members:
+        digest.update(member.suffix.lower().encode("ascii", "ignore"))
+        file_hash = _sha256_file(str(member))
+        digest.update((file_hash or "").encode("ascii"))
+    return digest.hexdigest()
+
+
+_boundary_path = os.path.join(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
+_raster_path = resolve_config_path(CROPLAND_RASTER_FILE, CODE_ROOT_DIR) if CROPLAND_RASTER_FILE else ""
+RUN_PROVENANCE = {
+    "schema": 1,
+    "grid": {"spacing_m": GRID_SPACING_METERS, "existing": USE_EXISTING_POINT_SHAPEFILE,
+             "existing_sha256": _sha256_dataset(EXISTING_POINT_SHAPEFILE_PATH),
+             "boundary_sha256": _sha256_dataset(_boundary_path),
+             "filter": [BOUNDARY_FILTER_COLUMN, BOUNDARY_FILTER_VALUE]},
+    "cropland": {"enabled": USE_CROPLAND_MASK, "raster_sha256": _sha256_file(_raster_path),
+                 "classes": CROPLAND_CLASSES, "min_fraction": CROPLAND_MIN_FRACTION},
+    "weather": {"source": WEATHER_SOURCE, "years": [WEATHER_START_YEAR, WEATHER_END_YEAR],
+                "chirps": [CHIRPS_RESOLUTION, CHIRPS_V3_PRODUCT, CHIRPS_V3_STREAM,
+                            CHIRPS_V3_FETCH_MODE, CHIRPS_V3_RESOLUTION, CHIRPS_V3_MONTHS]},
+    "soil": {"source": SOIL_SOURCE, "external_sha256": _sha256_file(EXTERNAL_SOIL_FILE),
+             "soilgrids_mode": SOILGRIDS_MODE, "polaris_stat": POLARIS_STAT},
+    "model": {"template": TEMPLATE_FILE_NAME, "template_sha256": _sha256_file(TEMPLATE_FILE_PATH),
+              "crop": CROP_EXTENSION, "mode": RUN_MODE,
+              "treatments": TREATMENT_LIST or list(range(TREATMENT_START, TREATMENT_END + 1)),
+              "sequences": [SEQUENCE_START, SEQUENCE_END]},
+}
+RUN_CACHE_KEY = hashlib.sha256(
+    json.dumps(RUN_PROVENANCE, sort_keys=True, default=str).encode("utf-8")
+).hexdigest()[:12]
+# Per-point resume folders are content-addressed. The public combined-results
+# filename stays stable for downstream scripts, but stale point results cannot
+# leak into a changed scientific scenario.
+DSSAT_RUN_DIR = os.path.join(RUNS_ROOT_DIR, f"{DSSAT_RUN_NAME}_{RUN_CACHE_KEY}")
 # When a DSSATPRO.V48 is available next to the executable, DSSAT resolves
 # genotype/species/SDA/CO2 support files from the install directory, so they do
 # NOT need copying into every run folder - a big metadata saving at scale
@@ -647,8 +705,17 @@ if __name__ == '__main__':
 
     os.makedirs(GRIDPOINTS_OUTPUT_DIR, exist_ok=True)
 
+    grid_manifest_path = Path(POINT_SHAPEFILE_PATH).with_suffix(".grid-provenance.json")
+    recorded_grid_provenance = None
+    try:
+        recorded_grid_provenance = json.loads(grid_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    grid_identity = {"grid": RUN_PROVENANCE["grid"], "cropland": RUN_PROVENANCE["cropland"]}
+
     if (not USE_EXISTING_POINT_SHAPEFILE and USE_CROPLAND_MASK
-            and REUSE_CROPLAND_GRID and os.path.exists(POINT_SHAPEFILE_PATH)):
+            and REUSE_CROPLAND_GRID and os.path.exists(POINT_SHAPEFILE_PATH)
+            and recorded_grid_provenance == grid_identity):
         print(f"Reusing existing cropland grid shapefile: {POINT_SHAPEFILE_PATH}")
         gridfile = gpd.read_file(POINT_SHAPEFILE_PATH)
     elif USE_EXISTING_POINT_SHAPEFILE:
@@ -682,6 +749,12 @@ if __name__ == '__main__':
             CROPLAND_CLASSES,
             CROPLAND_MIN_FRACTION,
             CROPLAND_STRICT,
+        )
+
+    if not USE_EXISTING_POINT_SHAPEFILE:
+        grid_manifest_path.write_text(
+            json.dumps(grid_identity, indent=2, sort_keys=True, default=str) + "\n",
+            encoding="utf-8",
         )
 
     print(f"Grid points ready: {len(gridfile)} points")
@@ -1578,6 +1651,10 @@ if __name__ == '__main__':
                         final_data["top_weight_kg_ha"] * final_data["cropland_ha"]
                     )
             final_data.to_csv(FINAL_RESULTS_PATH, index=False, na_rep="")
+            Path(FINAL_RESULTS_PATH + ".manifest.json").write_text(
+                json.dumps(RUN_PROVENANCE, indent=2, sort_keys=True, default=str) + "\n",
+                encoding="utf-8",
+            )
             print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
             raise RuntimeError(

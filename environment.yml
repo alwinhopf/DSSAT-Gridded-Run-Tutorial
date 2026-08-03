@@ -35,6 +35,6 @@ dependencies:
       - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0
       # dssatengine is package-version 0.4.0; pin the verified release commit
       # until the matching v0.4.0 Git tag is pushed.
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
       # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
       # still require user credentials; run setup_cds_credentials() once.

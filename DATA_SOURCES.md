@@ -206,7 +206,7 @@ Targeted at regions previously served only by coarse global reanalysis. Two are
 | Source | Function | Type / Coverage | Access | Caveat |
 |--------|----------|-----------------|--------|--------|
 | **APHRODITE** | `process_weather_aphrodite` | Weather, monsoon Asia (0.25-0.5°, gauge precip) | Local NetCDF (rain) + NASA-POWER | Rainfall-only hybrid: T/SRAD/RH/wind from NASA-POWER. |
-| **ANUSPLIN** | `process_weather_anusplin` | Weather, Canada 10 km (1950-2015) | Local NetCDF | All of Canada incl. Prairies above Daymet's ~52°N; no SRAD/RH/wind. |
+| **ANUSPLIN** | `process_weather_anusplin` | Temperature/precipitation, Canada 10 km (1950-2015) | Local NetCDF | Core ANUSPLIN has no SRAD; standalone DSSAT WTH creation is rejected until a solar-radiation layer is supplied. |
 | **TAMSAT** | `process_weather_tamsat` | Weather, Africa 4 km rainfall | Local NetCDF (rain) + NASA-POWER | Rainfall-only hybrid; pairs with iSDAsoil. |
 | **GHCN-Daily** | `process_weather_ghcn` | Weather, global station obs | **Live (NOAA)** | Nearest-station snap; per-station record ~11 MB; SRAD/RH/wind = -99. Best as obs/validation. |
 | **Princeton PGF** | `process_weather_pgf` | Weather, global 0.25° | Local NetCDF | Full-variable reanalysis alt. to AgMERRA/CRU-JRA. |

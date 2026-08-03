@@ -32,6 +32,24 @@ def _read_yaml(path, yaml):
     return {str(k).lstrip("\ufeff"): v for k, v in cfg.items()}
 
 
+def _validate_override(base, override, prefix=""):
+    for key, value in override.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if key not in base:
+            raise ValueError(f"Unknown configuration key: {path}")
+        expected = base[key]
+        if isinstance(expected, dict) and isinstance(value, dict):
+            _validate_override(expected, value, path)
+        elif value is not None and value != "" and expected is not None:
+            if isinstance(expected, bool) and not isinstance(value, bool):
+                raise TypeError(f"{path} must be boolean, got {type(value).__name__}")
+            if isinstance(expected, (int, float)) and not isinstance(expected, bool) \
+                    and not isinstance(value, (int, float)):
+                raise TypeError(f"{path} must be numeric, got {type(value).__name__}")
+            if isinstance(expected, list) and not isinstance(value, list):
+                raise TypeError(f"{path} must be a list, got {type(value).__name__}")
+
+
 def _find_and_load():
     here = os.path.dirname(os.path.abspath(__file__))
     base_path = os.path.join(here, "config.yml")
@@ -53,7 +71,9 @@ def _find_and_load():
         cfg = _read_yaml(base_path, yaml)
         loaded = [base_path]
         if env_path and os.path.abspath(env_path) != os.path.abspath(base_path):
-            cfg = _deep_merge(cfg, _read_yaml(env_path, yaml))
+            override = _read_yaml(env_path, yaml)
+            _validate_override(cfg, override)
+            cfg = _deep_merge(cfg, override)
             loaded.append(env_path)
         print(
             f"[config_loader] Loaded {len(cfg)} settings from "

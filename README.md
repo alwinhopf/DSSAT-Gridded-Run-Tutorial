@@ -1693,21 +1693,19 @@ Official compile guide: https://dssat.net/source-code/
 
 ## R package requirements
 
-**You normally don't need to install anything by hand.** When you `source()`
-`dssat_main_pipeline.R`, it runs an `ensure_packages()` bootstrap *before* loading
-any helper module: it checks every package the pipeline needs and, if any are
-missing, **prompts you to install them** in RStudio (`Install these N package(s)
-now? [Y/n]`) or installs them automatically when run non-interactively via
-`Rscript`. If a package can't be installed automatically (e.g. `terra` needs a
-system GDAL), it stops with a clear message naming exactly which package failed,
+Run `renv::restore()` once before sourcing `dssat_main_pipeline.R`. The pipeline
+checks every required package and stops with the missing package names; it never
+changes the environment during a scientific run. This keeps Windows, Linux,
+macOS, workstation, and CI executions on the recorded dependency graph. It
+stops with a clear message naming exactly which package is missing,
 instead of a cryptic `there is no package called …` error mid-source.
 
 > **Using RStudio?** RStudio may point at a *different* R installation (and
 > package library) than your command-line `Rscript`. If a package looks
-> "installed" in a terminal but the pipeline still asks to install it, that's
-> why — let the prompt install it into the RStudio library.
+> "installed" in a terminal but the pipeline reports it missing, install it in
+> the R library used by RStudio and rerun. The pipeline never installs packages.
 
-The full set it manages (install manually only if you prefer):
+The full set recorded by the lockfile includes:
 
 ```r
 # Core (always required)

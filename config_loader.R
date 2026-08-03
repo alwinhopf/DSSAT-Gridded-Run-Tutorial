@@ -25,6 +25,20 @@ local({
     base
   }
 
+  validate_overlay <- function(base, override, prefix = "") {
+    for (key in names(override)) {
+      path <- if (nzchar(prefix)) paste(prefix, key, sep = ".") else key
+      if (!(key %in% names(base))) stop("Unknown configuration key: ", path, call. = FALSE)
+      if (is.list(override[[key]]) && is.list(base[[key]]) &&
+          !is.null(names(override[[key]]))) {
+        validate_overlay(base[[key]], override[[key]], path)
+      } else if (is.list(override[[key]]) != is.list(base[[key]]) &&
+                 length(override[[key]]) != 0L) {
+        stop("Configuration type mismatch at ", path, call. = FALSE)
+      }
+    }
+  }
+
   env_path <- Sys.getenv("DSSAT_CONFIG_FILE", "")
   this_dir <- tryCatch({
     if (requireNamespace("this.path", quietly = TRUE)) dirname(this.path::this.path()) else NA
@@ -44,6 +58,7 @@ local({
   if (nzchar(env_path) && normalizePath(env_path) != normalizePath(base_path)) {
     override <- yaml::read_yaml(env_path)
     if (!is.list(override)) stop("Top level must be a YAML mapping: ", env_path)
+    validate_overlay(cfg, override)
     cfg <- deep_merge(cfg, override)
     loaded <- c(loaded, env_path)
   }

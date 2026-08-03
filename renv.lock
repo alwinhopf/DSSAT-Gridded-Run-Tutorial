@@ -961,7 +961,7 @@
     "dssatengine": {
       "Package": "dssatengine",
       "Version": "0.4.0",
-      "Source": "Local",
+      "Source": "GitHub",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
       "Authors@R": "person(\"Alwin\", \"Hopf\", email = \"alwinhopf@gmail.com\", role = c(\"aut\", \"cre\"))",
@@ -984,13 +984,17 @@
         "dssatutils"
       ],
       "RoxygenNote": "7.3.1",
-      "RemoteType": "local",
-      "RemoteUrl": "../dssatengine"
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "alwinhopf",
+      "RemoteRepo": "dssatengine",
+      "RemoteRef": "be06ba0268d51dd1ec6f6baa62ea5ed7869165a9",
+      "RemoteSha": "be06ba0268d51dd1ec6f6baa62ea5ed7869165a9"
     },
     "dssatutils": {
       "Package": "dssatutils",
       "Version": "0.4.0",
-      "Source": "Local",
+      "Source": "GitHub",
       "Type": "Package",
       "Title": "Shared Weather and Soil Download Utilities for DSSAT",
       "Authors@R": "person(\"Alwin\", \"Hopf\", email = \"alwinhopf@gmail.com\", role = c(\"aut\", \"cre\"))",
@@ -1029,8 +1033,11 @@
         "testthat (>= 3.0.0)"
       ],
       "RoxygenNote": "7.3.1",
-      "RemoteType": "local",
-      "RemoteUrl": "../dssatutils"
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "alwinhopf",
+      "RemoteRepo": "dssatutils",
+      "RemoteRef": "v0.4.0"
     },
     "e1071": {
       "Package": "e1071",

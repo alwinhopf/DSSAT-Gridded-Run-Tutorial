@@ -78,7 +78,7 @@ def _make_fake_fetch():
             "temperature_2m_min": [8.0 + (i % 5) for i in range(n)],
             "precipitation_sum": [0.0 if i % 3 else 5.0 for i in range(n)],
             "shortwave_radiation_sum": [18.0 for _ in range(n)],
-            "wind_speed_10m_max": [3.0 for _ in range(n)],
+            "wind_speed_10m_mean": [3.0 for _ in range(n)],
         })
         df["YEAR"] = df["time"].dt.year
         df["MM"] = df["time"].dt.month

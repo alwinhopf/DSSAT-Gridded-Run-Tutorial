@@ -627,29 +627,8 @@ if (is.null(.repos) || is.na(.repos["CRAN"]) || .repos["CRAN"] == "@CRAN@") {
 # Install a single package (CRAN name or, if github_repo given, a GitHub repo),
 # preferring binaries and falling back to source if the binary path fails.
 .install_one <- function(pkg, github_repo = NULL) {
-  target <- if (!is.null(github_repo)) github_repo else pkg
-  attempt <- function(type) {
-    if (.renv_active) {
-      renv::install(target, type = type, prompt = FALSE)
-    } else if (!is.null(github_repo)) {
-      remotes::install_github(github_repo, upgrade = "never")
-    } else {
-      install.packages(pkg, type = type)
-    }
-  }
-  ok <- tryCatch({ attempt(.install_type); TRUE },
-                 error = function(e) {
-                   message(sprintf("  binary/default install of '%s' failed: %s",
-                                   pkg, conditionMessage(e))); FALSE })
-  # Source fallback only meaningful where we tried a binary first.
-  if (!ok && .is_binary_platform && is.null(github_repo)) {
-    message(sprintf("  retrying '%s' from source ...", pkg))
-    ok <- tryCatch({ attempt("source"); TRUE },
-                   error = function(e) {
-                     message(sprintf("  source install of '%s' also failed: %s",
-                                     pkg, conditionMessage(e))); FALSE })
-  }
-  ok
+  stop("Runtime package installation is disabled. Restore renv.lock before running.",
+       call. = FALSE)
 }
 
 ensure_packages <- function(pkgs, github = list()) {
@@ -659,27 +638,8 @@ ensure_packages <- function(pkgs, github = list()) {
   if (length(missing) > 0) {
     message("\nThe following required R package(s) are not installed:\n  ",
             paste(missing, collapse = ", "), "\n")
-    message(sprintf("Install method: %s%s",
-                    if (.renv_active) "renv::install" else "install.packages",
-                    sprintf(" (type = '%s')", .install_type)))
-    do_install <- TRUE
-    if (interactive()) {
-      ans <- readline(sprintf(
-        "Install these %d package(s) now? [Y/n]: ", length(missing)))
-      do_install <- !nzchar(ans) || tolower(substr(ans, 1, 1)) == "y"
-    }
-    if (!do_install)
-      stop("Required packages are missing and installation was declined. ",
-           "Install them manually, then re-run.", call. = FALSE)
-
-    if (length(intersect(missing, names(github))) > 0 &&
-        !requireNamespace("remotes", quietly = TRUE)) {
-      .install_one("remotes")
-    }
-    for (pkg in missing) {
-      message(sprintf("Installing '%s' ...", pkg))
-      .install_one(pkg, github_repo = github[[pkg]])
-    }
+    stop("Restore the repository's renv.lock before running: renv::restore(). ",
+         "Runtime installation is disabled because it is not reproducible.", call. = FALSE)
   }
 
   # Attach everything; collect (don't stop on) any that still won't load.
@@ -1787,6 +1747,35 @@ if (EXTEND_WEATHER_DATA) {
 #-----------------------------------------------------------------------
 message("STEP 3: RUNNING DSSAT SIMULATIONS")
 
+# Content-address the per-point run root from the merged configuration and the
+# actual file-backed scientific inputs. The combined output filename remains
+# stable, while stale point OUT files cannot leak into a changed scenario.
+.hash_file_set <- function(path) {
+  if (!nzchar(path) || !file.exists(path)) return(NA_character_)
+  files <- if (tolower(tools::file_ext(path)) == "shp") {
+    list.files(dirname(path), pattern = paste0("^", tools::file_path_sans_ext(basename(path)), "[.]"),
+               full.names = TRUE)
+  } else path
+  paste(unname(tools::md5sum(sort(files))), collapse = ":")
+}
+.hash_object <- function(x) {
+  tf <- tempfile(fileext = ".rds")
+  on.exit(unlink(tf), add = TRUE)
+  saveRDS(x, tf, version = 3)
+  unname(tools::md5sum(tf)[[1]])
+}
+RUN_PROVENANCE <- list(
+  schema = 1L,
+  config = .CONFIG,
+  existing_points = .hash_file_set(EXISTING_POINT_SHAPEFILE_PATH),
+  boundary = .hash_file_set(file.path(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)),
+  cropland = .hash_file_set(if (nzchar(CROPLAND_RASTER_FILE)) resolve_config_path(CROPLAND_RASTER_FILE, CODE_ROOT_DIR) else ""),
+  template = .hash_file_set(TEMPLATE_FILE_PATH),
+  external_soil = .hash_file_set(EXTERNAL_SOIL_FILE)
+)
+RUN_CACHE_KEY <- substr(.hash_object(RUN_PROVENANCE), 1L, 12L)
+DSSAT_RUN_DIR <- paste0(DSSAT_RUN_DIR, "_", RUN_CACHE_KEY)
+
 # Check config
 if (!exists("TEMPLATE_SOIL_ID_PLACEHOLDER")) TEMPLATE_SOIL_ID_PLACEHOLDER <- "SOIL_ID"
 
@@ -2131,6 +2120,8 @@ if (RUN_DSSAT_EXECUTION) {
       }
     }
     write_csv(final_data, FINAL_RESULTS_PATH)
+    jsonlite::write_json(RUN_PROVENANCE, paste0(FINAL_RESULTS_PATH, ".manifest.json"),
+                         auto_unbox = TRUE, pretty = TRUE, null = "null")
     message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
   } else {
     stop(
