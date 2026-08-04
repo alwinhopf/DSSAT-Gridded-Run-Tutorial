@@ -14,6 +14,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
 import pandas as pd
 import pytest
@@ -351,19 +352,51 @@ class TestSoilSources:
         gdf = make_gdf(US_POINTS)
         csv_path = sol_dir / "soil_map.csv"
         
-        ok = dssatutils.process_soils_ssurgo(
-            grid_points=gdf,
-            output_dir_csv=str(csv_path),
-            output_dir_individual=str(sol_dir),
-            n_cores=1,
-            id_col="ID",
-            lat_col="LAT",
-            long_col="LONG",
+        failure_csv = sol_dir / "soil_map_download_failures.csv"
+        diagnostics = []
+        last_error = None
+        sols = []
+
+        for attempt in range(3):
+            try:
+                dssatutils.process_soils_ssurgo(
+                    grid_points=gdf,
+                    output_dir_csv=str(csv_path),
+                    output_dir_individual=str(sol_dir),
+                    n_cores=1,
+                    id_col="ID",
+                    lat_col="LAT",
+                    long_col="LONG",
+                )
+                last_error = None
+            except Exception as exc:
+                last_error = exc
+
+            sols = list(sol_dir.glob("*.SOL"))
+            if sols:
+                break
+
+            diagnostics = _read_ssurgo_failure_reasons(failure_csv)
+            if last_error is not None:
+                diagnostics.append(str(last_error))
+            provider_unavailable = bool(diagnostics) and all(
+                _is_transient_ssurgo_failure(reason) for reason in diagnostics
+            )
+            if not provider_unavailable or attempt == 2:
+                break
+            time.sleep(5 * (attempt + 1))
+
+        if not sols and diagnostics and all(
+            _is_transient_ssurgo_failure(reason) for reason in diagnostics
+        ):
+            pytest.skip(
+                "SSURGO SDA remained unavailable after 3 attempts: "
+                + " | ".join(diagnostics)
+            )
+        assert sols, (
+            "SSURGO produced no .SOL files. Diagnostics: "
+            + (" | ".join(diagnostics) if diagnostics else "none")
         )
-        sols = list(sol_dir.glob("*.SOL"))
-        if not ok and not sols:
-            pytest.skip("SSURGO provider unavailable for the test coordinates")
-        assert sols, "SSURGO reported success but produced no .SOL files"
         for sol_file in sols:
             _check_sol_file(sol_file)
 
@@ -411,6 +444,44 @@ class TestSoilSources:
             _check_sol_file(sol_file)
 
 # --- VALIDATION HELPERS ---
+
+def _read_ssurgo_failure_reasons(path):
+    """Return per-point SSURGO failure reasons written by dssatutils."""
+    if not path.exists():
+        return []
+    try:
+        failures = pd.read_csv(path)
+    except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
+        return []
+    if "reason" not in failures.columns:
+        return []
+    return failures["reason"].dropna().astype(str).tolist()
+
+
+def _is_transient_ssurgo_failure(reason):
+    """Identify SDA transport failures without hiding data/schema defects."""
+    text = str(reason).strip().lower()
+    if text.startswith((
+        "network: sda spatial query failed",
+        "network: sda horizon query failed",
+    )):
+        return True
+    transport_markers = (
+        "could not resolve host",
+        "connection reset",
+        "connection refused",
+        "connection timed out",
+        "operation timed out",
+        "read timed out",
+        "service unavailable",
+        "too many requests",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    )
+    return any(marker in text for marker in transport_markers)
 
 def _check_wth_file(path):
     """Validate a .WTH file."""

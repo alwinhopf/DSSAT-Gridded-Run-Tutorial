@@ -99,7 +99,7 @@ jobs:
       - name: Install R dependencies
         if: matrix.test-type == 'r'
         run: |
-          R --slave -e "install.packages(c('remotes', 'doParallel', 'sf', 'terra'), repos=getOption('repos'))"
+          R --slave -e "install.packages(c('remotes', 'doParallel', 'sf', 'terra', 'DBI', 'RSQLite'), repos=getOption('repos'))"
           R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatutils.git', ref='${DSSATUTILS_REF}')"
           R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatengine.git', ref='${DSSATENGINE_REF}')"
       
@@ -111,11 +111,12 @@ jobs:
           Rscript tests/test_e2e_comprehensive.R
       
       - name: Upload R test logs
-        if: matrix.test-type == 'r'
+        if: matrix.test-type == 'r' && always()
         uses: actions/upload-artifact@v4
         with:
           name: r-test-logs
-          path: 'dssat_runs/**/run.log'
+          path: 'dssat_runs/e2e-r-*/**/*.log'
+          if-no-files-found: warn
   
   # --- Status Check ---
   test-status:

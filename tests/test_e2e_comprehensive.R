@@ -82,8 +82,28 @@ us_df <- US_POINTS
 global_sf <- make_sf_or_df(GLOBAL_POINTS)
 us_sf <- make_sf_or_df(US_POINTS)
 
-work <- tempfile("dssat_e2e_comprehensive_")
+runs_dir <- file.path(getwd(), "dssat_runs")
+dir.create(runs_dir, recursive = TRUE, showWarnings = FALSE)
+work <- tempfile("e2e-r-", tmpdir = runs_dir)
 dir.create(work)
+message("E2E artifacts: ", work)
+
+read_log_tail <- function(path, n = 20L) {
+  if (!file.exists(path)) return("")
+  lines <- readLines(path, warn = FALSE)
+  paste(tail(lines, n), collapse = " | ")
+}
+
+is_transient_provider_failure <- function(log_file, error = "") {
+  diagnostic <- paste(error, read_log_tail(log_file), collapse = " ")
+  patterns <- c(
+    "server is unreachable", "could not resolve host", "couldn't connect",
+    "connection (reset|refused|timed out)", "operation timed out", "timeout",
+    "temporary failure", "service unavailable", "too many requests",
+    "http[^0-9]*(429|500|502|503|504)", "ssl connect error"
+  )
+  grepl(paste(patterns, collapse = "|"), diagnostic, ignore.case = TRUE, perl = TRUE)
+}
 
 # Helper to check .WTH file validity
 check_wth <- function(path) {
@@ -147,21 +167,47 @@ tryCatch({
   if (!exists("process_weather_daymet", where = asNamespace("dssatutils"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available in dssatutils")
   } else {
-    dssatutils::process_weather_daymet(
-      shapefile = us_df,
-      start_year = 2010,
-      end_year = 2011,
-      output_dir = wth_dir,
-      id_col = "ID",
-      lat_col = "LAT",
-      lon_col = "LONG",
-      n_cores = 1,
-      log_file = file.path(work, "daymet.log")
-    )
-    if (all(file.exists(file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))))) {
+    daymet_log <- file.path(work, "daymet.log")
+    expected_files <- file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))
+    last_error <- ""
+    for (attempt in seq_len(3L)) {
+      last_error <- tryCatch({
+        dssatutils::process_weather_daymet(
+          shapefile = us_df,
+          start_year = 2010,
+          end_year = 2011,
+          output_dir = wth_dir,
+          id_col = "ID",
+          lat_col = "LAT",
+          lon_col = "LONG",
+          n_cores = 1,
+          log_file = daymet_log
+        )
+        ""
+      }, error = function(e) e$message)
+      if (all(file.exists(expected_files))) break
+      if (grepl("daymetR", last_error, ignore.case = TRUE)) break
+      if (attempt < 3L) {
+        message(sprintf("[%s] Attempt %d did not produce all files; retrying...", test_name, attempt))
+        Sys.sleep(5L * attempt)
+      }
+    }
+
+    if (all(file.exists(expected_files))) {
       log_test("ok", test_name)
+    } else if (grepl("daymetR", last_error, ignore.case = TRUE)) {
+      log_test("skip", test_name, paste("Optional dep (daymetR) missing:", last_error))
+    } else if (is_transient_provider_failure(daymet_log, last_error)) {
+      log_test("skip", test_name, paste(
+        "Provider remained unavailable after 3 attempts; see daymet.log.",
+        read_log_tail(daymet_log, 5L)
+      ))
     } else {
-      log_test("fail", test_name, "Not all .WTH files written")
+      diagnostic <- read_log_tail(daymet_log, 5L)
+      log_test("fail", test_name, paste(
+        "Not all .WTH files written.", last_error,
+        if (nzchar(diagnostic)) paste("Log:", diagnostic) else "No provider diagnostic was logged."
+      ))
     }
   }
 }, error = function(e) {
