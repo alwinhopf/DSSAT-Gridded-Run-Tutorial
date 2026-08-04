@@ -78,6 +78,12 @@ def _make_fake_fetch():
             "temperature_2m_min": [8.0 + (i % 5) for i in range(n)],
             "precipitation_sum": [0.0 if i % 3 else 5.0 for i in range(n)],
             "shortwave_radiation_sum": [18.0 for _ in range(n)],
+            # The v0.4.0 tag used the Open-Meteo daily maximum; current source
+            # uses the scientifically appropriate daily mean and converts 10 m
+            # to 2 m.
+            # This writer-format smoke fixture supplies both response schemas
+            # so consumers remain testable while pinned releases are migrated.
+            "wind_speed_10m_max": [4.0 for _ in range(n)],
             "wind_speed_10m_mean": [3.0 for _ in range(n)],
         })
         df["YEAR"] = df["time"].dt.year
