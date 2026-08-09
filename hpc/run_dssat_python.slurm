@@ -55,8 +55,13 @@ PY_RUNNER="hpc/dssat_mpi_runner.py"
 # --- ENVIRONMENT SETUP (cluster-specific) ---
 module load python
 eval "$(conda shell.bash hook)"
-# Change this to your environment name/path:
-conda activate <YOUR_CONDA_ENV>
+# Submit with CONDA_ENV set to an environment name or full prefix.
+CONDA_ENV="${CONDA_ENV:-}"
+if [[ -z "$CONDA_ENV" ]]; then
+  echo "ERROR: set CONDA_ENV to the conda environment containing mpi4py."
+  exit 2
+fi
+conda activate "$CONDA_ENV"
 
 export OMP_NUM_THREADS=1
 export PYTHONUNBUFFERED=1

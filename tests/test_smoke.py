@@ -16,6 +16,7 @@
 # ---------------------------------------------------------------------------
 
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -26,10 +27,11 @@ _REPO = os.path.dirname(_HERE)
 _WORKSPACE = os.path.dirname(_REPO)
 sys.path.insert(0, _REPO)
 sys.path.insert(0, os.path.join(_REPO, "python_scripts"))
-for _sibling in ("dssatutils", "dssatengine"):
-    _pkg_path = os.path.join(_WORKSPACE, _sibling, "python")
-    if os.path.isdir(_pkg_path):
-        sys.path.insert(0, _pkg_path)
+if os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1":
+    for _sibling in ("dssatutils", "dssatengine"):
+        _pkg_path = os.path.join(_WORKSPACE, _sibling, "python")
+        if os.path.isdir(_pkg_path):
+            sys.path.insert(0, _pkg_path)
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,21 @@ def test_module_imports():
                 raise
         except Exception as exc:
             raise AssertionError(f"import {mod} failed: {exc}") from exc
+
+
+def test_mpi_runner_help_without_mpi_runtime():
+    """The CLI help must work before the optional cluster MPI import."""
+    runner = os.path.join(_REPO, "hpc", "dssat_mpi_runner.py")
+    result = subprocess.run(
+        [sys.executable, runner, "--help"],
+        cwd=_REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--base_dir" in result.stdout
+    assert "--merge_mode" in result.stdout
 
 
 def _make_fake_fetch():

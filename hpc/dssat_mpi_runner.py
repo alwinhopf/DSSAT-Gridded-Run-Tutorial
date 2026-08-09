@@ -6,7 +6,6 @@ import re
 import csv
 import shutil
 import argparse
-from mpi4py import MPI
 
 # --- GLOBAL CONFIGURATION ---
 OUTPUT_FIELDNAMES = [
@@ -88,6 +87,17 @@ def get_args():
     return parser.parse_args()
 
 args = get_args()
+
+# Parse --help before requiring the cluster MPI runtime. This lets users and CI
+# validate the command line on ordinary workstations where mpi4py is omitted by
+# design. A real run still fails immediately with an actionable message.
+try:
+    from mpi4py import MPI
+except ImportError as exc:
+    raise SystemExit(
+        "mpi4py is required to run the DSSAT MPI worker. Load the cluster MPI "
+        "module, then install mpi4py against that MPI implementation."
+    ) from exc
 
 # Map arguments (normalize paths early to avoid surprises with trailing slashes / relative paths)
 dssat_simulation_output_base = os.path.abspath(os.path.normpath(args.base_dir))

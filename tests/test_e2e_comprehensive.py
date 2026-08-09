@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Comprehensive end-to-end test (Python) — tests all weather & soil sources.
+Comprehensive provider integration test (Python) — tests weather & soil sources.
 - Tests each weather source: Open-Meteo, Daymet, NASA-POWER, GridMET, AgERA5, NASA-POWER CHIRPS
 - Tests each soil source: SoilGrids, SoilGrids Online, SSURGO, HWSD
-- Uses parametrized pytest fixtures to run each combination independently
-- Mocks network calls where appropriate to avoid flakiness and dependency on external APIs
+- Uses isolated pytest fixtures to run each provider independently
+- Calls live network providers; transient transport outages are retried and reported as skips
 - Gracefully skips sources with missing optional deps or API keys
 
 Run: pytest tests/test_e2e_comprehensive.py -v
@@ -19,11 +19,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-# Add the sibling package source ahead of any older installed copy.
+# Use the installed, CI-pinned package by default. Workspace developers can
+# explicitly opt into a sibling checkout while changing dssatutils.
 _HERE = Path(__file__).parent
 _REPO = _HERE.parent
 _WORKSPACE = _REPO.parent
-sys.path.insert(0, str(_WORKSPACE / "dssatutils" / "python"))
+if os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1":
+    sys.path.insert(0, str(_WORKSPACE / "dssatutils" / "python"))
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "python_scripts"))
 
@@ -79,6 +81,86 @@ def work_dir():
     with tempfile.TemporaryDirectory(prefix="dssat_e2e_") as d:
         yield d
 
+
+def _read_log_tail(path, lines=30):
+    path = Path(path)
+    if not path.exists():
+        return ""
+    try:
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+    except OSError:
+        return ""
+
+
+def _is_transient_provider_failure(diagnostic):
+    """Return True only for provider/transport failures worth retrying."""
+    text = str(diagnostic).strip().lower()
+    markers = (
+        "could not resolve host",
+        "temporary failure in name resolution",
+        "connection reset",
+        "connection refused",
+        "connection timed out",
+        "operation timed out",
+        "read timed out",
+        "remote disconnected",
+        "service unavailable",
+        "bad gateway",
+        "gateway timeout",
+        "too many requests",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "status code 429",
+        "status code 500",
+        "status code 502",
+        "status code 503",
+        "status code 504",
+        "ssl connect error",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _run_weather_provider(name, call, expected_paths, log_file):
+    """Run a live provider without allowing missing outputs to pass silently."""
+    attempts = max(1, int(os.getenv("DSSAT_PROVIDER_RETRIES", "3")))
+    errors = []
+    missing = list(expected_paths)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            call()
+        except ImportError:
+            raise
+        except Exception as exc:  # provider diagnostics are evaluated below
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+        missing = [Path(path) for path in expected_paths if not Path(path).exists()]
+        if not missing:
+            for path in expected_paths:
+                _check_wth_file(Path(path))
+            return
+
+        diagnostic = "\n".join(errors + [_read_log_tail(log_file)])
+        if not _is_transient_provider_failure(diagnostic):
+            break
+        if attempt < attempts:
+            time.sleep(min(5 * attempt, 15))
+
+    diagnostic = "\n".join(errors + [_read_log_tail(log_file)]).strip()
+    missing_names = ", ".join(path.name for path in missing)
+    if diagnostic and _is_transient_provider_failure(diagnostic):
+        pytest.skip(
+            f"{name} remained unavailable after {attempts} attempts; "
+            f"missing: {missing_names}. Diagnostics: {diagnostic}"
+        )
+    pytest.fail(
+        f"{name} did not produce every expected weather file; missing: "
+        f"{missing_names}. Diagnostics: {diagnostic or 'none'}"
+    )
+
 # --- WEATHER SOURCE TESTS ---
 
 class TestWeatherSources:
@@ -92,23 +174,23 @@ class TestWeatherSources:
         gdf = make_gdf(GLOBAL_POINTS)
         log_file = Path(work_dir) / "openmeteo.log"
         
-        dssatutils.process_weather_openmeteo(
-            shapefile=gdf,
-            start_year=2010,
-            end_year=2010,
-            output_dir=str(wth_dir),
-            id_col="ID",
-            lat_col="LAT",
-            lon_col="LONG",
-            n_cores=1,
-            log_file=str(log_file),
+        expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
+        _run_weather_provider(
+            "Open-Meteo",
+            lambda: dssatutils.process_weather_openmeteo(
+                shapefile=gdf,
+                start_year=2010,
+                end_year=2010,
+                output_dir=str(wth_dir),
+                id_col="ID",
+                lat_col="LAT",
+                lon_col="LONG",
+                n_cores=1,
+                log_file=str(log_file),
+            ),
+            expected,
+            log_file,
         )
-        
-        # Validate outputs
-        for pid in GLOBAL_POINTS["ID"]:
-            wth_file = wth_dir / f"{pid}.WTH"
-            assert wth_file.exists(), f"Missing {pid}.WTH"
-            _check_wth_file(wth_file)
 
     @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_daymet"), 
                         reason="process_weather_daymet not available")
@@ -121,22 +203,23 @@ class TestWeatherSources:
         log_file = Path(work_dir) / "daymet.log"
         
         try:
-            dssatutils.process_weather_daymet(
-                shapefile=gdf,
-                start_year=2010,
-                end_year=2010,
-                output_dir=str(wth_dir),
-                id_col="ID",
-                lat_col="LAT",
-                lon_col="LONG",
-                n_cores=1,
-                log_file=str(log_file),
+            expected = [wth_dir / f"{pid}.WTH" for pid in US_POINTS["ID"]]
+            _run_weather_provider(
+                "Daymet",
+                lambda: dssatutils.process_weather_daymet(
+                    shapefile=gdf,
+                    start_year=2010,
+                    end_year=2010,
+                    output_dir=str(wth_dir),
+                    id_col="ID",
+                    lat_col="LAT",
+                    lon_col="LONG",
+                    n_cores=1,
+                    log_file=str(log_file),
+                ),
+                expected,
+                log_file,
             )
-            
-            for pid in US_POINTS["ID"]:
-                wth_file = wth_dir / f"{pid}.WTH"
-                if wth_file.exists():
-                    _check_wth_file(wth_file)
         except ImportError as e:
             pytest.skip(f"Daymet optional dep missing: {e}")
 
@@ -150,22 +233,23 @@ class TestWeatherSources:
         gdf = make_gdf(GLOBAL_POINTS)
         log_file = Path(work_dir) / "nasapower.log"
         
-        dssatutils.process_weather_nasapower(
-            shapefile=gdf,
-            start_year=2010,
-            end_year=2010,
-            output_dir=str(wth_dir),
-            id_col="ID",
-            lat_col="LAT",
-            lon_col="LONG",
-            n_cores=1,
-            log_file=str(log_file),
+        expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
+        _run_weather_provider(
+            "NASA POWER",
+            lambda: dssatutils.process_weather_nasapower(
+                shapefile=gdf,
+                start_year=2010,
+                end_year=2010,
+                output_dir=str(wth_dir),
+                id_col="ID",
+                lat_col="LAT",
+                lon_col="LONG",
+                n_cores=1,
+                log_file=str(log_file),
+            ),
+            expected,
+            log_file,
         )
-        
-        for pid in GLOBAL_POINTS["ID"]:
-            wth_file = wth_dir / f"{pid}.WTH"
-            assert wth_file.exists(), f"Missing {pid}.WTH"
-            _check_wth_file(wth_file)
 
     @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_gridmet"),
                         reason="process_weather_gridmet not available")
@@ -180,23 +264,24 @@ class TestWeatherSources:
         cache_dir.mkdir(parents=True)
         
         try:
-            dssatutils.process_weather_gridmet(
-                shapefile=gdf,
-                start_year=2010,
-                end_year=2010,
-                output_dir=str(wth_dir),
-                id_col="ID",
-                lat_col="LAT",
-                lon_col="LONG",
-                n_cores=1,
-                log_file=str(log_file),
-                gridmet_cache_dir=str(cache_dir),
+            expected = [wth_dir / f"{pid}.WTH" for pid in US_POINTS["ID"]]
+            _run_weather_provider(
+                "GridMET",
+                lambda: dssatutils.process_weather_gridmet(
+                    shapefile=gdf,
+                    start_year=2010,
+                    end_year=2010,
+                    output_dir=str(wth_dir),
+                    id_col="ID",
+                    lat_col="LAT",
+                    lon_col="LONG",
+                    n_cores=1,
+                    log_file=str(log_file),
+                    gridmet_cache_dir=str(cache_dir),
+                ),
+                expected,
+                log_file,
             )
-            
-            for pid in US_POINTS["ID"]:
-                wth_file = wth_dir / f"{pid}.WTH"
-                if wth_file.exists():
-                    _check_wth_file(wth_file)
         except ImportError as e:
             pytest.skip(f"GridMET optional dep missing: {e}")
 
@@ -216,23 +301,24 @@ class TestWeatherSources:
         cache_dir.mkdir(parents=True)
         
         try:
-            dssatutils.process_weather_agera5(
-                shapefile=gdf,
-                start_year=2010,
-                end_year=2010,
-                output_dir=str(wth_dir),
-                id_col="ID",
-                lat_col="LAT",
-                lon_col="LONG",
-                n_cores=1,
-                log_file=str(log_file),
-                agera5_cache_dir=str(cache_dir),
+            expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
+            _run_weather_provider(
+                "AgERA5",
+                lambda: dssatutils.process_weather_agera5(
+                    shapefile=gdf,
+                    start_year=2010,
+                    end_year=2010,
+                    output_dir=str(wth_dir),
+                    id_col="ID",
+                    lat_col="LAT",
+                    lon_col="LONG",
+                    n_cores=1,
+                    log_file=str(log_file),
+                    agera5_cache_dir=str(cache_dir),
+                ),
+                expected,
+                log_file,
             )
-            
-            for pid in GLOBAL_POINTS["ID"]:
-                wth_file = wth_dir / f"{pid}.WTH"
-                if wth_file.exists():
-                    _check_wth_file(wth_file)
         except ImportError as e:
             pytest.skip(f"AgERA5 optional dep missing: {e}")
 
@@ -249,23 +335,24 @@ class TestWeatherSources:
         cache_dir.mkdir(parents=True)
         
         try:
-            dssatutils.process_weather_nasapower_chirps(
-                shapefile=gdf,
-                start_year=2010,
-                end_year=2010,
-                output_dir=str(wth_dir),
-                id_col="ID",
-                lat_col="LAT",
-                lon_col="LONG",
-                n_cores=1,
-                log_file=str(log_file),
-                chirps_cache_dir=str(cache_dir),
+            expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
+            _run_weather_provider(
+                "NASA POWER + CHIRPS",
+                lambda: dssatutils.process_weather_nasapower_chirps(
+                    shapefile=gdf,
+                    start_year=2010,
+                    end_year=2010,
+                    output_dir=str(wth_dir),
+                    id_col="ID",
+                    lat_col="LAT",
+                    lon_col="LONG",
+                    n_cores=1,
+                    log_file=str(log_file),
+                    chirps_cache_dir=str(cache_dir),
+                ),
+                expected,
+                log_file,
             )
-            
-            for pid in GLOBAL_POINTS["ID"]:
-                wth_file = wth_dir / f"{pid}.WTH"
-                if wth_file.exists():
-                    _check_wth_file(wth_file)
         except ImportError as e:
             pytest.skip(f"NASA-POWER CHIRPS optional dep missing: {e}")
 

@@ -5,6 +5,7 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
   schedule:
     - cron: '0 2 * * 0'  # Weekly Sunday 2 AM UTC
 
@@ -12,11 +13,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DSSATUTILS_REF: 'v0.4.0'
   DSSATENGINE_REF: 'be06ba0268d51dd1ec6f6baa62ea5ed7869165a9'
+  DSSAT_PROVIDER_RETRIES: '3'
 
 jobs:
   comprehensive-tests:
     name: E2E Tests (Weather & Soil Sources)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     
     strategy:
       fail-fast: false
@@ -55,17 +58,19 @@ jobs:
           pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${DSSATUTILS_REF}"
           pip install "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@${DSSATENGINE_REF}"
       
-      - name: Run Python comprehensive tests
+      - name: Run Python provider and optional DSSAT tests
         if: matrix.test-type == 'python'
         run: |
-          pytest tests/test_e2e_comprehensive.py -v --tb=short --junit-xml=pytest-results.xml
+          pytest tests/test_e2e_comprehensive.py tests/test_dssat_model_e2e.py \
+            -v --tb=short --junit-xml=pytest-results.xml
       
       - name: Upload Python test results
-        if: matrix.test-type == 'python'
+        if: matrix.test-type == 'python' && always()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-results
           path: pytest-results.xml
+          if-no-files-found: warn
       
       # --- R Setup ---
       - name: Set up R
@@ -109,6 +114,10 @@ jobs:
           DSSAT_RUN_LIVE_E2E: '1'
         run: |
           Rscript tests/test_e2e_comprehensive.R
+
+      - name: Run optional real DSSAT smoke test (R)
+        if: matrix.test-type == 'r'
+        run: Rscript --vanilla tests/test_dssat_model_e2e.R
       
       - name: Upload R test logs
         if: matrix.test-type == 'r' && always()
@@ -128,10 +137,10 @@ jobs:
     steps:
       - name: Check test results
         run: |
-          if [ "${{ needs.comprehensive-tests.result }}" == "failure" ]; then
-            echo "❌ Comprehensive tests failed or had errors"
-            exit 1
-          else
-            echo "✅ Comprehensive tests passed or skipped gracefully"
+          if [ "${{ needs.comprehensive-tests.result }}" == "success" ]; then
+            echo "✅ Comprehensive test matrix passed"
             exit 0
+          else
+            echo "❌ Comprehensive test matrix result: ${{ needs.comprehensive-tests.result }}"
+            exit 1
           fi

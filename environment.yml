@@ -2,7 +2,7 @@
 #
 # Source of truth for Python dependencies. Generate a reproducible lock with:
 #   conda install -c conda-forge conda-lock
-#   conda-lock -f environment.yml -p win-64 -p linux-64
+#   conda-lock -f environment.yml -p win-64 -p linux-64 -p osx-arm64
 #   conda-lock install -n dssat_grid conda_lock.yml
 #
 # HPC note: mpi4py is intentionally left to pip so it can be built against the

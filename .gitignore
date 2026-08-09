@@ -13,6 +13,7 @@
 /weather_cache
 /HWSD
 /__pycache__
+/.ci-deps
 /python_scripts/__pycache__
 /tests/__pycache__
 /validation

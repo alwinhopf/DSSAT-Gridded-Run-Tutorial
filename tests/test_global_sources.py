@@ -33,7 +33,9 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 _WORKSPACE = os.path.dirname(_REPO)
 _DSSATUTILS_PY = os.path.join(_WORKSPACE, "dssatutils", "python")
-if os.path.isdir(_DSSATUTILS_PY) and _DSSATUTILS_PY not in sys.path:
+if (os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1"
+        and os.path.isdir(_DSSATUTILS_PY)
+        and _DSSATUTILS_PY not in sys.path):
     sys.path.insert(0, _DSSATUTILS_PY)
 
 from dssatutils.weather_openmeteo import process_weather_openmeteo  # noqa: E402

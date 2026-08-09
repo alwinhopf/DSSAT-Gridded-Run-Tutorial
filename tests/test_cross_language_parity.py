@@ -17,11 +17,33 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _dependency_path(repo: str, *parts: str) -> Path:
+    """Resolve workspace siblings locally and exact-ref CI checkouts online."""
+    candidates = (
+        WORKSPACE / repo,
+        ROOT / ".ci-deps" / repo,
+    )
+    for candidate in candidates:
+        path = candidate.joinpath(*parts)
+        if path.exists():
+            return path
+    return candidates[0].joinpath(*parts)
+
+
+def _require_sources(*paths: Path) -> None:
+    missing = [str(path) for path in paths if not path.exists()]
+    if not missing:
+        return
+    message = "required parity source checkout(s) missing: " + ", ".join(missing)
+    if os.getenv("DSSAT_REQUIRE_PARITY_SOURCES", "") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
-    r_path = WORKSPACE / "dssatutils" / "R" / "soil_ssurgo.R"
-    py_path = WORKSPACE / "dssatutils" / "python" / "dssatutils" / "soil_ssurgo.py"
-    if not r_path.exists() or not py_path.exists():
-        pytest.skip("workspace sibling dssatutils is not checked out")
+    r_path = _dependency_path("dssatutils", "R", "soil_ssurgo.R")
+    py_path = _dependency_path("dssatutils", "python", "dssatutils", "soil_ssurgo.py")
+    _require_sources(r_path, py_path)
     r_src = _read(r_path)
     py_src = _read(py_path)
 
@@ -31,10 +53,9 @@ def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
 
 
 def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
-    r_path = WORKSPACE / "dssatengine" / "R" / "engine.R"
-    py_path = WORKSPACE / "dssatengine" / "python" / "dssatengine" / "engine.py"
-    if not r_path.exists() or not py_path.exists():
-        pytest.skip("workspace sibling dssatengine is not checked out")
+    r_path = _dependency_path("dssatengine", "R", "engine.R")
+    py_path = _dependency_path("dssatengine", "python", "dssatengine", "engine.py")
+    _require_sources(r_path, py_path)
     r_src = _read(r_path)
     py_src = _read(py_path)
 
@@ -107,6 +128,13 @@ def test_every_runtime_setting_is_declared_in_central_yaml():
     for source in ("dssat_main_pipeline.py", "dssat_main_pipeline.R"):
         text = _read(ROOT / source)
         assert re.search(r"ZIP_FOR_HPC\s*(?:=|<-)\s*.*cfg_get\([\"']zip_for_hpc", text)
+
+
+def test_conda_lock_covers_supported_desktop_platforms():
+    """Keep fresh Windows, Linux, and Apple Silicon installs reproducible."""
+    lock = yaml.safe_load((ROOT / "conda_lock.yml").read_text(encoding="utf-8"))
+    platforms = set(lock.get("metadata", {}).get("platforms", []))
+    assert {"win-64", "linux-64", "osx-arm64"} <= platforms
 
 
 def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):

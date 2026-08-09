@@ -281,20 +281,28 @@ unzip -o shapefile/tl_2024_us_state.zip -d shapefile
 
 ### 4 — Place a DSSAT template file
 
-Copy a known-good experiment file (e.g., `UFGA8201.MZX` from your DSSAT `Maize/` folder) into `dssat_templates/`, then set `template_file_name` in `config.yml`. `UFGA8201.MZX` is a maize file bundled with DSSAT for testing. Any valid DSSAT experiment file works (`.MZX`, `.WHX`, `.SBX`, `.SQX`, etc.) — match the extension to `crop_extension` and `run_mode`.
+The repository default is the included `dssat_templates/UFGA9201.MZX`. To use
+another experiment, copy a known-good FileX into `dssat_templates/`, then update
+`template_file_name`, `crop_extension`, and the weather years together. Any
+valid DSSAT experiment file works (`.MZX`, `.WHX`, `.SBX`, `.SQX`, etc.) when
+its crop extension, planting dates, and `run_mode` agree with the configuration.
 
 ### 5 — Source the pipeline
 
-Click **Source** in RStudio. With default demo settings (Iowa at 50 km spacing, 2 years of Daymet weather, SSURGO soil, local DSSAT run), the script will:
+Click **Source** in RStudio. With the committed default settings (Iowa at 20 km
+spacing, 1992 NASA POWER weather, SSURGO_ALDERMAN soil, `UFGA9201.MZX`, and a
+local DSSAT run), the script will:
 
-- Generate ~50 grid points across Iowa
+- Generate a few hundred grid points across Iowa
 - Download soil and weather data for each point
 - Build one DSSAT run folder per point
 - Run DSSAT locally
 - Parse and merge results
 - Write a merged results CSV and a yield map under `results/`
 
-First run can take about 10–30 minutes depending on your internet connection and machine speed.
+The first run can take from tens of minutes to several hours because soil and
+weather services are live and rate-limited. For the first validation, use a
+coarser grid such as 300 km; this normally yields a single Iowa point.
 
 ### 6 — Confirm you got results
 
@@ -1017,8 +1025,15 @@ coverage, and a poor soil/weather source stands out immediately (negative `EF`).
 ├── results/                           # merged CSVs and yield maps
 ├── tests/
 │   ├── test_smoke.py                  # offline CI test (config + imports + .WTH writer)
-│   └── test_global_sources.py         # live EU/Asia/Africa test (Open-Meteo + SoilGrids)
-├── .github/workflows/smoke.yml        # CI: runs the smoke test + byte-compiles modules
+│   ├── test_cross_language_parity.py  # R/Python config and dependency contracts
+│   ├── test_dssat_model_e2e.py        # opt-in real one-point DSSAT execution
+│   ├── test_dssat_model_e2e.R         # R twin of the real one-point check
+│   ├── test_global_sources.py         # live EU/Asia/Africa test (Open-Meteo + SoilGrids)
+│   ├── test_e2e_comprehensive.py      # live Python provider matrix
+│   ├── test_e2e.R                     # compact live R provider smoke test
+│   └── test_e2e_comprehensive.R       # live R provider matrix
+├── .github/workflows/smoke.yml        # CI: cross-platform offline checks
+├── .github/workflows/e2e.yml          # CI: live Python/R provider checks
 ├── environment.yml / requirements.txt # Python dependency pins (conda / pip)
 ├── setup_renv.R                       # R dependency setup (renv)
 └── hpc/
@@ -1248,11 +1263,18 @@ Inspect `dssat_runs/<RUN_NAME>/00000001/` and confirm:
 
 ## Testing
 
-The repository ships two test scripts under `tests/`, plus a GitHub Actions CI workflow.
+The repository ships five Python and three R test scripts under `tests/`, plus
+separate smoke and live-provider GitHub Actions workflows.
 
 ### Offline smoke test (no internet, no DSSAT)
 
-`tests/test_smoke.py` validates the parts of the pipeline that don't need live APIs or a DSSAT install: `config.yml` loading and fallback semantics, that every helper module imports cleanly, and that the DSSAT `.WTH` writer produces a well-formed file from synthetic data. It runs in seconds and is what CI executes on every push.
+`tests/test_smoke.py` validates the parts of the pipeline that don't need live
+APIs or a DSSAT install: `config.yml` loading and fallback semantics, helper
+imports, MPI CLI help without a cluster runtime, and deterministic `.WTH`
+formatting. `tests/test_cross_language_parity.py` checks central configuration
+and selected R/Python contracts. GitHub checks out the exact dependency source
+revisions required by those parity assertions; they may skip in a standalone
+clone that has no sibling or `.ci-deps` source checkout.
 
 ```bash
 # from the repo root, in your Python environment
@@ -1263,11 +1285,14 @@ python tests/test_smoke.py
 
 The provider-heavy comprehensive module is deliberately marked `integration`.
 Run it explicitly when you want real downloads (several minutes and potentially
-large cached NetCDFs):
+large cached NetCDFs). It requires every expected output and retries only
+recognised transient HTTP/transport failures. Set
+`DSSAT_USE_WORKSPACE_SIBLINGS=1` only when intentionally testing un-released
+sibling `dssatutils` source instead of the installed pinned package:
 
 ```bash
 python -m pytest tests/test_e2e_comprehensive.py -m integration -v -s
-DSSAT_RUN_LIVE_E2E=1 Rscript --vanilla tests/test_e2e.R
+DSSAT_RUN_LIVE_E2E=1 Rscript --vanilla tests/test_e2e_comprehensive.R
 ```
 
 ### Live global-source test (internet required, no DSSAT)
@@ -1286,8 +1311,28 @@ Python modules, and validates R configuration/syntax on Ubuntu, macOS, and
 Windows. This catches platform-specific path/config regressions on every push
 and pull request. The workflow installs the R `yaml` dependency with
 `Rscript --vanilla`, matching the cross-language parity subprocess rather than
-the repository's `renv`-activated interactive environment. Live DSSAT runs
-still require a runner with DSSAT installed.
+the repository's `renv`-activated interactive environment.
+
+`.github/workflows/e2e.yml` runs live Python and R provider checks on Ubuntu on
+pushes, pull requests, a weekly schedule, and manual dispatch. Live provider
+outages can therefore produce explicit skips after bounded retries; test-code,
+schema, and missing-output defects still fail. JUnit and R logs are retained
+even after failures.
+
+These provider checks do **not** execute the licensed DSSAT model. A true model
+validation requires an installed DSSAT executable. The committed one-point
+fixture provides an explicit real-model check:
+
+```bash
+DSSAT_EXE=/verified/path/to/dscsm048 \
+  python -m pytest tests/test_dssat_model_e2e.py -v
+Rscript --vanilla tests/test_dssat_model_e2e.R
+```
+
+It skips when DSSAT or its adjacent `DSSATPRO` support profile is absent. The
+one-point validation flow above and MPI mini run below remain the production
+checks. Do not describe the provider matrix as proof that DSSAT itself runs on
+every hosted operating system.
 
 ---
 
@@ -1385,10 +1430,10 @@ cd /scratch/user && unzip <RUN_NAME>.zip
 
 ### 4 — Submit the SLURM job
 
-Edit `hpc/run_dssat_python.slurm` to set `DSSAT_EXE`, the `RUN_DIRS` array (one or more `--base_dir` targets under `/scratch/$USER/`), `SUMMARY_DIR`, node count, and walltime. Then:
+Edit `hpc/run_dssat_python.slurm` to set `DSSAT_EXE`, the `RUN_DIRS` array (one or more `--base_dir` targets under `/scratch/$USER/`), `SUMMARY_DIR`, node count, and walltime. Supply the conda environment name or full prefix through `CONDA_ENV`, then:
 
 ```bash
-sbatch hpc/run_dssat_python.slurm
+CONDA_ENV=dssat_env sbatch hpc/run_dssat_python.slurm
 squeue -u $USER
 ```
 
@@ -1522,6 +1567,7 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 **1 — DSSAT executables and licensed content**
 - Official DSSAT downloads (via dssat.net) are tied to a licence. **Do not** redistribute proprietary DSSAT installers or binaries.
 - The open-source DSSAT-CSM-OS codebase (BSD 3-Clause) may be redistributed as compiled binaries if you keep the licence and document provenance (commit hash, build flags, platform).
+- The legacy files under `dssat_executable/` have unknown build provenance and are not self-contained; see `dssat_executable/README.md`. Do not publish them as release assets until provenance is established or they are replaced.
 - Only include template files (`*.SQX`, `*.MZX`, etc.) if you have the right to redistribute them.
 
 **2 — Sanitise cluster-specific values**
