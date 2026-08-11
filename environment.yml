@@ -32,10 +32,8 @@ dependencies:
   - pip:
       # Shared package pins. Bump these deliberately when validating a new
       # workspace release; avoid branch pins so clean installs are reproducible.
-      # v0.4.0 plus the minimal GridMET thread-safety fix.
-      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
-      # dssatengine is package-version 0.4.0; pin the verified release commit
-      # until the matching v0.4.0 Git tag is pushed.
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+      # Immutable workspace baselines; update setup_renv.R and both lockfiles together.
+      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
       # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
       # still require user credentials; run setup_cds_credentials() once.

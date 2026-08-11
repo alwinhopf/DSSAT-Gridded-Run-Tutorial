@@ -14,8 +14,8 @@ env:
   # v0.4.0 validates GridMET/HDF5 downloads concurrently, which is unsafe on
   # some Linux runners. This exact follow-up commit serializes validation and
   # honors n_cores while retaining package version 0.4.0.
-  DSSATUTILS_REF: 'c189ffdb58f53f07f58b919ec04e8fe6fa958916'
-  DSSATENGINE_REF: 'be06ba0268d51dd1ec6f6baa62ea5ed7869165a9'
+  DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
+  DSSATENGINE_REF: '9f5bbde0def31dd74c5f881bf6b3be30f787c6a0'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.

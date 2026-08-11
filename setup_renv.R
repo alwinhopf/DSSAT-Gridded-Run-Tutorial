@@ -60,12 +60,9 @@ renv::install(pkgs)
 #   usethis::create_github_token(); gitcreds::gitcreds_set()
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
 shared_refs <- c(
-  # v0.4.0 plus the minimal GridMET NetCDF thread-safety fix.
-  dssatutils = "c189ffdb58f53f07f58b919ec04e8fe6fa958916",
-  # Release-tag blocker: the dssatengine package is version 0.4.0, but the
-  # remote currently has no v0.4.0 tag. Pin the verified release commit until
-  # that tag is pushed.
-  dssatengine = "be06ba0268d51dd1ec6f6baa62ea5ed7869165a9"
+  # Immutable workspace baselines; update environment.yml and both lockfiles together.
+  dssatutils = "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
+  dssatengine = "9f5bbde0def31dd74c5f881bf6b3be30f787c6a0"
 )
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
 for (pkg in names(shared_refs)) {

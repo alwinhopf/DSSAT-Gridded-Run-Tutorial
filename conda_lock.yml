@@ -10433,12 +10433,12 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   hash:
-    sha256: be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+    sha256: 9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   category: main
   optional: false
 - name: dssatengine
@@ -10458,12 +10458,12 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   hash:
-    sha256: be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+    sha256: 9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   category: main
   optional: false
 - name: dssatengine
@@ -10483,12 +10483,12 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   hash:
-    sha256: be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+    sha256: 9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9
+  url: git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0
   category: main
   optional: false
 - name: dssatutils
@@ -10508,12 +10508,12 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   hash:
-    sha256: c189ffdb58f53f07f58b919ec04e8fe6fa958916
+    sha256: e9c859fa1d915623df23e2eb13084cb085dbfe3e
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   category: main
   optional: false
 - name: dssatutils
@@ -10533,12 +10533,12 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   hash:
-    sha256: c189ffdb58f53f07f58b919ec04e8fe6fa958916
+    sha256: e9c859fa1d915623df23e2eb13084cb085dbfe3e
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   category: main
   optional: false
 - name: dssatutils
@@ -10558,11 +10558,11 @@ package:
     shapely: '>=2.0'
     tqdm: '>=4.66'
     xarray: '>=2024.6'
-  url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   hash:
-    sha256: c189ffdb58f53f07f58b919ec04e8fe6fa958916
+    sha256: e9c859fa1d915623df23e2eb13084cb085dbfe3e
   source:
     type: url
-    url: git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
+  url: git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e
   category: main
   optional: false

@@ -1751,12 +1751,17 @@ message("STEP 3: RUNNING DSSAT SIMULATIONS")
 # actual file-backed scientific inputs. The combined output filename remains
 # stable, while stale point OUT files cannot leak into a changed scenario.
 .hash_file_set <- function(path) {
-  if (!nzchar(path) || !file.exists(path)) return(NA_character_)
-  files <- if (tolower(tools::file_ext(path)) == "shp") {
-    list.files(dirname(path), pattern = paste0("^", tools::file_path_sans_ext(basename(path)), "[.]"),
-               full.names = TRUE)
-  } else path
-  paste(unname(tools::md5sum(sort(files))), collapse = ":")
+  path <- path[!is.na(path) & nzchar(path) & file.exists(path)]
+  if (!length(path)) return(NA_character_)
+  files <- unlist(lapply(path, function(p) {
+    if (tolower(tools::file_ext(p)) == "shp") {
+      list.files(dirname(p), pattern = paste0("^", tools::file_path_sans_ext(basename(p)), "[.]"),
+                 full.names = TRUE)
+    } else p
+  }), use.names = FALSE)
+  files <- sort(unique(files[file.info(files)$isdir %in% FALSE]))
+  if (!length(files)) return(NA_character_)
+  paste(paste0(basename(files), "=", unname(tools::md5sum(files))), collapse = ":")
 }
 .hash_object <- function(x) {
   tf <- tempfile(fileext = ".rds")
@@ -1765,13 +1770,27 @@ message("STEP 3: RUNNING DSSAT SIMULATIONS")
   unname(tools::md5sum(tf)[[1]])
 }
 RUN_PROVENANCE <- list(
-  schema = 1L,
+  schema = 2L,
   config = .CONFIG,
   existing_points = .hash_file_set(EXISTING_POINT_SHAPEFILE_PATH),
   boundary = .hash_file_set(file.path(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)),
   cropland = .hash_file_set(if (nzchar(CROPLAND_RASTER_FILE)) resolve_config_path(CROPLAND_RASTER_FILE, CODE_ROOT_DIR) else ""),
   template = .hash_file_set(TEMPLATE_FILE_PATH),
-  external_soil = .hash_file_set(EXTERNAL_SOIL_FILE)
+  external_soil = .hash_file_set(EXTERNAL_SOIL_FILE),
+  resolved_inputs = list(
+    weather_wth = .hash_file_set(list.files(output_dir, pattern = "[.]WTH$", full.names = TRUE)),
+    soil_sol = .hash_file_set(list.files(
+      file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_individual_SOL")),
+      pattern = "[.]SOL$", full.names = TRUE
+    )),
+    soil_mapping = .hash_file_set(file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, ".CSV"))),
+    dssat_executable = .hash_file_set(DSSAT_EXE_PATH),
+    dssatpro = .hash_file_set(file.path(dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")),
+    support_files = .hash_file_set(list.files(
+      TEMPLATE_DIR, pattern = "[.](CUL|ECO|SPE|SDA|WDA|CDE|CO2)$",
+      full.names = TRUE, ignore.case = TRUE
+    ))
+  )
 )
 RUN_CACHE_KEY <- substr(.hash_object(RUN_PROVENANCE), 1L, 12L)
 DSSAT_RUN_DIR <- paste0(DSSAT_RUN_DIR, "_", RUN_CACHE_KEY)

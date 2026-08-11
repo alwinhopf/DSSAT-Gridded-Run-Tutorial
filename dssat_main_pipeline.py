@@ -410,10 +410,27 @@ def _sha256_dataset(path: str) -> str | None:
     return digest.hexdigest()
 
 
+def _sha256_file_collection(paths) -> str | None:
+    """Hash file names and contents for an order-independent input collection."""
+    members = sorted(
+        (Path(path) for path in paths if path and Path(path).is_file()),
+        key=lambda path: path.as_posix(),
+    )
+    if not members:
+        return None
+    digest = hashlib.sha256()
+    for member in members:
+        digest.update(member.name.encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+        digest.update((_sha256_file(str(member)) or "").encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 _boundary_path = os.path.join(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
 _raster_path = resolve_config_path(CROPLAND_RASTER_FILE, CODE_ROOT_DIR) if CROPLAND_RASTER_FILE else ""
 RUN_PROVENANCE = {
-    "schema": 1,
+    "schema": 2,
     "grid": {"spacing_m": GRID_SPACING_METERS, "existing": USE_EXISTING_POINT_SHAPEFILE,
              "existing_sha256": _sha256_dataset(EXISTING_POINT_SHAPEFILE_PATH),
              "boundary_sha256": _sha256_dataset(_boundary_path),
@@ -1180,6 +1197,33 @@ if __name__ == '__main__':
     print("=" * 60)
     print("STEP 3: RUNNING DSSAT SIMULATIONS")
     print("=" * 60)
+
+    # Finalize the content address only after soil and weather generation. This
+    # prevents resume mode from reusing results when a generated WTH/SOL file,
+    # DSSAT executable, DSSATPRO, or genotype/support file changes without a
+    # corresponding configuration change.
+    _weather_repo = Path(WEATHER_ROOT_DIR) / WEATHER_DIR_NAME
+    _soil_folder = Path(SOIL_ROOT_DIR) / f"{SOIL_BASENAME}_individual_SOL"
+    _soil_mapping = Path(SOIL_ROOT_DIR) / f"{SOIL_BASENAME}.CSV"
+    _support_exts = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE", ".CO2"}
+    _support_inputs = [
+        path for path in Path(TEMPLATE_DIR).iterdir()
+        if path.is_file() and path.suffix.upper() in _support_exts
+    ] if Path(TEMPLATE_DIR).is_dir() else []
+    RUN_PROVENANCE["resolved_inputs"] = {
+        "weather_wth_sha256": _sha256_file_collection(_weather_repo.glob("*.WTH")),
+        "soil_sol_sha256": _sha256_file_collection(_soil_folder.glob("*.SOL")),
+        "soil_mapping_sha256": _sha256_file(str(_soil_mapping)),
+        "dssat_executable_sha256": _sha256_file(DSSAT_EXE_PATH),
+        "dssatpro_sha256": _sha256_file(
+            os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
+        ),
+        "support_files_sha256": _sha256_file_collection(_support_inputs),
+    }
+    RUN_CACHE_KEY = hashlib.sha256(
+        json.dumps(RUN_PROVENANCE, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:12]
+    DSSAT_RUN_DIR = os.path.join(RUNS_ROOT_DIR, f"{DSSAT_RUN_NAME}_{RUN_CACHE_KEY}")
 
     os.makedirs(DSSAT_RUN_DIR, exist_ok=True)
 

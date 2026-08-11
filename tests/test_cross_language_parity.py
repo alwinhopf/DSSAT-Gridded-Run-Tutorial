@@ -159,17 +159,36 @@ def test_conda_lock_covers_supported_desktop_platforms():
     assert {"win-64", "linux-64", "osx-arm64"} <= platforms
 
 
-def test_dssatutils_pin_is_consistent_across_install_paths():
+def test_shared_package_pins_are_consistent_across_install_paths():
     """Keep CI, conda, renv, and documented fresh installs on one revision."""
-    expected = "c189ffdb58f53f07f58b919ec04e8fe6fa958916"
+    expected = {
+        "dssatutils": "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
+        "dssatengine": "9f5bbde0def31dd74c5f881bf6b3be30f787c6a0",
+    }
     e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
     smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))
     renv = yaml.safe_load(_read(ROOT / "renv.lock"))
-    assert e2e["env"]["DSSATUTILS_REF"] == expected
-    assert smoke["env"]["DSSATUTILS_REF"] == expected
-    assert renv["Packages"]["dssatutils"]["RemoteSha"] == expected
-    for path in ("environment.yml", "conda_lock.yml", "setup_renv.R", "README.md"):
-        assert expected in _read(ROOT / path), f"stale dssatutils pin in {path}"
+    for package, revision in expected.items():
+        env_key = f"{package.upper()}_REF"
+        assert e2e["env"][env_key] == revision
+        assert smoke["env"][env_key] == revision
+        assert renv["Packages"][package]["RemoteSha"] == revision
+        for path in ("environment.yml", "conda_lock.yml", "setup_renv.R"):
+            assert revision in _read(ROOT / path), f"stale {package} pin in {path}"
+    assert expected["dssatutils"] in _read(ROOT / "README.md")
+
+
+def test_resume_provenance_hashes_resolved_model_inputs_in_both_languages():
+    """Resume keys must change with generated inputs and the DSSAT runtime."""
+    required = (
+        "weather_wth", "soil_sol", "soil_mapping", "dssat_executable",
+        "dssatpro", "support_files",
+    )
+    python_source = _read(ROOT / "dssat_main_pipeline.py")
+    r_source = _read(ROOT / "dssat_main_pipeline.R")
+    for token in required:
+        assert token in python_source
+        assert token in r_source
 
 
 def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):
