@@ -23,7 +23,7 @@ inventory below. As of the v0.4.0 audit:
   the R version also configures `ecmwfr`. `era5land_set_cds_key()` remains as a
   compatibility alias.
 - Python packaging now has a general `cds` extra for CDS-backed weather sources
-  (`pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`).
+  (`pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e"`).
 - R E-OBS CDS mode is implemented via `ecmwfr`; local E-OBS NetCDF mode remains
   the default and needs no key.
 - Deferred AgERA5 cache investigation: current AgERA5 downloads can produce many

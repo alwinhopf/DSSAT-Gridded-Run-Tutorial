@@ -62,7 +62,7 @@ workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
 shared_refs <- c(
   # Immutable workspace baselines; update environment.yml and both lockfiles together.
   dssatutils = "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
-  dssatengine = "9f5bbde0def31dd74c5f881bf6b3be30f787c6a0"
+  dssatengine = "2280b11977ad373b9ae19d2d4497e8f276f7b133"
 )
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
 for (pkg in names(shared_refs)) {

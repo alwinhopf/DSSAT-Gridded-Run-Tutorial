@@ -15,7 +15,7 @@ env:
   # some Linux runners. This exact follow-up commit serializes validation and
   # honors n_cores while retaining package version 0.4.0.
   DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
-  DSSATENGINE_REF: '9f5bbde0def31dd74c5f881bf6b3be30f787c6a0'
+  DSSATENGINE_REF: '2280b11977ad373b9ae19d2d4497e8f276f7b133'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.
@@ -38,18 +38,18 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       # --- Python Setup ---
       - name: Set up Python
         if: matrix.test-type == 'python'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       
       - name: Cache Python packages
         if: matrix.test-type == 'python'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -72,7 +72,7 @@ jobs:
       
       - name: Upload Python test results
         if: matrix.test-type == 'python' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pytest-results
           path: pytest-results.xml
@@ -88,7 +88,7 @@ jobs:
       
       - name: Cache R packages
         if: matrix.test-type == 'r'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/R
           key: ${{ runner.os }}-r-${{ matrix.r-version }}-${{ hashFiles('**/DESCRIPTION') }}
@@ -127,7 +127,7 @@ jobs:
       
       - name: Upload R test logs
         if: matrix.test-type == 'r' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: r-test-logs
           path: 'dssat_runs/e2e-r-*/**/*.log'

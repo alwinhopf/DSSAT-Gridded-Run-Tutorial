@@ -163,7 +163,7 @@ def test_shared_package_pins_are_consistent_across_install_paths():
     """Keep CI, conda, renv, and documented fresh installs on one revision."""
     expected = {
         "dssatutils": "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
-        "dssatengine": "9f5bbde0def31dd74c5f881bf6b3be30f787c6a0",
+        "dssatengine": "2280b11977ad373b9ae19d2d4497e8f276f7b133",
     }
     e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
     smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))
@@ -176,6 +176,19 @@ def test_shared_package_pins_are_consistent_across_install_paths():
         for path in ("environment.yml", "conda_lock.yml", "setup_renv.R"):
             assert revision in _read(ROOT / path), f"stale {package} pin in {path}"
     assert expected["dssatutils"] in _read(ROOT / "README.md")
+
+
+def test_pinned_engine_r_remote_matches_pinned_utils():
+    """Prevent dssatengine installation from replacing the selected dssatutils."""
+    engine_description = _dependency_path("dssatengine", "DESCRIPTION")
+    _require_sources(engine_description)
+    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
+    expected_utils = e2e["env"]["DSSATUTILS_REF"]
+    match = re.search(
+        r"alwinhopf/dssatutils@([0-9a-f]{40})", _read(engine_description)
+    )
+    assert match, "pinned dssatengine must use an immutable dssatutils Remote"
+    assert match.group(1) == expected_utils
 
 
 def test_resume_provenance_hashes_resolved_model_inputs_in_both_languages():

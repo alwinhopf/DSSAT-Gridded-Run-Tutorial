@@ -26,6 +26,8 @@ MODE C - Cropland-only points from CDL / NLCD (build with landcover scripts,
          then feed shapefile here via MODE B)
 """
 
+from __future__ import annotations
+
 # =============================================================================
 # STANDARD LIBRARY
 # =============================================================================
