@@ -68,6 +68,28 @@ def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
         assert "summary.csv" in src
 
 
+def test_gridmet_netcdf_validation_is_thread_safe_in_pinned_source():
+    """Prevent concurrent netCDF4/HDF5 reads from returning to CI."""
+    path = _dependency_path(
+        "dssatutils", "python", "dssatutils", "weather_gridmet.py"
+    )
+    _require_sources(path)
+    source = _read(path)
+    assert "_GRIDMET_NETCDF_LOCK = threading.RLock()" in source
+    assert "with _GRIDMET_NETCDF_LOCK:" in source
+    assert "download_workers = max(1, min(download_workers, 8))" in source
+
+
+def test_live_provider_retry_policy_is_present_in_r_and_python():
+    """Keep transient GridMET failures bounded and explicit in both suites."""
+    r_source = _read(ROOT / "tests" / "test_e2e_comprehensive.R").lower()
+    py_source = _read(ROOT / "tests" / "test_e2e_comprehensive.py").lower()
+    for source in (r_source, py_source):
+        assert "dssat_provider_retries" in source
+        assert "invalid/corrupt netcdf cache file" in source
+        assert "remained unavailable" in source
+
+
 def test_filex_coordinate_substitution_policy_is_aligned():
     r_src = _read(ROOT / "dssat_main_pipeline.R")
     py_src = _read(ROOT / "dssat_main_pipeline.py")
@@ -135,6 +157,19 @@ def test_conda_lock_covers_supported_desktop_platforms():
     lock = yaml.safe_load((ROOT / "conda_lock.yml").read_text(encoding="utf-8"))
     platforms = set(lock.get("metadata", {}).get("platforms", []))
     assert {"win-64", "linux-64", "osx-arm64"} <= platforms
+
+
+def test_dssatutils_pin_is_consistent_across_install_paths():
+    """Keep CI, conda, renv, and documented fresh installs on one revision."""
+    expected = "c189ffdb58f53f07f58b919ec04e8fe6fa958916"
+    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
+    smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))
+    renv = yaml.safe_load(_read(ROOT / "renv.lock"))
+    assert e2e["env"]["DSSATUTILS_REF"] == expected
+    assert smoke["env"]["DSSATUTILS_REF"] == expected
+    assert renv["Packages"]["dssatutils"]["RemoteSha"] == expected
+    for path in ("environment.yml", "conda_lock.yml", "setup_renv.R", "README.md"):
+        assert expected in _read(ROOT / path), f"stale dssatutils pin in {path}"
 
 
 def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):

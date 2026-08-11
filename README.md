@@ -159,11 +159,11 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     `pip install "git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916"`
      PAT fallback:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916"`
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0"`
+     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -1317,7 +1317,9 @@ the repository's `renv`-activated interactive environment.
 pushes, pull requests, a weekly schedule, and manual dispatch. Live provider
 outages can therefore produce explicit skips after bounded retries; test-code,
 schema, and missing-output defects still fail. JUnit and R logs are retained
-even after failures.
+even after failures. The R job disables project `renv` auto-activation and uses
+its explicitly installed integration-test packages, preventing misleading
+partial-lock warnings in the main process and parallel workers.
 
 These provider checks do **not** execute the licensed DSSAT model. A true model
 validation requires an installed DSSAT executable. The committed one-point

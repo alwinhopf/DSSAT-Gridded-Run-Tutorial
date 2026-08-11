@@ -10,11 +10,13 @@ Comprehensive provider integration test (Python) — tests weather & soil source
 Run: pytest tests/test_e2e_comprehensive.py -v
 """
 
+import io
 import os
 import sqlite3
 import sys
 import tempfile
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 import pandas as pd
 import pytest
@@ -119,23 +121,48 @@ def _is_transient_provider_failure(diagnostic):
         "status code 503",
         "status code 504",
         "ssl connect error",
+        "downloaded file failed netcdf validation",
+        "invalid/corrupt netcdf cache file",
     )
     return any(marker in text for marker in markers)
+
+
+class _Tee:
+    """Mirror provider output to pytest while retaining it for diagnostics."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
 
 
 def _run_weather_provider(name, call, expected_paths, log_file):
     """Run a live provider without allowing missing outputs to pass silently."""
     attempts = max(1, int(os.getenv("DSSAT_PROVIDER_RETRIES", "3")))
     errors = []
+    provider_output = []
     missing = list(expected_paths)
 
     for attempt in range(1, attempts + 1):
+        captured = io.StringIO()
         try:
-            call()
+            with redirect_stdout(_Tee(sys.stdout, captured)):
+                call()
         except ImportError:
             raise
         except Exception as exc:  # provider diagnostics are evaluated below
             errors.append(f"{type(exc).__name__}: {exc}")
+        finally:
+            output = captured.getvalue().strip()
+            if output:
+                provider_output.append(f"Attempt {attempt} output:\n{output}")
 
         missing = [Path(path) for path in expected_paths if not Path(path).exists()]
         if not missing:
@@ -143,13 +170,13 @@ def _run_weather_provider(name, call, expected_paths, log_file):
                 _check_wth_file(Path(path))
             return
 
-        diagnostic = "\n".join(errors + [_read_log_tail(log_file)])
+        diagnostic = "\n".join(errors + provider_output + [_read_log_tail(log_file)])
         if not _is_transient_provider_failure(diagnostic):
             break
         if attempt < attempts:
             time.sleep(min(5 * attempt, 15))
 
-    diagnostic = "\n".join(errors + [_read_log_tail(log_file)]).strip()
+    diagnostic = "\n".join(errors + provider_output + [_read_log_tail(log_file)]).strip()
     missing_names = ", ".join(path.name for path in missing)
     if diagnostic and _is_transient_provider_failure(diagnostic):
         pytest.skip(

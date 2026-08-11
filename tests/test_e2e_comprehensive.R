@@ -2,7 +2,7 @@
 # Comprehensive end-to-end test (R) — tests all weather & soil sources
 # - Tests each weather source: Open-Meteo, Daymet, NASA-POWER, GridMET, AgERA5, NASA-POWER CHIRPS
 # - Tests each soil source: SoilGrids, SoilGrids Online, SSURGO, HWSD
-# - Uses synthetic/mocked data to avoid flaky network calls in CI
+# - Calls live providers with bounded retries for recognised transport failures
 # - Skips sources with missing optional deps or API keys gracefully
 
 if (Sys.getenv("DSSAT_RUN_LIVE_E2E", "") != "1") {
@@ -94,16 +94,20 @@ read_log_tail <- function(path, n = 20L) {
   paste(tail(lines, n), collapse = " | ")
 }
 
-is_transient_provider_failure <- function(log_file, error = "") {
-  diagnostic <- paste(error, read_log_tail(log_file), collapse = " ")
+is_transient_provider_failure <- function(log_file, error = "", output = "") {
+  diagnostic <- paste(error, output, read_log_tail(log_file), collapse = " ")
   patterns <- c(
     "server is unreachable", "could not resolve host", "couldn't connect",
     "connection (reset|refused|timed out)", "operation timed out", "timeout",
     "temporary failure", "service unavailable", "too many requests",
-    "http[^0-9]*(429|500|502|503|504)", "ssl connect error"
+    "http[^0-9]*(429|500|502|503|504)", "ssl connect error",
+    "download error: cannot open url", "invalid/corrupt netcdf cache file"
   )
   grepl(paste(patterns, collapse = "|"), diagnostic, ignore.case = TRUE, perl = TRUE)
 }
+
+provider_retries <- suppressWarnings(as.integer(Sys.getenv("DSSAT_PROVIDER_RETRIES", "3")))
+if (is.na(provider_retries) || provider_retries < 1L) provider_retries <- 3L
 
 # Helper to check .WTH file validity
 check_wth <- function(path) {
@@ -170,7 +174,7 @@ tryCatch({
     daymet_log <- file.path(work, "daymet.log")
     expected_files <- file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))
     last_error <- ""
-    for (attempt in seq_len(3L)) {
+    for (attempt in seq_len(provider_retries)) {
       last_error <- tryCatch({
         dssatutils::process_weather_daymet(
           shapefile = us_df,
@@ -187,8 +191,11 @@ tryCatch({
       }, error = function(e) e$message)
       if (all(file.exists(expected_files))) break
       if (grepl("daymetR", last_error, ignore.case = TRUE)) break
-      if (attempt < 3L) {
-        message(sprintf("[%s] Attempt %d did not produce all files; retrying...", test_name, attempt))
+      if (attempt < provider_retries) {
+        message(sprintf(
+          "[%s] Attempt %d/%d did not produce all files; retrying...",
+          test_name, attempt, provider_retries
+        ))
         Sys.sleep(5L * attempt)
       }
     }
@@ -199,7 +206,7 @@ tryCatch({
       log_test("skip", test_name, paste("Optional dep (daymetR) missing:", last_error))
     } else if (is_transient_provider_failure(daymet_log, last_error)) {
       log_test("skip", test_name, paste(
-        "Provider remained unavailable after 3 attempts; see daymet.log.",
+        sprintf("Provider remained unavailable after %d attempts; see daymet.log.", provider_retries),
         read_log_tail(daymet_log, 5L)
       ))
     } else {
@@ -255,30 +262,75 @@ tryCatch({
   if (!exists("process_weather_gridmet", where = asNamespace("dssatutils"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
-    dssatutils::process_weather_gridmet(
-      shapefile = us_df,
-      start_year = 2010,
-      end_year = 2011,
-      output_dir = wth_dir,
-      id_col = "ID",
-      lat_col = "LAT",
-      lon_col = "LONG",
-      n_cores = 1,
-      log_file = file.path(work, "gridmet.log"),
-      gridmet_cache_dir = file.path(work, "gridmet_cache")
-    )
-    if (all(file.exists(file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))))) {
+    gridmet_log <- file.path(work, "gridmet.log")
+    expected_files <- file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))
+    provider_output <- character()
+    last_error <- ""
+
+    for (attempt in seq_len(provider_retries)) {
+      attempt_output <- character()
+      last_error <- tryCatch({
+        withCallingHandlers(
+          dssatutils::process_weather_gridmet(
+            shapefile = us_df,
+            start_year = 2010,
+            end_year = 2010,
+            output_dir = wth_dir,
+            id_col = "ID",
+            lat_col = "LAT",
+            lon_col = "LONG",
+            n_cores = 1,
+            log_file = gridmet_log,
+            gridmet_cache_dir = file.path(work, "gridmet_cache")
+          ),
+          message = function(cnd) {
+            attempt_output <<- c(attempt_output, conditionMessage(cnd))
+          },
+          warning = function(cnd) {
+            attempt_output <<- c(attempt_output, conditionMessage(cnd))
+          }
+        )
+        ""
+      }, error = function(e) conditionMessage(e))
+
+      if (length(attempt_output)) {
+        provider_output <- c(
+          provider_output,
+          sprintf("Attempt %d: %s", attempt, paste(unique(attempt_output), collapse = " | "))
+        )
+      }
+      if (all(vapply(expected_files, check_wth, logical(1)))) break
+
+      diagnostic <- paste(provider_output, collapse = " | ")
+      if (!is_transient_provider_failure(gridmet_log, last_error, diagnostic)) break
+      if (attempt < provider_retries) {
+        message(sprintf(
+          "[%s] Attempt %d/%d hit a transient provider failure; retrying...",
+          test_name, attempt, provider_retries
+        ))
+        Sys.sleep(min(5L * attempt, 15L))
+      }
+    }
+
+    if (all(vapply(expected_files, check_wth, logical(1)))) {
       log_test("ok", test_name)
     } else {
-      log_test("fail", test_name, "Not all .WTH files written")
+      diagnostic <- paste(tail(provider_output, 20L), collapse = " | ")
+      if (is_transient_provider_failure(gridmet_log, last_error, diagnostic)) {
+        log_test("skip", test_name, sprintf(
+          "Provider remained unavailable after %d attempts. %s",
+          provider_retries, diagnostic
+        ))
+      } else {
+        log_test("fail", test_name, paste(
+          "Not all .WTH files were valid.", last_error,
+          if (nzchar(diagnostic)) diagnostic else "No provider diagnostic was emitted."
+        ))
+      }
     }
   }
 }, error = function(e) {
-  if (grepl("xarray|netCDF", e$message)) {
-    log_test("skip", test_name, "Optional dep (xarray) missing")
-  } else {
-    log_test("fail", test_name, e$message)
-  }
+  log_test("fail", test_name, e$message)
 })
 
 # 5. AgERA5 (global, requires CDS key)

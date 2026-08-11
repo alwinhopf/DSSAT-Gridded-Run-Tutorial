@@ -3,7 +3,7 @@ name: smoke
 # Force JS actions to Node.js 24 on the runner (opt-in)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  DSSATUTILS_REF: 'v0.4.0'
+  DSSATUTILS_REF: 'c189ffdb58f53f07f58b919ec04e8fe6fa958916'
   DSSATENGINE_REF: 'be06ba0268d51dd1ec6f6baa62ea5ed7869165a9'
   DSSAT_REQUIRE_PARITY_SOURCES: '1'
 

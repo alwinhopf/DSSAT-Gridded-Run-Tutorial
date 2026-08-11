@@ -49,22 +49,23 @@ renv::install(pkgs)
 
 # --- Shared Git packages: dssatutils + dssatengine -------------------------
 # These live in their own GitHub repos and are reused across projects. Fresh
-# installs use release tags, not branch names, so the environment is reproducible
-# without relying on whatever happens to be on `main`.
+# installs use release tags or exact commits, not branch names, so the environment
+# is reproducible without relying on whatever happens to be on `main`.
 #
 # For active shared-package development only, set USE_LOCAL_SHARED_PACKAGES=1 to
-# install from sibling checkouts instead of the pinned tags below, then snapshot
+# install from sibling checkouts instead of the pinned refs below, then snapshot
 # the resulting lockfile deliberately.
 #
 # If the repos are private, set a PAT once first:
 #   usethis::create_github_token(); gitcreds::gitcreds_set()
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
 shared_refs <- c(
-  dssatutils = "v0.4.0",
+  # v0.4.0 plus the minimal GridMET NetCDF thread-safety fix.
+  dssatutils = "c189ffdb58f53f07f58b919ec04e8fe6fa958916",
   # Release-tag blocker: the dssatengine package is version 0.4.0, but the
   # remote currently has no v0.4.0 tag. Pin the verified release commit until
   # that tag is pushed.
-  dssatengine = "84b6e50895e7e2e2a4b02553d2705f4d879d269b"
+  dssatengine = "be06ba0268d51dd1ec6f6baa62ea5ed7869165a9"
 )
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
 for (pkg in names(shared_refs)) {

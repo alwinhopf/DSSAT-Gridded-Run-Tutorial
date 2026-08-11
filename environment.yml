@@ -32,7 +32,8 @@ dependencies:
   - pip:
       # Shared package pins. Bump these deliberately when validating a new
       # workspace release; avoid branch pins so clean installs are reproducible.
-      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0
+      # v0.4.0 plus the minimal GridMET thread-safety fix.
+      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@c189ffdb58f53f07f58b919ec04e8fe6fa958916
       # dssatengine is package-version 0.4.0; pin the verified release commit
       # until the matching v0.4.0 Git tag is pushed.
       - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9

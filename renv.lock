@@ -1037,7 +1037,8 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatutils",
-      "RemoteRef": "v0.4.0"
+      "RemoteRef": "c189ffdb58f53f07f58b919ec04e8fe6fa958916",
+      "RemoteSha": "c189ffdb58f53f07f58b919ec04e8fe6fa958916"
     },
     "e1071": {
       "Package": "e1071",
