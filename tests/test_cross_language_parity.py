@@ -191,6 +191,20 @@ def test_pinned_engine_r_remote_matches_pinned_utils():
     assert match.group(1) == expected_utils
 
 
+def test_e2e_r_git_installs_use_workflow_auth_without_reinstalling_dependencies():
+    """Keep R GitHub installs independent of remotes' bundled CI token."""
+    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
+    steps = e2e["jobs"]["comprehensive-tests"]["steps"]
+    install = next(step for step in steps if step.get("name") == "Install R dependencies")
+
+    assert install["env"]["GITHUB_PAT"] == "${{ github.token }}"
+    engine_command = next(
+        line for line in install["run"].splitlines() if "dssatengine.git" in line
+    )
+    assert "dependencies=FALSE" in engine_command
+    assert "upgrade='never'" in engine_command
+
+
 def test_resume_provenance_hashes_resolved_model_inputs_in_both_languages():
     """Resume keys must change with generated inputs and the DSSAT runtime."""
     required = (

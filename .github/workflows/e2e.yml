@@ -109,10 +109,15 @@ jobs:
       
       - name: Install R dependencies
         if: matrix.test-type == 'r'
+        # remotes otherwise falls back to its bundled CI token when resolving
+        # dssatengine's Remotes field. That fallback token can be revoked and
+        # caused public GitHub dependency installs to fail with HTTP 401.
+        env:
+          GITHUB_PAT: ${{ github.token }}
         run: |
           R --slave -e "install.packages(c('remotes', 'doParallel', 'sf', 'terra', 'DBI', 'RSQLite'), repos=getOption('repos'))"
           R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatutils.git', ref='${DSSATUTILS_REF}')"
-          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatengine.git', ref='${DSSATENGINE_REF}')"
+          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatengine.git', ref='${DSSATENGINE_REF}', dependencies=FALSE, upgrade='never')"
       
       - name: Run R comprehensive tests
         if: matrix.test-type == 'r'
