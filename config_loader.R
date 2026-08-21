@@ -12,11 +12,13 @@
 .CONFIG <- list()
 
 local({
+  is_mapping <- function(x) is.list(x) && !is.null(names(x))
+
   deep_merge <- function(base, override) {
     if (!is.list(base)) base <- list()
     if (!is.list(override)) return(base)
     for (key in names(override)) {
-      if (is.list(base[[key]]) && is.list(override[[key]])) {
+      if (is_mapping(base[[key]]) && is_mapping(override[[key]])) {
         base[[key]] <- deep_merge(base[[key]], override[[key]])
       } else {
         base[[key]] <- override[[key]]
@@ -29,10 +31,11 @@ local({
     for (key in names(override)) {
       path <- if (nzchar(prefix)) paste(prefix, key, sep = ".") else key
       if (!(key %in% names(base))) stop("Unknown configuration key: ", path, call. = FALSE)
-      if (is.list(override[[key]]) && is.list(base[[key]]) &&
-          !is.null(names(override[[key]]))) {
+      override_is_mapping <- is_mapping(override[[key]])
+      base_is_mapping <- is_mapping(base[[key]])
+      if (override_is_mapping && base_is_mapping) {
         validate_overlay(base[[key]], override[[key]], path)
-      } else if (is.list(override[[key]]) != is.list(base[[key]]) &&
+      } else if (override_is_mapping != base_is_mapping &&
                  length(override[[key]]) != 0L) {
         stop("Configuration type mismatch at ", path, call. = FALSE)
       }
