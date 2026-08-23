@@ -115,6 +115,11 @@ def _is_transient_provider_failure(diagnostic):
         "http 502",
         "http 503",
         "http 504",
+        "429 client error",
+        "500 server error",
+        "502 server error",
+        "503 server error",
+        "504 server error",
         "status code 429",
         "status code 500",
         "status code 502",
@@ -125,6 +130,19 @@ def _is_transient_provider_failure(diagnostic):
         "invalid/corrupt netcdf cache file",
     )
     return any(marker in text for marker in markers)
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    (
+        "500 Server Error: INTERNAL SERVER ERROR for url: https://daymet.example/api",
+        "HTTP 503 while requesting weather data",
+        "status code 429 returned by provider",
+    ),
+)
+def test_transient_provider_error_wording(diagnostic):
+    """Recognize common HTTP-client messages so live outages do not fail CI."""
+    assert _is_transient_provider_failure(diagnostic)
 
 
 class _Tee:
