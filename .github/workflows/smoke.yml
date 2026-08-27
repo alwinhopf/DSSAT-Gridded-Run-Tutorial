@@ -4,7 +4,7 @@ name: smoke
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
-  DSSATENGINE_REF: '7c6777ccefb9db38d2e3981ed9711b9c0ce58f6e'
+  DSSATENGINE_REF: '31085c7eac1628db949e3ad9fdb16947a65d0834'
   DSSAT_REQUIRE_PARITY_SOURCES: '1'
 
 # Offline smoke test: no internet APIs, no DSSAT executable required.

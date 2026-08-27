@@ -960,7 +960,7 @@
     },
     "dssatengine": {
       "Package": "dssatengine",
-      "Version": "0.4.0",
+      "Version": "0.4.1",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
@@ -988,8 +988,8 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatengine",
-      "RemoteRef": "7c6777ccefb9db38d2e3981ed9711b9c0ce58f6e",
-      "RemoteSha": "7c6777ccefb9db38d2e3981ed9711b9c0ce58f6e"
+      "RemoteRef": "31085c7eac1628db949e3ad9fdb16947a65d0834",
+      "RemoteSha": "31085c7eac1628db949e3ad9fdb16947a65d0834"
     },
     "dssatutils": {
       "Package": "dssatutils",

@@ -186,7 +186,7 @@ def test_shared_package_pins_are_consistent_across_install_paths():
     """Keep CI, conda, renv, and documented fresh installs on one revision."""
     expected = {
         "dssatutils": "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
-        "dssatengine": "7c6777ccefb9db38d2e3981ed9711b9c0ce58f6e",
+        "dssatengine": "31085c7eac1628db949e3ad9fdb16947a65d0834",
     }
     e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
     smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))
