@@ -178,6 +178,32 @@ USE_EXISTING_POINT_SHAPEFILE  = cfg_get("use_existing_point_shapefile", False)
 EXISTING_POINT_SHAPEFILE_PATH = cfg_get("existing_point_shapefile_path",
                                         os.path.join(GRIDPOINTS_DIR, "my_points.shp"))
 
+# Optional persistent master lattice.  When enabled, target grids are exact
+# row/column subsets of one origin-anchored master grid.  Leave disabled to use
+# the legacy independent grid placement above, or supply existing points.
+USE_MASTER_GRID = bool(cfg_get("use_master_grid", False))
+MASTER_GRID_SPACING_METERS = int(cfg_get("master_grid_spacing_meters", 1000))
+MASTER_GRID_CRS = str(cfg_get("master_grid_crs", "EPSG:6933"))
+MASTER_GRID_ORIGIN_X = float(cfg_get("master_grid_origin_x", 0))
+MASTER_GRID_ORIGIN_Y = float(cfg_get("master_grid_origin_y", 0))
+MASTER_GRID_PHASE_ROW = int(cfg_get("master_grid_phase_row", 0))
+MASTER_GRID_PHASE_COL = int(cfg_get("master_grid_phase_col", 0))
+MASTER_GRID_PATH_CONFIG = str(cfg_get("master_grid_path", "")).strip()
+REUSE_MASTER_GRID = bool(cfg_get("reuse_master_grid", True))
+if USE_MASTER_GRID and USE_EXISTING_POINT_SHAPEFILE:
+    raise ValueError(
+        "use_master_grid and use_existing_point_shapefile are mutually exclusive; "
+        "enable only one point-generation mode."
+    )
+if USE_MASTER_GRID:
+    ratio = float(GRID_SPACING_METERS) / MASTER_GRID_SPACING_METERS
+    if (MASTER_GRID_SPACING_METERS <= 0 or ratio < 1
+            or not math.isclose(ratio, round(ratio), rel_tol=0, abs_tol=1e-9)):
+        raise ValueError(
+            f"grid_spacing_meters ({GRID_SPACING_METERS}) must be an integer multiple "
+            f"of master_grid_spacing_meters ({MASTER_GRID_SPACING_METERS})."
+        )
+
 # MODE A boundary settings (ignored when USE_EXISTING_POINT_SHAPEFILE = True)
 BOUNDARY_SHAPEFILE_NAME = cfg_get("boundary_shapefile_name", "tl_2024_us_state.shp")
 ENABLE_BOUNDARY_FILTER  = cfg_get("enable_boundary_filter", True)
@@ -192,6 +218,9 @@ CROPLAND_CLASSES      = [int(x) for x in cfg_get("cropland_classes", [82])]
 CROPLAND_MIN_FRACTION = float(cfg_get("cropland_min_fraction", 0))
 CROPLAND_STRICT       = bool(cfg_get("cropland_strict", False))
 REUSE_CROPLAND_GRID   = bool(cfg_get("reuse_cropland_grid", True))
+CROPLAND_FILTER_BASIS = str(cfg_get("cropland_filter_basis", "cell_fraction")).strip().lower()
+if CROPLAND_FILTER_BASIS not in {"cell_fraction", "point"}:
+    raise ValueError("cropland_filter_basis must be 'cell_fraction' or 'point'.")
 
 # --- 0.5 Auto-naming convention ---------------------------------------------
 if GRID_SPACING_METERS < 1000:
@@ -302,6 +331,19 @@ if USE_CROPLAND_MASK:
 POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}{CROPLAND_GRID_TAG}.shp"
 ALL_LAND_POINT_SHAPEFILE_PATH = os.path.join(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH  = os.path.join(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
+_master_resolution_tag = (
+    f"{MASTER_GRID_SPACING_METERS}m" if MASTER_GRID_SPACING_METERS < 1000
+    else f"{MASTER_GRID_SPACING_METERS / 1000:g}km"
+)
+_master_project_tag = re.sub(r"[^A-Za-z0-9_\-]", "_", str(PROJECT_NAME).strip())
+MASTER_GRID_PATH = (
+    resolve_config_path(MASTER_GRID_PATH_CONFIG, OUTPUT_ROOT_DIR)
+    if MASTER_GRID_PATH_CONFIG
+    else os.path.join(
+        GRIDPOINTS_OUTPUT_DIR,
+        f"{_master_project_tag}_master_{_master_resolution_tag}.gpkg",
+    )
+)
 DSSAT_RUN_DIR         = os.path.join(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
 FINAL_OUTPUT_DIR      = RESULTS_ROOT_DIR
 FINAL_RESULTS_PATH    = os.path.join(FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_results.csv")
@@ -436,9 +478,16 @@ RUN_PROVENANCE = {
     "grid": {"spacing_m": GRID_SPACING_METERS, "existing": USE_EXISTING_POINT_SHAPEFILE,
              "existing_sha256": _sha256_dataset(EXISTING_POINT_SHAPEFILE_PATH),
              "boundary_sha256": _sha256_dataset(_boundary_path),
-             "filter": [BOUNDARY_FILTER_COLUMN, BOUNDARY_FILTER_VALUE]},
+             "filter": [BOUNDARY_FILTER_COLUMN, BOUNDARY_FILTER_VALUE],
+             "master": {"enabled": USE_MASTER_GRID,
+                         "spacing_m": MASTER_GRID_SPACING_METERS,
+                         "crs": MASTER_GRID_CRS,
+                         "origin": [MASTER_GRID_ORIGIN_X, MASTER_GRID_ORIGIN_Y],
+                         "phase": [MASTER_GRID_PHASE_ROW, MASTER_GRID_PHASE_COL],
+                         "path": os.path.abspath(MASTER_GRID_PATH) if USE_MASTER_GRID else None}},
     "cropland": {"enabled": USE_CROPLAND_MASK, "raster_sha256": _sha256_file(_raster_path),
-                 "classes": CROPLAND_CLASSES, "min_fraction": CROPLAND_MIN_FRACTION},
+                 "classes": CROPLAND_CLASSES, "min_fraction": CROPLAND_MIN_FRACTION,
+                 "filter_basis": CROPLAND_FILTER_BASIS},
     "weather": {"source": WEATHER_SOURCE, "years": [WEATHER_START_YEAR, WEATHER_END_YEAR],
                 "chirps": [CHIRPS_RESOLUTION, CHIRPS_V3_PRODUCT, CHIRPS_V3_STREAM,
                             CHIRPS_V3_FETCH_MODE, CHIRPS_V3_RESOLUTION, CHIRPS_V3_MONTHS]},
@@ -511,7 +560,8 @@ def _resolve_optional_path(path: str) -> str:
 
 def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
                         classes, min_fraction: float = 0,
-                        strict: bool = False):
+                        strict: bool = False,
+                        filter_basis: str = "cell_fraction"):
     """Attach cropland fractions and keep only cropland-bearing grid cells."""
     def fallback(message: str):
         if strict:
@@ -540,6 +590,13 @@ def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
 
         print(f"Applying cropland mask from {raster_file} (classes: {', '.join(map(str, classes))})")
         pts_r = points_gdf.to_crs(src.crs)
+        sample_xy = [(geom.x, geom.y) for geom in pts_r.geometry]
+        point_crop = []
+        for value in src.sample(sample_xy, indexes=1, masked=True):
+            scalar = value[0]
+            point_crop.append(
+                np.nan if np.ma.is_masked(scalar) else float(scalar in classes)
+            )
         half = grid_spacing_m / 2.0
         fractions = []
         for geom in pts_r.geometry:
@@ -563,8 +620,11 @@ def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
     out["crop_pct"] = np.round(frac * 100, 4)
     out["cell_ha"] = (grid_spacing_m ** 2) / 10000.0
     out["crop_ha"] = np.round(out["cell_ha"] * out["crop_frac"], 4)
+    out["crop_pt"] = np.asarray(point_crop, dtype=float)
 
-    if min_fraction <= 0:
+    if filter_basis == "point":
+        keep = out["crop_pt"].eq(1)
+    elif min_fraction <= 0:
         keep = out["crop_frac"].notna() & (out["crop_frac"] > 0)
     else:
         keep = out["crop_frac"].notna() & (out["crop_frac"] >= min_fraction)
@@ -701,6 +761,8 @@ print("All checks passed. Starting pipeline...")
 
 from dssatengine import (
     create_grid_points,
+    create_master_grid_points,
+    derive_nested_grid_points,
     load_existing_points,
     extend_weather_repeat_single_ignore_partial,
     _write_dssbatch,
@@ -732,16 +794,17 @@ if __name__ == '__main__':
         pass
     grid_identity = {"grid": RUN_PROVENANCE["grid"], "cropland": RUN_PROVENANCE["cropland"]}
 
-    if (not USE_EXISTING_POINT_SHAPEFILE and USE_CROPLAND_MASK
-            and REUSE_CROPLAND_GRID and os.path.exists(POINT_SHAPEFILE_PATH)
+    if (not USE_EXISTING_POINT_SHAPEFILE
+            and ((USE_CROPLAND_MASK and REUSE_CROPLAND_GRID)
+                 or (USE_MASTER_GRID and REUSE_MASTER_GRID))
+            and os.path.exists(POINT_SHAPEFILE_PATH)
             and recorded_grid_provenance == grid_identity):
-        print(f"Reusing existing cropland grid shapefile: {POINT_SHAPEFILE_PATH}")
+        print(f"Reusing existing derived grid: {POINT_SHAPEFILE_PATH}")
         gridfile = gpd.read_file(POINT_SHAPEFILE_PATH)
     elif USE_EXISTING_POINT_SHAPEFILE:
         print(f"Using existing point shapefile: {EXISTING_POINT_SHAPEFILE_PATH}")
         gridfile = load_existing_points(EXISTING_POINT_SHAPEFILE_PATH, POINT_SHAPEFILE_PATH)
     else:
-        print(f"Generating grid at {GRID_SPACING_METERS} m from: {BOUNDARY_SHAPEFILE_NAME}")
         BOUNDARY_SHAPEFILE_PATH = os.path.join(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
         if not os.path.exists(BOUNDARY_SHAPEFILE_PATH):
             sys.exit(f"Shapefile not found: {BOUNDARY_SHAPEFILE_PATH}")
@@ -758,7 +821,38 @@ if __name__ == '__main__':
             sys.exit("Filter resulted in 0 features.")
 
         raw_grid_path = ALL_LAND_POINT_SHAPEFILE_PATH if USE_CROPLAND_MASK else POINT_SHAPEFILE_PATH
-        gridfile = create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
+        if USE_MASTER_GRID:
+            if os.path.exists(MASTER_GRID_PATH) and REUSE_MASTER_GRID:
+                print(f"Reusing master grid: {MASTER_GRID_PATH}")
+                master_grid = gpd.read_file(MASTER_GRID_PATH)
+            else:
+                print(
+                    f"Generating {MASTER_GRID_SPACING_METERS} m master grid in "
+                    f"{MASTER_GRID_CRS}: {MASTER_GRID_PATH}"
+                )
+                master_grid = create_master_grid_points(
+                    boundary_sf,
+                    MASTER_GRID_SPACING_METERS,
+                    MASTER_GRID_PATH,
+                    grid_crs=MASTER_GRID_CRS,
+                    origin_x=MASTER_GRID_ORIGIN_X,
+                    origin_y=MASTER_GRID_ORIGIN_Y,
+                )
+            print(
+                f"Deriving exact nested {GRID_SPACING_METERS} m point subset "
+                f"from {len(master_grid)} master point(s)."
+            )
+            gridfile = derive_nested_grid_points(
+                master_grid,
+                GRID_SPACING_METERS,
+                raw_grid_path,
+                master_spacing_m=MASTER_GRID_SPACING_METERS,
+                phase_row=MASTER_GRID_PHASE_ROW,
+                phase_col=MASTER_GRID_PHASE_COL,
+            )
+        else:
+            print(f"Generating independent grid at {GRID_SPACING_METERS} m from: {BOUNDARY_SHAPEFILE_NAME}")
+            gridfile = create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
 
     if USE_CROPLAND_MASK and "crop_pct" not in gridfile.columns:
         gridfile = apply_cropland_mask(
@@ -768,6 +862,7 @@ if __name__ == '__main__':
             CROPLAND_CLASSES,
             CROPLAND_MIN_FRACTION,
             CROPLAND_STRICT,
+            CROPLAND_FILTER_BASIS,
         )
 
     if not USE_EXISTING_POINT_SHAPEFILE:
@@ -1677,9 +1772,12 @@ if __name__ == '__main__':
         os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
         if all_results:
             final_data = pd.concat(all_results, ignore_index=True)
-            crop_cols = [c for c in ["crop_frac", "crop_pct", "crop_ha", "cell_ha"] if c in gridfile.columns]
-            if crop_cols and POINT_ID_COLUMN in gridfile.columns:
-                point_attrs = gridfile[[POINT_ID_COLUMN] + crop_cols].copy()
+            point_cols = [c for c in [
+                "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
+                "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha",
+            ] if c in gridfile.columns]
+            if point_cols and POINT_ID_COLUMN in gridfile.columns:
+                point_attrs = gridfile[[POINT_ID_COLUMN] + point_cols].copy()
                 point_attrs = point_attrs.rename(columns={POINT_ID_COLUMN: "point_id"})
                 point_attrs["point_id"] = point_attrs["point_id"].astype(str)
                 final_data["point_id"] = final_data["point_id"].astype(str)

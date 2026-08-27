@@ -206,6 +206,33 @@ USE_EXISTING_POINT_SHAPEFILE  <- cfg_get("use_existing_point_shapefile", FALSE) 
 EXISTING_POINT_SHAPEFILE_PATH <- cfg_get("existing_point_shapefile_path",
                                          file.path(GRIDPOINTS_DIR, "my_points.shp"))  # MODE B/C only
 
+# Optional persistent master lattice. When enabled, every target grid is an
+# exact row/column subset of one fixed-origin master grid. FALSE preserves the
+# legacy independent point placement; existing point files remain a third mode.
+USE_MASTER_GRID <- isTRUE(as.logical(cfg_get("use_master_grid", FALSE)))
+MASTER_GRID_SPACING_METERS <- as.integer(cfg_get("master_grid_spacing_meters", 1000))
+MASTER_GRID_CRS <- as.character(cfg_get("master_grid_crs", "EPSG:6933"))
+MASTER_GRID_ORIGIN_X <- as.numeric(cfg_get("master_grid_origin_x", 0))
+MASTER_GRID_ORIGIN_Y <- as.numeric(cfg_get("master_grid_origin_y", 0))
+MASTER_GRID_PHASE_ROW <- as.integer(cfg_get("master_grid_phase_row", 0))
+MASTER_GRID_PHASE_COL <- as.integer(cfg_get("master_grid_phase_col", 0))
+MASTER_GRID_PATH_CONFIG <- trimws(as.character(cfg_get("master_grid_path", "")))
+REUSE_MASTER_GRID <- isTRUE(as.logical(cfg_get("reuse_master_grid", TRUE)))
+if (USE_MASTER_GRID && USE_EXISTING_POINT_SHAPEFILE) {
+  stop("use_master_grid and use_existing_point_shapefile are mutually exclusive; enable only one point-generation mode.",
+       call. = FALSE)
+}
+if (USE_MASTER_GRID) {
+  ratio <- GRID_SPACING_METERS / MASTER_GRID_SPACING_METERS
+  if (is.na(MASTER_GRID_SPACING_METERS) || MASTER_GRID_SPACING_METERS <= 0 ||
+      ratio < 1 || abs(ratio - round(ratio)) > 1e-9) {
+    stop(sprintf(
+      "grid_spacing_meters (%g) must be an integer multiple of master_grid_spacing_meters (%g).",
+      GRID_SPACING_METERS, MASTER_GRID_SPACING_METERS
+    ), call. = FALSE)
+  }
+}
+
 # --- 2b. Boundary settings (MODE A only — ignored when USE_EXISTING_POINT_SHAPEFILE = TRUE) ---
 # BOUNDARY_SHAPEFILE_NAME: path relative to shapefile/ folder.
 #   Default uses the US Census TIGER/Line state boundaries (download instructions in README).
@@ -233,6 +260,12 @@ CROPLAND_CLASSES <- as.integer(unlist(cfg_get("cropland_classes", c(82))))
 CROPLAND_MIN_FRACTION <- as.numeric(cfg_get("cropland_min_fraction", 0))
 CROPLAND_STRICT <- isTRUE(as.logical(cfg_get("cropland_strict", FALSE)))
 REUSE_CROPLAND_GRID <- isTRUE(as.logical(cfg_get("reuse_cropland_grid", TRUE)))
+CROPLAND_FILTER_BASIS <- tolower(trimws(as.character(cfg_get(
+  "cropland_filter_basis", "cell_fraction"
+))))
+if (!(CROPLAND_FILTER_BASIS %in% c("cell_fraction", "point"))) {
+  stop("cropland_filter_basis must be 'cell_fraction' or 'point'.", call. = FALSE)
+}
 
 # --- 2c. Auto-Names & Naming Convention ---
 if (GRID_SPACING_METERS < 1000) { 
@@ -388,6 +421,18 @@ if (USE_CROPLAND_MASK) {
 POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, CROPLAND_GRID_TAG, ".shp")
 ALL_LAND_POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
+MASTER_RESOLUTION_TAG <- if (MASTER_GRID_SPACING_METERS < 1000) {
+  paste0(MASTER_GRID_SPACING_METERS, "m")
+} else {
+  paste0(format(MASTER_GRID_SPACING_METERS / 1000, trim = TRUE, scientific = FALSE), "km")
+}
+MASTER_PROJECT_TAG <- gsub("[^A-Za-z0-9_\\-]", "_", trimws(PROJECT_NAME))
+MASTER_GRID_PATH <- if (nzchar(MASTER_GRID_PATH_CONFIG)) {
+  resolve_config_path(MASTER_GRID_PATH_CONFIG, OUTPUT_ROOT_DIR)
+} else {
+  file.path(GRIDPOINTS_OUTPUT_DIR,
+            paste0(MASTER_PROJECT_TAG, "_master_", MASTER_RESOLUTION_TAG, ".gpkg"))
+}
 
 # Run & Output Paths
 DSSAT_RUN_DIR <- file.path(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
@@ -1076,7 +1121,8 @@ resolve_optional_path <- function(path) {
 }
 
 apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
-                                min_fraction = 0, strict = FALSE) {
+                                min_fraction = 0, strict = FALSE,
+                                filter_basis = "cell_fraction") {
   fallback <- function(text) {
     if (strict) stop(text, call. = FALSE)
     message("WARNING: ", text, " Continuing with all grid cells.")
@@ -1105,6 +1151,15 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
   message(sprintf("Applying cropland mask from %s (classes: %s)", raster_file, paste(classes, collapse = ", ")))
   pts_r <- st_transform(points_sf, terra::crs(r))
   xy <- st_coordinates(pts_r)
+  point_values <- terra::extract(
+    r, terra::vect(pts_r), ID = FALSE, raw = TRUE
+  )
+  point_values <- if (ncol(point_values) >= 1L) {
+    as.numeric(point_values[, 1])
+  } else {
+    rep(NA_real_, nrow(pts_r))
+  }
+  point_crop <- ifelse(is.na(point_values), NA_real_, as.numeric(point_values %in% classes))
   half <- grid_spacing_m / 2
   frac <- vapply(seq_len(nrow(pts_r)), function(i) {
     x <- xy[i, 1]; y <- xy[i, 2]
@@ -1123,9 +1178,14 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
   out$crop_pct <- round(100 * frac, 4)
   out$cell_ha <- (grid_spacing_m^2) / 10000
   out$crop_ha <- round(out$cell_ha * frac, 4)
+  out$crop_pt <- point_crop
 
-  keep <- !is.na(out$crop_frac)
-  if (min_fraction <= 0) keep <- keep & out$crop_frac > 0 else keep <- keep & out$crop_frac >= min_fraction
+  if (filter_basis == "point") {
+    keep <- !is.na(out$crop_pt) & out$crop_pt == 1
+  } else {
+    keep <- !is.na(out$crop_frac)
+    if (min_fraction <= 0) keep <- keep & out$crop_frac > 0 else keep <- keep & out$crop_frac >= min_fraction
+  }
   kept <- sum(keep)
   message(sprintf("Cropland mask retained %d of %d grid cells (%.1f%%).",
                   kept, nrow(out), if (nrow(out) > 0) 100 * kept / nrow(out) else 0))
@@ -1148,15 +1208,29 @@ message("STEP 0: PREPARING GRIDFILE / POINTS")
 setwd(OUTPUT_ROOT_DIR)
 dir.create(GRIDPOINTS_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-if (!USE_EXISTING_POINT_SHAPEFILE && USE_CROPLAND_MASK && REUSE_CROPLAND_GRID && file.exists(POINT_SHAPEFILE_PATH)) {
-  message(sprintf("Reusing existing cropland grid shapefile: %s", POINT_SHAPEFILE_PATH))
-  gridfile <- st_read(POINT_SHAPEFILE_PATH, quiet = TRUE)
-} else if (USE_EXISTING_POINT_SHAPEFILE) {
+gridfile <- NULL
+can_reuse_derived <- !USE_EXISTING_POINT_SHAPEFILE &&
+  ((USE_CROPLAND_MASK && REUSE_CROPLAND_GRID) ||
+   (USE_MASTER_GRID && REUSE_MASTER_GRID)) && file.exists(POINT_SHAPEFILE_PATH)
+if (can_reuse_derived) {
+  candidate_grid <- st_read(POINT_SHAPEFILE_PATH, quiet = TRUE)
+  master_fields_ok <- !USE_MASTER_GRID ||
+    (all(c("MROW", "MCOL", "MSPACE_M", "SAMP_M") %in% names(candidate_grid)) &&
+     all(candidate_grid$MSPACE_M == MASTER_GRID_SPACING_METERS) &&
+     all(candidate_grid$SAMP_M == GRID_SPACING_METERS))
+  if (master_fields_ok) {
+    message(sprintf("Reusing existing derived grid: %s", POINT_SHAPEFILE_PATH))
+    gridfile <- candidate_grid
+  } else {
+    message("Existing derived grid does not match the master-grid settings; regenerating it.")
+  }
+}
+
+if (is.null(gridfile) && USE_EXISTING_POINT_SHAPEFILE) {
   message(sprintf("Using existing point shapefile: %s", EXISTING_POINT_SHAPEFILE_PATH))
   gridfile <- load_existing_points(EXISTING_POINT_SHAPEFILE_PATH, POINT_SHAPEFILE_PATH,
                                    id_col = POINT_ID_COLUMN, lat_col = LAT_COLUMN, lon_col = LONG_COLUMN)
-} else {
-  message(sprintf("Generating grid points at %sm spacing from boundary: %s", GRID_SPACING_METERS, BOUNDARY_SHAPEFILE_NAME))
+} else if (is.null(gridfile)) {
   BOUNDARY_SHAPEFILE_PATH <- file.path(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
   
   if (!file.exists(BOUNDARY_SHAPEFILE_PATH)) stop(paste("Shapefile not found at:", BOUNDARY_SHAPEFILE_PATH))
@@ -1170,7 +1244,33 @@ if (!USE_EXISTING_POINT_SHAPEFILE && USE_CROPLAND_MASK && REUSE_CROPLAND_GRID &&
     if (nrow(boundary_sf) == 0) stop("Filter resulted in 0 features.")
   }
   raw_grid_path <- if (USE_CROPLAND_MASK) ALL_LAND_POINT_SHAPEFILE_PATH else POINT_SHAPEFILE_PATH
-  gridfile <- create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
+  if (USE_MASTER_GRID) {
+    if (file.exists(MASTER_GRID_PATH) && REUSE_MASTER_GRID) {
+      message(sprintf("Reusing master grid: %s", MASTER_GRID_PATH))
+      master_grid <- st_read(MASTER_GRID_PATH, quiet = TRUE)
+    } else {
+      message(sprintf("Generating %sm master grid in %s: %s",
+                      MASTER_GRID_SPACING_METERS, MASTER_GRID_CRS, MASTER_GRID_PATH))
+      master_grid <- create_master_grid_points(
+        boundary_sf, MASTER_GRID_SPACING_METERS, MASTER_GRID_PATH,
+        grid_crs = MASTER_GRID_CRS,
+        origin_x = MASTER_GRID_ORIGIN_X,
+        origin_y = MASTER_GRID_ORIGIN_Y
+      )
+    }
+    message(sprintf("Deriving exact nested %sm point subset from %d master point(s).",
+                    GRID_SPACING_METERS, nrow(master_grid)))
+    gridfile <- derive_nested_grid_points(
+      master_grid, GRID_SPACING_METERS, raw_grid_path,
+      master_spacing_meters = MASTER_GRID_SPACING_METERS,
+      phase_row = MASTER_GRID_PHASE_ROW,
+      phase_col = MASTER_GRID_PHASE_COL
+    )
+  } else {
+    message(sprintf("Generating independent grid points at %sm spacing from boundary: %s",
+                    GRID_SPACING_METERS, BOUNDARY_SHAPEFILE_NAME))
+    gridfile <- create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
+  }
 }
 
 if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile))) {
@@ -1180,7 +1280,8 @@ if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile))) {
     grid_spacing_m = GRID_SPACING_METERS,
     classes = CROPLAND_CLASSES,
     min_fraction = CROPLAND_MIN_FRACTION,
-    strict = CROPLAND_STRICT
+    strict = CROPLAND_STRICT,
+    filter_basis = CROPLAND_FILTER_BASIS
   )
 }
 
@@ -2123,7 +2224,10 @@ if (RUN_DSSAT_EXECUTION) {
   final_data <- combine_results(all_ids)
   if (!is.null(final_data) && nrow(final_data) > 0) {
     point_attrs <- st_drop_geometry(gridfile)
-    keep_cols <- intersect(c(POINT_ID_COLUMN, "crop_frac", "crop_pct", "crop_ha", "cell_ha"), names(point_attrs))
+    keep_cols <- intersect(c(
+      POINT_ID_COLUMN, "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
+      "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha"
+    ), names(point_attrs))
     if (length(keep_cols) > 1) {
       point_attrs <- point_attrs[, keep_cols, drop = FALSE]
       names(point_attrs)[names(point_attrs) == POINT_ID_COLUMN] <- "point_id"

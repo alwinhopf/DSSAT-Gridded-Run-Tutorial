@@ -4,7 +4,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 
 ## Weather Data Sources
 
-### 1. **Open-Meteo** (Global, Free, ERA5)
+### 1. **Open-Meteo** (Global, Free, ERA5-Seamless)
 - **Coverage**: Global (all land areas)
 - **Spatial Resolution**: ~11 km (0.1°)
 - **Temporal Resolution**: Daily (1979–present)
@@ -15,7 +15,8 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Notes**: 
   - No API key or registration required
   - Fast (~1-2s per point)
-  - Backed by ERA5 reanalysis data
+  - ERA5-Land temperature/humidity combined with ERA5 forcing variables
+  - Daily mean dewpoint and relative humidity are written to `TDEW` and `RH2M`
   - Free tier suitable for research
 
 ### 2. **Daymet** (US only, Free)

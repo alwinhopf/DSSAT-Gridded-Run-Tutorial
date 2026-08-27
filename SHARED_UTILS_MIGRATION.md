@@ -190,9 +190,10 @@ weather_nasapower_chirps.R, and all Python files.
    `TDEW = TMIN - 2.5` and `RH2M = 100 - (TMAX-TMIN)*2` clamped to [20,100]. These
    are rough estimates, not measured — fine for DSSAT runs but should be documented
    so downstream users don't treat them as observations.
-2. **Open-Meteo emits TDEW=-99 and RH2M=-99** (`weather_openmeteo.R:89-90`): no
-   daily dewpoint/RH from that API. DSSAT tolerates -99, but ET methods needing RH
-   will silently degrade. Worth a note in the source's docstring (already partly noted).
+2. **Resolved:** Open-Meteo now requests daily mean dewpoint and relative
+   humidity and writes them to `TDEW` / `RH2M`. It uses the documented
+   `era5_seamless` model so the ERA5-Land temperature/humidity series is paired
+   with complete ERA5 forcing fields.
 3. **`weather_nasapower.R` has leftover "← FIX 1..4" comments** marking past
    bug fixes (unclosed blocks). Harmless but clutter — clean up during the move.
 4. **Daymet leap-year handling duplicates DOY 365 as 366** (`weather_daymet.R:73-82`)

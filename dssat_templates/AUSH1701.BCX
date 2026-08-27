@@ -21,7 +21,7 @@ Field Crops Unit, Shorter, AL
 
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000   -99   -99 DR000   -99   -99     0 SL     200     SOIL_ID Shorter 2017-2018
+ 1 00000000 WID00000   -99   -99 DR000   -99   -99     0 SL     200  SID00000   Shorter 2017-2018
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
  1        LATITUDE       LONGITUDE      ELEV               -99   -99   -99   -99   -99   -99
 !9/4/20 kjb -guessed SOM3, 82% also corresponds to the end of year IC values

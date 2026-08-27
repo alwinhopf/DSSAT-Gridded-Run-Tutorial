@@ -22,7 +22,7 @@ Quincy, FL
 
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
- 1 00000000 00000000       -99   -99   -99   -99   -99   -99 CL      80     SOIL_ID Quincy 2018-2019
+ 1 00000000 WID00000   -99   -99   -99   -99   -99   -99 CL      80  SID00000   Quincy 2018-2019
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
  1        LATITUDE       LONGITUDE      ELEV               -99   -99   -99   -99   -99   -99
 ! 1 UFQU0001 QUQU       -99   -99   -99   -99   -99   -99 CL      80  IBCN910018 Quincy 2018-2019

@@ -102,6 +102,8 @@ def _make_fake_fetch():
             # so consumers remain testable while pinned releases are migrated.
             "wind_speed_10m_max": [4.0 for _ in range(n)],
             "wind_speed_10m_mean": [3.0 for _ in range(n)],
+            "dew_point_2m_mean": [12.0 for _ in range(n)],
+            "relative_humidity_2m_mean": [70.0 for _ in range(n)],
         })
         df["YEAR"] = df["time"].dt.year
         df["MM"] = df["time"].dt.month

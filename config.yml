@@ -50,6 +50,20 @@ enable_boundary_filter:  true
 boundary_filter_column:  "NAME"
 state_name_filter:    ["Iowa"]       # list; matched against boundary_filter_column
 
+# --- Optional nested master-grid sampling ---
+# false keeps the legacy behavior, where every requested spacing is generated
+# independently. true creates/reuses one fixed-origin master lattice and derives
+# exact nested subsets; target grid_spacing_meters must be an integer multiple.
+use_master_grid:              false
+master_grid_spacing_meters:   1000
+master_grid_crs:              "EPSG:6933"  # global equal-area; use EPSG:5070 for CONUS studies
+master_grid_origin_x:         0
+master_grid_origin_y:         0
+master_grid_phase_row:        0
+master_grid_phase_col:        0
+master_grid_path:             ""      # blank = <gridpoints>/<project>_master_<spacing>.gpkg
+reuse_master_grid:            true
+
 # --- Optional cropland mask ---
 # Prototype workflow for running only on cropland. When enabled, the pipeline
 # computes the cropland fraction for each generated grid cell from a local
@@ -61,6 +75,7 @@ cropland_classes:       [82]         # NLCD class 82 = cultivated crops
 cropland_min_fraction:  0            # 0 means keep cells with >0 cropland
 cropland_strict:        false        # true = stop if raster/dependency is missing
 reuse_cropland_grid:    true         # reuse saved cropland grid for same project/res/classes/threshold
+cropland_filter_basis:  "cell_fraction" # cell_fraction (legacy) or point (strict nested membership)
 
 # --- Weather ---
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)

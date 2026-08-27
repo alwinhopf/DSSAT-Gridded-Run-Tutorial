@@ -455,6 +455,43 @@ state_name_filter: ["Montana"]
 grid_spacing_meters: 50000  # 50 km fast demo; 5000 for production
 ```
 
+For resolution experiments, Mode A can optionally use a persistent nested
+master lattice instead of independently placing every grid:
+
+```yaml
+use_existing_point_shapefile: false
+use_master_grid: true
+master_grid_spacing_meters: 1000
+master_grid_crs: "EPSG:5070"  # CONUS; EPSG:6933 is the global default
+master_grid_origin_x: 0
+master_grid_origin_y: 0
+master_grid_phase_row: 0
+master_grid_phase_col: 0
+master_grid_path: ""           # automatic GeoPackage under gridpoints/
+reuse_master_grid: true
+grid_spacing_meters: 100000    # must be an integer multiple of 1000
+```
+
+The master GeoPackage is generated once. Every target grid selects rows and
+columns at an integer stride, so coarse point IDs and coordinates are retained
+in all compatible finer grids. Generated point files include `MROW`, `MCOL`,
+`MSPACE_M`, `SAMP_M`, and `NEST_F` for auditing; these fields are also carried
+into combined simulation results. Set `use_master_grid: false`
+to restore the original independent placement. `use_master_grid` and
+`use_existing_point_shapefile` are mutually exclusive.
+
+The nested lattice controls sampling locations; it does not change the native
+resolution of weather or soil products. When cropland filtering is active, the
+pipeline still calculates cropland support at each target cell spacing after
+the nested points have been selected. Two requested levels are strict subsets
+of one another only when the coarser spacing is an integer multiple of the
+finer spacing; otherwise they remain separate branches of the same master.
+For strict post-filter nesting, set `cropland_filter_basis: "point"`; membership
+then depends on the land-cover pixel at the shared point while target-cell
+fractions and hectares remain available as weights. The legacy
+`"cell_fraction"` basis can retain a coarse cell because it contains cropland
+even when its anchor is not cropland, so filtered membership may differ by level.
+
 ---
 
 ### Mode B — Your own shapefile
@@ -676,7 +713,7 @@ Set `weather_source` in `config.yml`.
 | `DAYMET` | North America | ~1 km daily | Best choice for US simulations; uses the `daymetr` package |
 | `NASA_POWER` | Global | ~0.5° daily | Recommended for international runs; outputs real wind speed (`WS2M`) at `WNDHT = 2.0` m |
 | `GRIDMET` | Contiguous US | ~4 km daily | High spatial resolution for US; requires `terra`, `ncdf4`, and `httr` |
-| `OPEN_METEO` | Global (1940–present) | ~9–11 km daily (ERA5/ERA5-Land) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Daily dewpoint and RH are not available (written as `-99`). Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
+| `OPEN_METEO` | Global (1940–present) | ~9–11 km temperature/humidity plus ERA5 forcing (ERA5-Seamless) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Writes API daily mean dewpoint and relative humidity to `TDEW` / `RH2M`; ERA5 supplies radiation, precipitation, and wind. Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
 | `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
 | `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the dataset licence once (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python, install `dssatutils[cds]`) / `ecmwfr`+`terra` (R). |
 | `CHELSA_W5E5` | Global (1979–2016) | 30 arcsec (~1 km) daily | Topographically downscaled daily climate forcing. Requires local NetCDFs (`chelsa_nc_dir`) with `tasmax`, `tasmin`, `pr`, and `rsds`. |

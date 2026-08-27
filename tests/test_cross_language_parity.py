@@ -114,6 +114,7 @@ def test_cropland_mask_config_and_outputs_are_aligned():
         "cropland_classes",
         "cropland_min_fraction",
         "cropland_strict",
+        "cropland_filter_basis",
         "crop_frac",
         "crop_pct",
         "crop_ha",
@@ -128,8 +129,30 @@ def test_cropland_mask_config_and_outputs_are_aligned():
         assert marker in r_src
         assert marker in py_src
 
-    for marker in markers[:5]:
+    for marker in markers[:6]:
         assert marker in cfg
+
+
+def test_optional_master_grid_mode_is_aligned():
+    r_src = _read(ROOT / "dssat_main_pipeline.R")
+    py_src = _read(ROOT / "dssat_main_pipeline.py")
+    cfg = _read(ROOT / "config.yml")
+    engine_r = _dependency_path("dssatengine", "R", "engine.R")
+    engine_py = _dependency_path("dssatengine", "python", "dssatengine", "engine.py")
+    _require_sources(engine_r, engine_py)
+
+    settings = (
+        "use_master_grid", "master_grid_spacing_meters", "master_grid_crs",
+        "master_grid_origin_x", "master_grid_origin_y", "master_grid_phase_row",
+        "master_grid_phase_col", "master_grid_path", "reuse_master_grid",
+    )
+    for setting in settings:
+        assert setting in r_src
+        assert setting in py_src
+        assert setting in cfg
+    for source in (r_src, py_src, _read(engine_r), _read(engine_py)):
+        assert "create_master_grid_points" in source
+        assert "derive_nested_grid_points" in source
 
 
 def _config_keys_used(path: Path) -> set[str]:
