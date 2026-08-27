@@ -15,7 +15,7 @@ env:
   # some Linux runners. This exact follow-up commit serializes validation and
   # honors n_cores while retaining package version 0.4.0.
   DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
-  DSSATENGINE_REF: '2280b11977ad373b9ae19d2d4497e8f276f7b133'
+  DSSATENGINE_REF: '7c6777ccefb9db38d2e3981ed9711b9c0ce58f6e'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.
