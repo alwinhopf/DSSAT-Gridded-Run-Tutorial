@@ -318,7 +318,16 @@ GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR   = os.path.join(OUTPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "agera5_netcdf_cache")
-AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 4))
+AGERA5_BACKEND = str(cfg_get("agera5_backend", "gridded")).strip().lower()
+if AGERA5_BACKEND not in ("gridded", "timeseries"):
+    sys.exit("agera5_backend must be 'gridded' or 'timeseries'.")
+AGERA5_DATA_FORMAT = str(cfg_get("agera5_data_format", "csv")).strip().lower()
+AGERA5_TIMESERIES_CHUNK_DEGREES = float(cfg_get("agera5_timeseries_chunk_degrees", 4.5))
+if AGERA5_TIMESERIES_CHUNK_DEGREES <= 0:
+    sys.exit("agera5_timeseries_chunk_degrees must be a positive number.")
+AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 1))
+if AGERA5_MAX_CONCURRENT_REQUESTS < 1:
+    sys.exit("agera5_max_concurrent_requests must be at least 1.")
 DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR        = os.path.join(OUTPUT_ROOT_DIR, "eobs_cds_cache")
 GRIDPOINTS_OUTPUT_DIR = GRIDPOINTS_DIR
@@ -1124,9 +1133,14 @@ if __name__ == '__main__':
                     chirps_gee_project=CHIRPS_GEE_PROJECT,
                 )
             elif WEATHER_SOURCE == "AGERA5":
-                agera5_args = dict(common_args)
-                agera5_args["n_cores"] = AGERA5_MAX_CONCURRENT_REQUESTS
-                process_weather_agera5(**agera5_args, agera5_cache_dir=AGERA5_CACHE_DIR)
+                process_weather_agera5(
+                    **common_args,
+                    agera5_cache_dir=AGERA5_CACHE_DIR,
+                    agera5_backend=AGERA5_BACKEND,
+                    agera5_data_format=AGERA5_DATA_FORMAT,
+                    agera5_timeseries_chunk_degrees=AGERA5_TIMESERIES_CHUNK_DEGREES,
+                    agera5_max_concurrent_requests=AGERA5_MAX_CONCURRENT_REQUESTS,
+                )
             elif WEATHER_SOURCE == "DWD":
                 process_weather_dwd(**common_args, dwd_cache_dir=DWD_CACHE_DIR)
             elif WEATHER_SOURCE == "EOBS":

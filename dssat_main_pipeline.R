@@ -405,7 +405,19 @@ GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
-AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
+AGERA5_BACKEND <- tolower(as.character(cfg_get("agera5_backend", "gridded")))
+if (!AGERA5_BACKEND %in% c("gridded", "timeseries")) {
+  stop("agera5_backend must be 'gridded' or 'timeseries'.")
+}
+AGERA5_DATA_FORMAT <- tolower(as.character(cfg_get("agera5_data_format", "csv")))
+AGERA5_TIMESERIES_CHUNK_DEGREES <- as.numeric(cfg_get("agera5_timeseries_chunk_degrees", 4.5))
+if (!is.finite(AGERA5_TIMESERIES_CHUNK_DEGREES) || AGERA5_TIMESERIES_CHUNK_DEGREES <= 0) {
+  stop("agera5_timeseries_chunk_degrees must be a positive number.")
+}
+AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 1))
+if (is.na(AGERA5_MAX_CONCURRENT_REQUESTS) || AGERA5_MAX_CONCURRENT_REQUESTS < 1L) {
+  stop("agera5_max_concurrent_requests must be at least 1.")
+}
 DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
 
@@ -1619,9 +1631,13 @@ if (RUN_STEP_2_WEATHER) {
       }
       else if (WEATHER_SOURCE == "AGERA5")
         {
-          agera5_args <- common_args
-          agera5_args$n_cores <- AGERA5_MAX_CONCURRENT_REQUESTS
-          do.call(process_weather_agera5, c(agera5_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+          do.call(process_weather_agera5, c(common_args, list(
+            agera5_cache_dir = AGERA5_CACHE_DIR,
+            agera5_backend = AGERA5_BACKEND,
+            agera5_data_format = AGERA5_DATA_FORMAT,
+            agera5_timeseries_chunk_degrees = AGERA5_TIMESERIES_CHUNK_DEGREES,
+            agera5_max_concurrent_requests = AGERA5_MAX_CONCURRENT_REQUESTS
+          )))
         }
       else if (WEATHER_SOURCE == "DWD")
         do.call(process_weather_dwd, c(common_args, list(dwd_cache_dir = DWD_CACHE_DIR)))
