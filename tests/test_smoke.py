@@ -49,6 +49,19 @@ def test_config_loader_weather_source():
     assert isinstance(ws, str) and ws
 
 
+def test_agera5_compact_cache_defaults_and_engine_plumbing():
+    from config_loader import cfg_get
+
+    assert cfg_get("agera5_backend", None) == "timeseries"
+    assert cfg_get("agera5_data_format", None) == "csv"
+    assert float(cfg_get("agera5_timeseries_chunk_degrees", -1)) == 0.1
+    for driver in ("dssat_main_pipeline.R", "dssat_main_pipeline.py"):
+        text = open(os.path.join(_REPO, driver), encoding="utf-8").read()
+        assert "agera5_backend" in text
+        assert "agera5_data_format" in text
+        assert "agera5_timeseries_chunk_degrees" in text
+
+
 def test_module_imports():
     # These may pull optional heavy deps at import time; skip if absent.
     optional_modules = {"dssatutils.weather_gridmet",          # xarray

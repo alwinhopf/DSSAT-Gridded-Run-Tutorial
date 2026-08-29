@@ -235,6 +235,8 @@ BOUNDARY_FILTER_VALUE = STATE_NAME_FILTER
 WEATHER_SOURCE     = cfg_get("weather_source", "GRIDMET")   # DAYMET | NASA_POWER | GRIDMET | OPEN_METEO | NASA_POWER_CHIRPS | NASA_POWER_CHIRPS_V3
 WEATHER_START_YEAR = int(cfg_get("weather_start_year", 1982))
 WEATHER_END_YEAR   = int(cfg_get("weather_end_year", 1983))
+CHECK_WEATHER_DOWNLOADS = bool(cfg_get("check_weather_downloads", False))
+WEATHER_DOWNLOAD_RETRIES = max(1, int(cfg_get("weather_download_retries", 3)))
 # NASA_POWER_CHIRPS only: CHIRPS rainfall resolution "p25" (~28 km, default)
 # or "p05" (~5.5 km, much larger download).
 CHIRPS_RESOLUTION  = str(cfg_get("chirps_resolution", "p25"))
@@ -317,8 +319,11 @@ DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR   = os.path.join(OUTPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
-AGERA5_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "agera5_netcdf_cache")
+AGERA5_CACHE_DIR      = os.path.join(INPUT_ROOT_DIR, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 4))
+AGERA5_BACKEND = str(cfg_get("agera5_backend", "timeseries"))
+AGERA5_DATA_FORMAT = str(cfg_get("agera5_data_format", "csv"))
+AGERA5_TIMESERIES_CHUNK_DEGREES = float(cfg_get("agera5_timeseries_chunk_degrees", 0.1))
 DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR        = os.path.join(OUTPUT_ROOT_DIR, "eobs_cds_cache")
 GRIDPOINTS_OUTPUT_DIR = GRIDPOINTS_DIR
@@ -676,6 +681,7 @@ from dssatutils.weather_openmeteo     import process_weather_openmeteo
 from dssatutils.weather_nasapower_chirps import process_weather_nasapower_chirps
 from dssatutils.weather_chirps_v3     import process_weather_nasapower_chirps_v3
 from dssatutils.weather_agera5        import process_weather_agera5
+from dssatutils.weather_validation    import is_wth_valid
 from dssatutils.weather_dwd           import process_weather_dwd
 from dssatutils.weather_eobs          import process_weather_eobs
 from dssatutils.weather_xavier        import process_weather_xavier
@@ -1072,18 +1078,32 @@ if __name__ == '__main__':
         os.makedirs(WEATHER_ROOT_DIR, exist_ok=True)
         os.makedirs(weather_dir, exist_ok=True)
 
-        existing_wth      = {os.path.splitext(f)[0]
-                             for f in os.listdir(weather_dir) if f.endswith(".WTH")}
-        missing_mask      = ~gridfile[POINT_ID_COLUMN].astype(str).isin(existing_wth)
-        points_to_process = gridfile[missing_mask].reset_index(drop=True)
-
-        if points_to_process.empty:
-            print("All weather files already exist. Skipping processing.")
+        weather_ids = gridfile[POINT_ID_COLUMN].astype(str)
+        if CHECK_WEATHER_DOWNLOADS:
+            print("Verifying existing weather files for validity...")
+            valid_mask = weather_ids.map(
+                lambda pid: is_wth_valid(
+                    os.path.join(weather_dir, f"{pid}.WTH"), WEATHER_END_YEAR
+                )
+            )
+            invalid_existing = [
+                pid for pid, valid in zip(weather_ids, valid_mask)
+                if not valid and os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
+            ]
+            for pid in invalid_existing:
+                os.remove(os.path.join(weather_dir, f"{pid}.WTH"))
+            if invalid_existing:
+                print(f"Deleted {len(invalid_existing)} invalid existing weather file(s).")
+            points_to_process = gridfile.loc[~valid_mask].reset_index(drop=True)
         else:
-            print(f"Resuming: Processing {len(points_to_process)} remaining points...")
+            existing_wth = {os.path.splitext(f)[0]
+                            for f in os.listdir(weather_dir) if f.endswith(".WTH")}
+            points_to_process = gridfile.loc[~weather_ids.isin(existing_wth)].reset_index(drop=True)
+
+        def process_weather_points(points):
             log_file    = os.path.join(weather_dir, "download_errors.log")
             common_args = dict(
-                shapefile=points_to_process,
+                shapefile=points,
                 start_year=WEATHER_START_YEAR,
                 end_year=WEATHER_END_YEAR,
                 output_dir=weather_dir,
@@ -1126,7 +1146,13 @@ if __name__ == '__main__':
             elif WEATHER_SOURCE == "AGERA5":
                 agera5_args = dict(common_args)
                 agera5_args["n_cores"] = AGERA5_MAX_CONCURRENT_REQUESTS
-                process_weather_agera5(**agera5_args, agera5_cache_dir=AGERA5_CACHE_DIR)
+                process_weather_agera5(
+                    **agera5_args,
+                    agera5_cache_dir=AGERA5_CACHE_DIR,
+                    agera5_backend=AGERA5_BACKEND,
+                    agera5_data_format=AGERA5_DATA_FORMAT,
+                    agera5_timeseries_chunk_degrees=AGERA5_TIMESERIES_CHUNK_DEGREES,
+                )
             elif WEATHER_SOURCE == "DWD":
                 process_weather_dwd(**common_args, dwd_cache_dir=DWD_CACHE_DIR)
             elif WEATHER_SOURCE == "EOBS":
@@ -1160,6 +1186,48 @@ if __name__ == '__main__':
                 process_weather_terraclimate(**common_args, terraclimate_nc_dir=TERRACLIMATE_NC_DIR)
             else:
                 sys.exit(f"Unknown WEATHER_SOURCE: {WEATHER_SOURCE}")
+
+        if points_to_process.empty:
+            print("All weather files already exist and are valid. Skipping processing.")
+        else:
+            attempt = 0
+            while not points_to_process.empty and attempt < WEATHER_DOWNLOAD_RETRIES:
+                if attempt:
+                    print(
+                        f"Retry {attempt}/{WEATHER_DOWNLOAD_RETRIES}: Downloading "
+                        f"{len(points_to_process)} failed/incomplete weather points..."
+                    )
+                else:
+                    print(f"Processing {len(points_to_process)} weather points...")
+                process_weather_points(points_to_process)
+                attempt += 1
+                pending_ids = points_to_process[POINT_ID_COLUMN].astype(str)
+                if CHECK_WEATHER_DOWNLOADS:
+                    valid = pending_ids.map(
+                        lambda pid: is_wth_valid(
+                            os.path.join(weather_dir, f"{pid}.WTH"), WEATHER_END_YEAR
+                        )
+                    )
+                else:
+                    valid = pending_ids.map(
+                        lambda pid: os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
+                    )
+                points_to_process = points_to_process.loc[~valid.to_numpy()].reset_index(drop=True)
+                if (CHECK_WEATHER_DOWNLOADS and not points_to_process.empty
+                        and attempt < WEATHER_DOWNLOAD_RETRIES):
+                    # Provider writers skip existing output paths. Delete only
+                    # files that failed validation so the next retry genuinely
+                    # downloads/regenerates them instead of becoming a no-op.
+                    for pid in points_to_process[POINT_ID_COLUMN].astype(str):
+                        invalid_path = os.path.join(weather_dir, f"{pid}.WTH")
+                        if os.path.exists(invalid_path):
+                            os.remove(invalid_path)
+            if not points_to_process.empty:
+                print(
+                    f"WARNING: Failed to produce valid weather data for "
+                    f"{len(points_to_process)} point(s) after "
+                    f"{WEATHER_DOWNLOAD_RETRIES} attempt(s)."
+                )
 
     if REPAIR_WEATHER_MISSING_VALUES:
         if os.path.isdir(weather_dir):
@@ -1634,6 +1702,15 @@ if __name__ == '__main__':
                 return f"{os.path.basename(f)} is missing"
             if os.path.getsize(f) == 0:
                 return f"{os.path.basename(f)} is empty"
+            if not is_wth_valid(
+                f,
+                WEATHER_END_YEAR,
+                required_columns=("SRAD", "TMAX", "TMIN", "RAIN"),
+            ):
+                return (
+                    f"{os.path.basename(f)} has missing or invalid core forcing "
+                    "(SRAD/TMAX/TMIN/RAIN)"
+                )
             return None
 
         def clear_run_diagnostics(ids_list: list[str]) -> None:

@@ -406,6 +406,9 @@ CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
+AGERA5_BACKEND <- as.character(cfg_get("agera5_backend", "timeseries"))
+AGERA5_DATA_FORMAT <- as.character(cfg_get("agera5_data_format", "csv"))
+AGERA5_TIMESERIES_CHUNK_DEGREES <- as.numeric(cfg_get("agera5_timeseries_chunk_degrees", 0.1))
 DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
 
@@ -822,31 +825,7 @@ delete_numbered_folders <- function(ids) {
 
 # --- Helper: Validate Weather File ---
 is_wth_valid <- function(id, dir, end_yr) {
-  f <- file.path(dir, paste0(id, ".WTH"))
-  if (!file.exists(f)) return(FALSE)
-  if (file.info(f)$size == 0) return(FALSE)
-  
-  tryCatch({
-    lines <- readLines(f, warn = FALSE, encoding = "UTF-8")
-    if (length(lines) == 0) return(FALSE)
-    data_lines <- grep("^\\s*[0-9]{5,7}\\b", lines, value = TRUE)
-    if (length(data_lines) == 0) return(FALSE)
-    fields <- strsplit(trimws(data_lines), "\\s+")
-    if (any(vapply(fields, length, integer(1)) != 8L)) return(FALSE)
-    numeric_values <- suppressWarnings(lapply(fields, function(x) as.numeric(x[-1])))
-    if (any(vapply(numeric_values, function(x) any(is.na(x) | !is.finite(x)), logical(1)))) return(FALSE)
-    last_line <- tail(data_lines, 1)
-    last_date_str <- regmatches(last_line, regexpr("^\\s*\\d+", last_line))
-    if (length(last_date_str) == 0) return(FALSE)
-    last_date_num <- as.numeric(last_date_str)
-    if (last_date_num > 99999) {
-      last_year <- floor(last_date_num / 1000)
-    } else {
-      yr_short <- floor(last_date_num / 1000)
-      last_year <- ifelse(yr_short < 80, 2000 + yr_short, 1900 + yr_short)
-    }
-    return(last_year >= end_yr)
-  }, error = function(e) FALSE)
+  dssatutils::is_wth_valid(file.path(dir, paste0(id, ".WTH")), end_year = end_yr)
 }
 
 # --- Helper: Clean Invalid Soil Files ---
@@ -918,6 +897,13 @@ weather_input_issue <- function(id) {
   f <- file.path(id, paste0(id, ".WTH"))
   if (!file.exists(f)) return(paste0(basename(f), " is missing"))
   if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
+  if (!dssatutils::is_wth_valid(
+    f,
+    end_year = WEATHER_END_YEAR,
+    required_columns = c("SRAD", "TMAX", "TMIN", "RAIN")
+  )) {
+    return(paste0(basename(f), " has missing or invalid core forcing (SRAD/TMAX/TMIN/RAIN)"))
+  }
   NULL
 }
 
@@ -1621,7 +1607,12 @@ if (RUN_STEP_2_WEATHER) {
         {
           agera5_args <- common_args
           agera5_args$n_cores <- AGERA5_MAX_CONCURRENT_REQUESTS
-          do.call(process_weather_agera5, c(agera5_args, list(agera5_cache_dir = AGERA5_CACHE_DIR)))
+          do.call(process_weather_agera5, c(agera5_args, list(
+            agera5_cache_dir = AGERA5_CACHE_DIR,
+            agera5_backend = AGERA5_BACKEND,
+            agera5_data_format = AGERA5_DATA_FORMAT,
+            agera5_timeseries_chunk_degrees = AGERA5_TIMESERIES_CHUNK_DEGREES
+          )))
         }
       else if (WEATHER_SOURCE == "DWD")
         do.call(process_weather_dwd, c(common_args, list(dwd_cache_dir = DWD_CACHE_DIR)))
@@ -1658,6 +1649,16 @@ if (RUN_STEP_2_WEATHER) {
         ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
         valid_mask <- vapply(ids_left, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
         points_to_process <- points_to_process[!valid_mask, ]
+
+        # Provider writers deliberately skip an existing path. Remove only the
+        # files that just failed validation before another attempt; otherwise
+        # every advertised retry is a no-op against the same invalid cache.
+        if (nrow(points_to_process) > 0 && retry_count < max_retries) {
+          retry_ids <- as.character(points_to_process[[POINT_ID_COLUMN]])
+          retry_paths <- file.path(output_dir, paste0(retry_ids, ".WTH"))
+          retry_paths <- retry_paths[file.exists(retry_paths)]
+          if (length(retry_paths) > 0) unlink(retry_paths, force = TRUE)
+        }
       } else {
         # No deep validity check requested — still confirm the .WTH files now
         # exist on disk, so points that downloaded fine are cleared from the
@@ -2166,7 +2167,14 @@ if (RUN_DSSAT_EXECUTION) {
         points_df = points
       )
       if (length(TREATMENT_LIST)) args$treatment_list <- TREATMENT_LIST
-      do.call(dssatengine::run_simulation, args)
+      tryCatch(
+        do.call(dssatengine::run_simulation, args),
+        error = function(e) {
+          # run_simulation already records the full cause in the point folder.
+          # Returning NULL keeps one bad cell from aborting every other worker.
+          NULL
+        }
+      )
     }
     clusterExport(cl, c("DSSAT_RUN_DIR", "CROP_EXTENSION", "TEMPLATE_FILE_NAME",
                         "TEMPLATE_FILE_PATH", "RUN_MODE", "TREATMENT_START",

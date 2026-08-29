@@ -241,6 +241,17 @@ def test_resume_provenance_hashes_resolved_model_inputs_in_both_languages():
         assert token in r_source
 
 
+def test_invalid_weather_retries_replace_files_and_point_failures_are_isolated():
+    """A failed cache or DSSAT cell must not turn parallel work into a no-op."""
+    python_source = _read(ROOT / "dssat_main_pipeline.py")
+    r_source = _read(ROOT / "dssat_main_pipeline.R")
+
+    assert "os.remove(invalid_path)" in python_source
+    assert "unlink(retry_paths, force = TRUE)" in r_source
+    assert "except Exception as exc:" in python_source
+    assert "Returning NULL keeps one bad cell" in r_source
+
+
 def test_python_override_yaml_is_merged_over_central_defaults(tmp_path):
     override = tmp_path / "study.yml"
     override.write_text("project_name: override_study\nweather_start_year: 2001\n", encoding="utf-8")

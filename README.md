@@ -715,7 +715,7 @@ Set `weather_source` in `config.yml`.
 | `GRIDMET` | Contiguous US | ~4 km daily | High spatial resolution for US; requires `terra`, `ncdf4`, and `httr` |
 | `OPEN_METEO` | Global (1940–present) | ~9–11 km temperature/humidity plus ERA5 forcing (ERA5-Seamless) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Writes API daily mean dewpoint and relative humidity to `TDEW` / `RH2M`; ERA5 supplies radiation, precipitation, and wind. Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
 | `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
-| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the dataset licence once (see below). Requests are queued server-side; downloads cached. Requires `cdsapi`+`xarray` (Python, install `dssatutils[cds]`) / `ecmwfr`+`terra` (R). |
+| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). The default `timeseries` backend caches compact all-variable CSVs on globally anchored AgERA5 cells; `gridded` retains the legacy daily-NetCDF ZIP path. **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the dataset licence once (see below). Requires `cdsapi` (Python) / `ecmwfr` (R). |
 | `CHELSA_W5E5` | Global (1979–2016) | 30 arcsec (~1 km) daily | Topographically downscaled daily climate forcing. Requires local NetCDFs (`chelsa_nc_dir`) with `tasmax`, `tasmin`, `pr`, and `rsds`. |
 | `AGMERRA` / `AGCFSR` | Global (1980–2010) | 0.25° daily | AgMIP-standard historical climate forcing for benchmark/intercomparison studies. Requires local NetCDFs (`agmerra_nc_dir` / `agcfsr_nc_dir`). |
 | `SILO` | Australia (1889–present) | Australian gridded daily | Australian regional weather source. Requires local SILO NetCDFs via `silo_nc_dir`. |
@@ -752,6 +752,21 @@ Then install the CDS client dependency (`pip install "dssatutils[cds] ..."` for
 Python, `install.packages("ecmwfr")` for R) and set the desired weather source.
 Requests are queued server-side, so the first run for a new area/period can take
 minutes; downloads are cached under the source cache directory.
+
+AgERA5 cache behavior is configured in this repository's `config.yml`:
+
+```yaml
+agera5_backend: "timeseries"         # recommended; use "gridded" only for the legacy ZIP workflow
+agera5_data_format: "csv"
+agera5_timeseries_chunk_degrees: 0.1  # one globally reusable AgERA5 cell per cache key
+agera5_max_concurrent_requests: 4
+```
+
+`0.1` minimizes transfer and disk use for sparse crop-model points. A larger
+chunk groups neighboring cells into fixed globally aligned tiles, reducing the
+number of CDS requests while downloading more cells. Both the R and Python
+pipelines use the shared cache at `agera5_netcdf_cache/` under the engine input
+root.
 
 ---
 
@@ -1254,12 +1269,11 @@ configuration plumbing and derived values; all user-facing knobs belong in
 ### R/Python parity note
 
 Both pipelines consume the same merged YAML and run the same engine contract.
-Two internal optimizations remain implementation-specific: Python can opt into
-symlinked support files with `use_symlinks`, while R currently copies them; R
-currently exposes pipeline-level download validation/retry switches, while
-Python relies on provider logging plus pre-run input validation. These do not
-change scientific output schemas. Keep `use_symlinks: false` for identical,
-portable run-folder contents.
+One internal optimization remains implementation-specific: Python can opt into
+symlinked support files with `use_symlinks`, while R currently copies them.
+Download validation/retry and per-point DSSAT failure isolation are matched in
+both drivers and do not change scientific output schemas. Keep
+`use_symlinks: false` for identical, portable run-folder contents.
 
 ### Running non-interactively (command line)
 
@@ -1569,6 +1583,7 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 | `No .SQX file found` (MPI runner) | MPI runner expects `.SQX`; you have a `.MZX` | Switch to a `.SQX` template or extend the runner to support seasonal FileX |
 | `DSSAT completed but no parsable outputs` | `summary.csv` missing or empty | Rerun with `--cleanup_mode never`; inspect `*.LST` / `LUN.LST`; ensure template writes CSV outputs |
 | `No data returned from NASA-POWER` | Point is over ocean or invalid coordinates | Filter out water pixels before running or use Mode C |
+| NASA POWER reports a missing weather day/value | The provider has a missing forcing value for that cell/date | Keep `check_weather_downloads: true`; invalid cached files are removed before each genuine retry. Before DSSAT starts, core forcing (`SRAD`, `TMAX`, `TMIN`, `RAIN`) is checked strictly; if the provider remains incomplete, that point is logged and omitted without aborting the others. Enable the optional short-gap repair only when interpolation is appropriate for the study. |
 | Weather download stalls or rate-limit errors | Too many parallel requests | Set `weather_cores: 1`; SoilGrids REST back-off retry handles 429 errors automatically |
 | Soil processing skips many points | Critical data (sand/clay/BD) is NA | Check `soil_processing_errors.log` in the soil output folder; consider switching soil source |
 | Soil ID mismatch in DSSAT log | Placeholder `SOIL_ID` not replaced | Check `template_soil_id_placeholder` in `config.yml`; confirm the placeholder string is in your template |
@@ -1583,7 +1598,8 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 ## Performance tips
 
 - **Tiny run folders (default):** when `DSSATPRO.V48` sits next to the DSSAT executable, the pipeline lets DSSAT resolve genotype/species/SDA/CO₂ files from the install directory instead of copying ~27 files into every point folder. Each folder then holds just the 4–5 essential files (`.WTH`, `SOIL.SOL`, FileX, `DSSBatch.V48`, `DSSATPRO.V48`). On a 10,000-point grid that's ~270,000 fewer files — a large saving on shared filesystems (Lustre/GPFS/NFS) where metadata ops dominate. Set `bundle_genotype_files: true` (auto-forced by `ZIP_FOR_HPC`) only when you need self-contained folders to ship to a host whose `DSSATPRO` doesn't match.
-- **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap. All `.WTH`/`.SOL` writes are skipped if the file already exists, so re-runs resume cheaply.
+- **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap and keys cache entries by geographic area. With `check_weather_downloads: true`, both drivers validate fixed-width DSSAT rows, consecutive dates, and plausible forcing before reuse; an invalid output is removed before each of up to `weather_download_retries` genuine regeneration attempts.
+- **Point failures stay local:** a DSSAT error at one grid cell is recorded in that point's `_run_error.log`; the remaining cells continue and are combined. The parent summary reports every omitted point ID so partial spatial coverage remains explicit.
 - Use **scratch storage** (fast local SSD or parallel filesystem) for `base_dir` — DSSAT creates many small files per run.
 - Use `--cleanup_mode always` in production to remove transient DSSAT files after each point.
 - Always **debug with a single point** first (`dssat_cores: 1`).

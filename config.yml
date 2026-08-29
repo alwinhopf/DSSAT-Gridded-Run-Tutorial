@@ -98,6 +98,9 @@ chirps_v3_resolution: "p05"          # NASA_POWER_CHIRPS_V3 only: currently p05 
 chirps_v3_months:     []             # NASA_POWER_CHIRPS_V3 only: [] = all months; e.g. [10,11,12,1,2,3,4] to limit downloads
 chirps_gee_project:   ""             # GEE mode only: Google Earth Engine project ID
 chirps_download_timeout: null         # seconds; null = dssatutils package default
+agera5_backend: "timeseries"         # recommended: compact point/small-area time series | gridded: legacy daily-NetCDF ZIPs
+agera5_data_format: "csv"             # time-series backend currently supports csv
+agera5_timeseries_chunk_degrees: 0.1  # 0.1 = reusable AgERA5-cell cache; larger fixed tiles reduce request count but download more cells
 agera5_max_concurrent_requests: 4    # AgERA5 only: concurrent CDS requests; 4 is a conservative max
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
 eobs_use_cds:         false          # EOBS only: true = fetch via Copernicus CDS; run setup_cds_credentials() once
