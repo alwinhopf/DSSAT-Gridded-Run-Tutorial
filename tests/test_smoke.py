@@ -60,6 +60,8 @@ def test_agera5_compact_cache_defaults_and_engine_plumbing():
         assert "agera5_backend" in text
         assert "agera5_data_format" in text
         assert "agera5_timeseries_chunk_degrees" in text
+        assert "weather_required_columns" in text
+        assert all(column in text for column in ("TDEW", "RH2M", "WIND"))
 
 
 def test_module_imports():
@@ -96,6 +98,67 @@ def test_mpi_runner_help_without_mpi_runtime():
     assert result.returncode == 0, result.stderr
     assert "--base_dir" in result.stdout
     assert "--merge_mode" in result.stdout
+
+
+def test_carinata_rotation_nitrogen_management():
+    """The 80-treatment template must keep labels and actual N factors aligned."""
+    template = os.path.join(_REPO, "dssat_templates", "CARINATA1984.SQX")
+    lines = open(template, encoding="utf-8").read().splitlines()
+
+    start = next(i for i, line in enumerate(lines) if line.startswith("*TREATMENTS")) + 2
+    end = next(i for i in range(start, len(lines)) if lines[i].startswith("*CULTIVARS"))
+    treatment_rows = [line for line in lines[start:end] if line and line[0] != "@"]
+    assert len(treatment_rows) == 80 * 6
+
+    simulation_options = {}
+    for i, line in enumerate(lines[:-1]):
+        if line.startswith("@N OPTIONS"):
+            fields = lines[i + 1].split()
+            simulation_options[int(fields[0])] = fields
+
+    carinata_factors = {"150N": 6, "100N": 4, "50N": 2, "0N": 0}
+    for line in treatment_rows:
+        fertilizer_factor = int(line[52:55])
+        if "Corn" in line:
+            assert "200N" in line and fertilizer_factor == 7
+        elif "Cotton" in line:
+            assert "120N" in line and fertilizer_factor == 5
+        elif "Soybean" in line or "Peanut" in line:
+            assert "  0N" in line and fertilizer_factor == 0
+            simulation_factor = int(line[70:73])
+            assert simulation_options[simulation_factor][4] == "Y"
+        elif "Carinata" in line:
+            label = next(label for label in carinata_factors if label in line)
+            assert fertilizer_factor == carinata_factors[label]
+
+    fert_start = lines.index("*FERTILIZERS (INORGANIC)") + 2
+    fert_end = next(i for i in range(fert_start, len(lines)) if lines[i].startswith("*TILLAGE"))
+    totals = {}
+    for line in lines[fert_start:fert_end]:
+        fields = line.split()
+        if fields:
+            totals[int(fields[0])] = totals.get(int(fields[0]), 0) + int(fields[5])
+    assert {level: totals[level] for level in (2, 4, 5, 6, 7)} == {
+        2: 50, 4: 100, 5: 120, 6: 150, 7: 200,
+    }
+
+
+def test_carinata_two_level_fields_are_grouped_by_header_tier():
+    """DSSAT requires all field rows under tier 1, then all rows under tier 2."""
+    for filename in ("CARINATA1984.SQX", "CARINATA.SQX"):
+        template = os.path.join(_REPO, "dssat_templates", filename)
+        lines = open(template, encoding="utf-8").read().splitlines()
+        start = lines.index("*FIELDS")
+        end = lines.index("*INITIAL CONDITIONS")
+        field_lines = [line for line in lines[start + 1:end] if line.strip()]
+
+        assert len(field_lines) == 6
+        assert field_lines[0].startswith("@L ID_FIELD WSTA")
+        assert [int(field_lines[i].split()[0]) for i in (1, 2)] == [1, 2]
+        assert field_lines[3].startswith("@L ...........XCRD")
+        assert [int(field_lines[i].split()[0]) for i in (4, 5)] == [1, 2]
+        assert "FH101" in field_lines[4]
+        assert "FH102" in field_lines[5]
 
 
 def _make_fake_fetch():

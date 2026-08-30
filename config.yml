@@ -76,6 +76,8 @@ cropland_min_fraction:  0            # 0 means keep cells with >0 cropland
 cropland_strict:        false        # true = stop if raster/dependency is missing
 reuse_cropland_grid:    true         # reuse saved cropland grid for same project/res/classes/threshold
 cropland_filter_basis:  "cell_fraction" # cell_fraction (legacy) or point (strict nested membership)
+cropland_clip_to_boundary: true      # clip square cells to the selected study boundary before area/fraction
+cropland_relocate_anchor: false      # optionally move retained points to the nearest in-cell cropland pixel
 
 # --- Weather ---
 # DAYMET (N.Am) | NASA_POWER (global) | GRIDMET (US) | OPEN_METEO (global ERA5, keyless)
@@ -168,6 +170,7 @@ use_symlinks:          false  # portable default; Python can opt in, with copy f
 # Set individual steps to false to skip them (e.g. when re-running on cached data).
 run_step_1_soils:    true   # false = skip soil download/processing; use cached files
 run_step_2_weather:  true   # false = skip weather download/processing; use cached files
+download_only:       false  # true = stop after soil/weather processing; do not create DSSAT run folders
 run_dssat_execution: true   # false = HPC prep mode (creates folders but does not run DSSAT)
 
 # --- Weather extension ---
@@ -189,6 +192,7 @@ weather_repair_variables: ["SRAD", "TMAX", "TMIN", "RAIN", "TDEW", "RH2M", "WIND
 resume_dssat_runs:    false  # set to true to skip points whose results_{ID}.csv already exists
 zip_for_hpc:          false  # set to true to zip the run folder after creation (HPC upload)
 cleanup_run_folders:  false  # set to true to delete all per-point simulation folders after combining results
+archive_failed_run_folders: false  # zip failed point folders beside the scenario CSV before cleanup
 
 # --- Download validation and retries ---
 check_weather_downloads:  false  # set to true to validate weather file contents and retry failures

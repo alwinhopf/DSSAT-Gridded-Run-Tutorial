@@ -508,11 +508,9 @@
 *FIELDS
 @L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
  1 00000000 WID00000   -99   -99   -99   -99   -99   -99 -99    -99  SID00000   -99
-@L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
- 1        LATITUDE       LONGITUDE        40                 0     0     0     0 FH101    99
-@L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME
  2 00000000 WID00000   -99   -99   -99   -99   -99   -99 -99    -99  SID00000   -99
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
+ 1        LATITUDE       LONGITUDE        40                 0     0     0     0 FH101    99
  2        LATITUDE       LONGITUDE        40                 0     0     0     0 FH102    99
 
 *INITIAL CONDITIONS

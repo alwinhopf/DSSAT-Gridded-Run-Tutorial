@@ -99,8 +99,13 @@ def test_filex_coordinate_substitution_policy_is_aligned():
         assert "LONGITUDE" in src
         assert "ELEV" in src
         assert "fixed-column parser" in src or "fixed = TRUE" in src
+        assert "every *FIELDS tier-2 line" in src or "Every field-level data line" in src
 
     assert "Do NOT patch the LATITUDE/LONGITUDE/ELEV" not in py_src
+    assert "length(fld_idx) >= 1" in r_src
+    assert "for (field_line_idx in fld_idx)" in r_src
+    assert "_replace_field_coordinates" in py_src
+    assert "content = re.sub(" in py_src
 
 
 def test_cropland_mask_config_and_outputs_are_aligned():
@@ -115,6 +120,8 @@ def test_cropland_mask_config_and_outputs_are_aligned():
         "cropland_min_fraction",
         "cropland_strict",
         "cropland_filter_basis",
+        "cropland_clip_to_boundary",
+        "cropland_relocate_anchor",
         "crop_frac",
         "crop_pct",
         "crop_ha",
@@ -129,8 +136,12 @@ def test_cropland_mask_config_and_outputs_are_aligned():
         assert marker in r_src
         assert marker in py_src
 
-    for marker in markers[:6]:
+    for marker in markers[:8]:
         assert marker in cfg
+
+    parsed = yaml.safe_load(cfg)
+    assert parsed["cropland_clip_to_boundary"] is True
+    assert parsed["cropland_relocate_anchor"] is False
 
 
 def test_optional_master_grid_mode_is_aligned():
@@ -173,6 +184,23 @@ def test_every_runtime_setting_is_declared_in_central_yaml():
     for source in ("dssat_main_pipeline.py", "dssat_main_pipeline.R"):
         text = _read(ROOT / source)
         assert re.search(r"ZIP_FOR_HPC\s*(?:=|<-)\s*.*cfg_get\([\"']zip_for_hpc", text)
+
+
+def test_failed_run_folder_archiving_is_mirrored_and_cleanup_safe():
+    r_src = _read(ROOT / "dssat_main_pipeline.R")
+    py_src = _read(ROOT / "dssat_main_pipeline.py")
+    cfg = yaml.safe_load((ROOT / "config.yml").read_text(encoding="utf-8"))
+
+    assert cfg["archive_failed_run_folders"] is False
+    for source in (r_src, py_src):
+        assert "archive_failed_run_folders" in source
+        assert "_failed_run_folders.zip" in source
+        assert "FAILED_IDS.txt" in source
+        assert "preserving failed folders" in source
+        assert "results_" in source
+
+    assert "os.replace(tmp_path, FAILED_RUN_ARCHIVE_PATH)" in py_src
+    assert "file.rename(tmp_path, FAILED_RUN_ARCHIVE_PATH)" in r_src
 
 
 def test_conda_lock_covers_supported_desktop_platforms():

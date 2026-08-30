@@ -211,7 +211,8 @@ BOUNDARY_FILTER_COLUMN  = cfg_get("boundary_filter_column", "NAME")
 STATE_NAME_FILTER       = list(cfg_get("state_name_filter", ["Iowa"]))
 
 # Optional cropland mask. Shapefile fields stay <=10 chars:
-# crop_frac [0-1], crop_pct [0-100], crop_ha, cell_ha.
+# crop_frac [0-1], crop_pct [0-100], crop_ha, boundary-domain cell_ha,
+# complete-square full_ha, and optional anchor-move audit fields.
 USE_CROPLAND_MASK     = bool(cfg_get("use_cropland_mask", False))
 CROPLAND_RASTER_FILE  = str(cfg_get("cropland_raster_file", ""))
 CROPLAND_CLASSES      = [int(x) for x in cfg_get("cropland_classes", [82])]
@@ -219,6 +220,8 @@ CROPLAND_MIN_FRACTION = float(cfg_get("cropland_min_fraction", 0))
 CROPLAND_STRICT       = bool(cfg_get("cropland_strict", False))
 REUSE_CROPLAND_GRID   = bool(cfg_get("reuse_cropland_grid", True))
 CROPLAND_FILTER_BASIS = str(cfg_get("cropland_filter_basis", "cell_fraction")).strip().lower()
+CROPLAND_CLIP_TO_BOUNDARY = bool(cfg_get("cropland_clip_to_boundary", True))
+CROPLAND_RELOCATE_ANCHOR = bool(cfg_get("cropland_relocate_anchor", False))
 if CROPLAND_FILTER_BASIS not in {"cell_fraction", "point"}:
     raise ValueError("cropland_filter_basis must be 'cell_fraction' or 'point'.")
 
@@ -332,7 +335,12 @@ CROPLAND_GRID_TAG = ""
 if USE_CROPLAND_MASK:
     class_tag = "-".join(map(str, CROPLAND_CLASSES))
     min_tag = f"{CROPLAND_MIN_FRACTION:g}".replace(".", "p")
-    CROPLAND_GRID_TAG = re.sub(r"[^A-Za-z0-9_\-]", "_", f"_cropland_{class_tag}_min{min_tag}")
+    CROPLAND_GRID_TAG = re.sub(
+        r"[^A-Za-z0-9_\-]", "_",
+        f"_cropland_{class_tag}_min{min_tag}_basis{CROPLAND_FILTER_BASIS}"
+        f"_clip{int(CROPLAND_CLIP_TO_BOUNDARY)}"
+        f"_move{int(CROPLAND_RELOCATE_ANCHOR)}",
+    )
 POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}{CROPLAND_GRID_TAG}.shp"
 ALL_LAND_POINT_SHAPEFILE_PATH = os.path.join(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH  = os.path.join(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
@@ -353,6 +361,9 @@ DSSAT_RUN_DIR         = os.path.join(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
 FINAL_OUTPUT_DIR      = RESULTS_ROOT_DIR
 FINAL_RESULTS_PATH    = os.path.join(FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_results.csv")
 FINAL_PLOT_PATH       = os.path.join(FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_yield_map.png")
+FAILED_RUN_ARCHIVE_PATH = os.path.join(
+    FINAL_OUTPUT_DIR, f"{DSSAT_RUN_NAME}_failed_run_folders.zip"
+)
 
 POINT_ID_COLUMN = "ID"
 LAT_COLUMN      = "LAT"
@@ -427,9 +438,72 @@ SEQUENCE_END    = int(cfg_get("sequence_end", 1))
 ZIP_FOR_HPC         = bool(cfg_get("zip_for_hpc", False))
 RUN_STEP_1_SOILS    = bool(cfg_get("run_step_1_soils", True))
 RUN_STEP_2_WEATHER  = bool(cfg_get("run_step_2_weather", True))
+DOWNLOAD_ONLY       = bool(cfg_get("download_only", False))
 RUN_DSSAT_EXECUTION = bool(cfg_get("run_dssat_execution", True))
 CLEANUP_RUN_FOLDERS = bool(cfg_get("cleanup_run_folders", False))
+ARCHIVE_FAILED_RUN_FOLDERS = bool(cfg_get("archive_failed_run_folders", False))
 RESUME_DSSAT_RUNS   = bool(cfg_get("resume_dssat_runs", False))
+
+
+def archive_failed_run_folders(failed_ids: list[str]) -> bool:
+    """Write failed per-point folders to one durable, scenario-level ZIP."""
+    failed_ids = list(dict.fromkeys(str(ID) for ID in failed_ids))
+    os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
+
+    if not failed_ids:
+        # Do not leave a stale failure archive after a clean rerun.
+        if os.path.exists(FAILED_RUN_ARCHIVE_PATH):
+            os.remove(FAILED_RUN_ARCHIVE_PATH)
+            print(f"Removed stale failed-run archive: {FAILED_RUN_ARCHIVE_PATH}")
+        return True
+
+    available_ids = [
+        ID for ID in failed_ids
+        if os.path.isdir(os.path.join(DSSAT_RUN_DIR, ID))
+    ]
+    if not available_ids:
+        print(
+            "WARNING: failed-run archiving was requested, but none of the "
+            "failed point folders exist; no ZIP was written."
+        )
+        return False
+
+    tmp_path = FAILED_RUN_ARCHIVE_PATH + ".tmp"
+    try:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("FAILED_IDS.txt", "\n".join(failed_ids) + "\n")
+            for ID in available_ids:
+                point_dir = os.path.join(DSSAT_RUN_DIR, ID)
+                for root, dirs, files in os.walk(point_dir):
+                    rel_root = os.path.relpath(root, DSSAT_RUN_DIR)
+                    if not dirs and not files:
+                        zf.writestr(rel_root.rstrip("/") + "/", "")
+                    for file_name in files:
+                        abs_path = os.path.join(root, file_name)
+                        arc_path = os.path.relpath(abs_path, DSSAT_RUN_DIR)
+                        zf.write(abs_path, arc_path)
+        os.replace(tmp_path, FAILED_RUN_ARCHIVE_PATH)
+        print(
+            f"Archived {len(available_ids)} failed run folder(s) -> "
+            f"{FAILED_RUN_ARCHIVE_PATH}"
+        )
+        missing_count = len(failed_ids) - len(available_ids)
+        if missing_count:
+            print(
+                f"WARNING: {missing_count} failed point folder(s) were absent "
+                "and could not be included in the ZIP."
+            )
+        return True
+    except Exception as exc:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        print(
+            f"WARNING: could not archive failed run folders: {exc}. "
+            "Failed folders will be preserved uncompressed."
+        )
+        return False
 
 
 def _sha256_file(path: str) -> str | None:
@@ -492,7 +566,9 @@ RUN_PROVENANCE = {
                          "path": os.path.abspath(MASTER_GRID_PATH) if USE_MASTER_GRID else None}},
     "cropland": {"enabled": USE_CROPLAND_MASK, "raster_sha256": _sha256_file(_raster_path),
                  "classes": CROPLAND_CLASSES, "min_fraction": CROPLAND_MIN_FRACTION,
-                 "filter_basis": CROPLAND_FILTER_BASIS},
+                 "filter_basis": CROPLAND_FILTER_BASIS,
+                 "clip_to_boundary": CROPLAND_CLIP_TO_BOUNDARY,
+                 "relocate_anchor": CROPLAND_RELOCATE_ANCHOR},
     "weather": {"source": WEATHER_SOURCE, "years": [WEATHER_START_YEAR, WEATHER_END_YEAR],
                 "chirps": [CHIRPS_RESOLUTION, CHIRPS_V3_PRODUCT, CHIRPS_V3_STREAM,
                             CHIRPS_V3_FETCH_MODE, CHIRPS_V3_RESOLUTION, CHIRPS_V3_MONTHS]},
@@ -566,8 +642,18 @@ def _resolve_optional_path(path: str) -> str:
 def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
                         classes, min_fraction: float = 0,
                         strict: bool = False,
-                        filter_basis: str = "cell_fraction"):
-    """Attach cropland fractions and keep only cropland-bearing grid cells."""
+                        filter_basis: str = "cell_fraction",
+                        boundary_gdf=None,
+                        clip_to_boundary: bool = True,
+                        relocate_anchor: bool = False):
+    """Attach cropland support and keep eligible cells.
+
+    By default the square represented by each point is intersected with the
+    study boundary before cell area and cropland fraction are calculated.
+    Optionally move the retained simulation point to the nearest cropland pixel
+    centre inside that clipped cell while preserving the point ID and original
+    coordinates for auditability.
+    """
     def fallback(message: str):
         if strict:
             raise RuntimeError(message)
@@ -595,6 +681,17 @@ def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
 
         print(f"Applying cropland mask from {raster_file} (classes: {', '.join(map(str, classes))})")
         pts_r = points_gdf.to_crs(src.crs)
+        boundary_geom = None
+        if clip_to_boundary:
+            if boundary_gdf is None or len(boundary_gdf) == 0:
+                print("WARNING: cropland_clip_to_boundary=true but no study boundary is available; using complete square cells.")
+            else:
+                boundary_r = boundary_gdf.to_crs(src.crs)
+                boundary_geom = (
+                    boundary_r.geometry.union_all()
+                    if hasattr(boundary_r.geometry, "union_all")
+                    else boundary_r.geometry.unary_union
+                )
         sample_xy = [(geom.x, geom.y) for geom in pts_r.geometry]
         point_crop = []
         for value in src.sample(sample_xy, indexes=1, masked=True):
@@ -604,26 +701,52 @@ def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
             )
         half = grid_spacing_m / 2.0
         fractions = []
+        domain_areas_ha = []
+        nearest_crop_xy = []
         for geom in pts_r.geometry:
             cell = box(geom.x - half, geom.y - half, geom.x + half, geom.y + half)
+            domain_cell = cell.intersection(boundary_geom) if boundary_geom is not None else cell
+            if domain_cell.is_empty:
+                fractions.append(np.nan)
+                domain_areas_ha.append(0.0)
+                nearest_crop_xy.append(None)
+                continue
+            domain_areas_ha.append(float(domain_cell.area) / 10000.0)
             try:
-                arr, _ = rio_mask(src, [mapping(cell)], crop=True, filled=False)
+                arr, arr_transform = rio_mask(
+                    src, [mapping(domain_cell)], crop=True, filled=False
+                )
                 data = arr[0]
                 valid = ~np.ma.getmaskarray(data)
                 if src.nodata is not None:
                     valid &= np.asarray(data) != src.nodata
                 if not np.any(valid):
                     fractions.append(np.nan)
+                    nearest_crop_xy.append(None)
                     continue
-                fractions.append(float(np.isin(np.asarray(data)[valid], classes).mean()))
+                crop_pixels = valid & np.isin(np.asarray(data), classes)
+                fractions.append(float(crop_pixels.sum() / valid.sum()))
+                if relocate_anchor and np.any(crop_pixels):
+                    rc = np.argwhere(crop_pixels)
+                    xs, ys = rasterio.transform.xy(
+                        arr_transform, rc[:, 0], rc[:, 1], offset="center"
+                    )
+                    xy = np.column_stack([np.asarray(xs), np.asarray(ys)])
+                    nearest_crop_xy.append(tuple(xy[np.argmin(
+                        (xy[:, 0] - geom.x) ** 2 + (xy[:, 1] - geom.y) ** 2
+                    )]))
+                else:
+                    nearest_crop_xy.append(None)
             except Exception:  # noqa: BLE001
                 fractions.append(np.nan)
+                nearest_crop_xy.append(None)
 
     out = points_gdf.copy()
     frac = np.clip(np.asarray(fractions, dtype=float), 0, 1)
     out["crop_frac"] = frac
     out["crop_pct"] = np.round(frac * 100, 4)
-    out["cell_ha"] = (grid_spacing_m ** 2) / 10000.0
+    out["full_ha"] = (grid_spacing_m ** 2) / 10000.0
+    out["cell_ha"] = np.round(np.asarray(domain_areas_ha, dtype=float), 4)
     out["crop_ha"] = np.round(out["cell_ha"] * out["crop_frac"], 4)
     out["crop_pt"] = np.asarray(point_crop, dtype=float)
 
@@ -639,7 +762,35 @@ def apply_cropland_mask(points_gdf, raster_file: str, grid_spacing_m: float,
     if kept == 0:
         raise RuntimeError("Cropland mask removed all grid cells. Lower cropland_min_fraction or check cropland raster/classes.")
 
+    kept_idx = np.flatnonzero(np.asarray(keep))
     out = out.loc[keep].copy()
+    original_wgs = points_gdf.to_crs("EPSG:4326")
+    original_xy = np.asarray([[p.x, p.y] for p in original_wgs.geometry])
+    out["orig_lon"] = original_xy[kept_idx, 0]
+    out["orig_lat"] = original_xy[kept_idx, 1]
+    out["anchor_mv"] = 0
+    out["anchor_km"] = 0.0
+    if relocate_anchor:
+        moved_r = pts_r.loc[keep].copy()
+        moved_geoms = list(moved_r.geometry)
+        for j, source_idx in enumerate(kept_idx):
+            target = nearest_crop_xy[source_idx]
+            if target is None:
+                continue
+            old = moved_geoms[j]
+            moved_geoms[j] = Point(*target)
+            out.iloc[j, out.columns.get_loc("anchor_mv")] = 1
+            out.iloc[j, out.columns.get_loc("anchor_km")] = round(
+                math.hypot(target[0] - old.x, target[1] - old.y) / 1000.0, 6
+            )
+        moved_r.geometry = moved_geoms
+        out.geometry = moved_r.to_crs(points_gdf.crs).geometry.values
+        moved_wgs = out.to_crs("EPSG:4326")
+        moved_xy = np.asarray([[p.x, p.y] for p in moved_wgs.geometry])
+        if "LONG" in out.columns:
+            out["LONG"] = moved_xy[:, 0]
+        if "LAT" in out.columns:
+            out["LAT"] = moved_xy[:, 1]
     try:
         out.to_file(POINT_SHAPEFILE_PATH)
     except Exception as exc:  # noqa: BLE001
@@ -700,6 +851,22 @@ from dssatutils.weather_repair        import (
     repair_weather_missing_values,
     repair_weather_temperature_inversions,
 )
+
+
+def weather_required_columns():
+    """Fields that the shared validator must require for this provider."""
+    core = ("SRAD", "TMAX", "TMIN", "RAIN")
+    if str(WEATHER_SOURCE).upper() == "AGERA5":
+        return core + ("TDEW", "RH2M", "WIND")
+    return core
+
+
+def weather_file_is_valid(path):
+    return is_wth_valid(
+        path,
+        WEATHER_END_YEAR,
+        required_columns=weather_required_columns(),
+    )
 
 # Soil sources that write one .SOL per grid point named by the point ID (so
 # SOIL_ID == point ID and the per-point combine logic below applies). The other
@@ -799,6 +966,7 @@ if __name__ == '__main__':
     except (OSError, ValueError):
         pass
     grid_identity = {"grid": RUN_PROVENANCE["grid"], "cropland": RUN_PROVENANCE["cropland"]}
+    boundary_sf = None
 
     if (not USE_EXISTING_POINT_SHAPEFILE
             and ((USE_CROPLAND_MASK and REUSE_CROPLAND_GRID)
@@ -869,6 +1037,9 @@ if __name__ == '__main__':
             CROPLAND_MIN_FRACTION,
             CROPLAND_STRICT,
             CROPLAND_FILTER_BASIS,
+            boundary_gdf=boundary_sf,
+            clip_to_boundary=CROPLAND_CLIP_TO_BOUNDARY,
+            relocate_anchor=CROPLAND_RELOCATE_ANCHOR,
         )
 
     if not USE_EXISTING_POINT_SHAPEFILE:
@@ -878,6 +1049,55 @@ if __name__ == '__main__':
         )
 
     print(f"Grid points ready: {len(gridfile)} points")
+
+    def load_unresolvable_point_ids(cache_path: str) -> set:
+        if not cache_path or not os.path.exists(cache_path):
+            return set()
+        try:
+            if cache_path.lower().endswith(".json"):
+                with open(cache_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict):
+                    return {str(k) for k in data.keys()}
+                if isinstance(data, list):
+                    return {str(x) for x in data}
+            elif cache_path.lower().endswith(".csv"):
+                df = pd.read_csv(cache_path, dtype=str)
+                for c in ("ID", "point_id", "id"):
+                    if c in df.columns:
+                        return set(df[c].dropna().astype(str))
+        except Exception:
+            return set()
+        return set()
+
+    def save_unresolvable_point_ids(cache_path: str, new_ids, reasons=None) -> bool:
+        ids = [str(x) for x in new_ids if str(x).strip()]
+        if not ids:
+            return False
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+            existing = {}
+            if os.path.exists(cache_path):
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as fh:
+                        parsed = json.load(fh)
+                    if isinstance(parsed, dict):
+                        existing = parsed
+                except Exception:
+                    existing = {}
+            tstr = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for i, pid in enumerate(ids):
+                rsn = (
+                    str(reasons[i])
+                    if reasons is not None and len(reasons) > i and str(reasons[i]).strip()
+                    else "unresolvable_or_out_of_bounds"
+                )
+                existing[pid] = {"reason": rsn, "updated_at": tstr}
+            with open(cache_path, "w", encoding="utf-8") as fh:
+                json.dump(existing, fh, indent=2)
+            return True
+        except Exception:
+            return False
 
     # =============================================================================
     # STEP 1 - SOIL DATA
@@ -893,30 +1113,76 @@ if __name__ == '__main__':
         soilfile_CSV       = soilfile_prefix + ".CSV"
         individual_sol_dir = soilfile_prefix + "_individual_SOL"
         os.makedirs(individual_sol_dir, exist_ok=True)
+        soil_unresolvable_file = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_unresolvable.json")
+        unresolvable_soil_ids = load_unresolvable_point_ids(soil_unresolvable_file)
+
+        # Harvest provider failure CSV if present
+        soil_fail_csv = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_download_failures.csv")
+        if os.path.exists(soil_fail_csv):
+            try:
+                fdf = pd.read_csv(soil_fail_csv, dtype=str)
+                if not fdf.empty and "ID" in fdf.columns:
+                    p_ids = fdf["ID"].dropna().tolist()
+                    p_rsn = fdf["reason"].tolist() if "reason" in fdf.columns else ["no_soil_coverage"] * len(p_ids)
+                    save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
+                    unresolvable_soil_ids |= set(p_ids)
+            except Exception:
+                pass
 
         if SOIL_SOURCE in _PER_POINT_SOIL:
             # These sources all write one Saxton-&-Rawls .SOL per point named by
             # the point ID, so the combine step below is shared. gNATSGO fills
             # SSURGO's US gaps; iSDAsoil = Africa 30 m; LUCAS = EU topsoil.
-            _soil_kwargs = dict(
-                grid_points=gridfile,
-                output_dir_csv=soilfile_CSV,
-                output_dir_individual=individual_sol_dir,
-                n_cores=SOIL_CORES,
-                id_col=POINT_ID_COLUMN,
-                lat_col=LAT_COLUMN,
-                long_col=LONG_COLUMN,
-            )
-            if SOIL_SOURCE == "SSURGO":
-                process_soils_ssurgo(**_soil_kwargs)
-            elif SOIL_SOURCE == "SSURGO_ALDERMAN":
-                process_soils_ssurgo_alderman(**_soil_kwargs, STATSGO=STATSGO, standardize_layers=STANDARDIZE_LAYERS)
-            elif SOIL_SOURCE == "GNATSGO":
-                process_soils_gnatsgo(**_soil_kwargs)
-            elif SOIL_SOURCE == "ISDASOIL":
-                process_soils_isdasoil(**_soil_kwargs)
-            else:  # LUCAS
-                process_soils_lucas(**_soil_kwargs, lucas_csv=LUCAS_CSV)
+            all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+            accounted_sol = existing_sol | unresolvable_soil_ids
+            missing_sol = all_ids - accounted_sol
+
+            if not missing_sol and existing_sol:
+                print(
+                    f"All {len(gridfile)} soil profiles are accounted for "
+                    f"({len(existing_sol & all_ids)} valid .SOL, {len(unresolvable_soil_ids & all_ids)} unresolvable). "
+                    f"Skipping {SOIL_SOURCE} processing."
+                )
+            else:
+                _soil_kwargs = dict(
+                    grid_points=gridfile,
+                    output_dir_csv=soilfile_CSV,
+                    output_dir_individual=individual_sol_dir,
+                    n_cores=SOIL_CORES,
+                    id_col=POINT_ID_COLUMN,
+                    lat_col=LAT_COLUMN,
+                    long_col=LONG_COLUMN,
+                )
+                if SOIL_SOURCE == "SSURGO":
+                    process_soils_ssurgo(**_soil_kwargs)
+                elif SOIL_SOURCE == "SSURGO_ALDERMAN":
+                    process_soils_ssurgo_alderman(**_soil_kwargs, STATSGO=STATSGO, standardize_layers=STANDARDIZE_LAYERS)
+                elif SOIL_SOURCE == "GNATSGO":
+                    process_soils_gnatsgo(**_soil_kwargs)
+                elif SOIL_SOURCE == "ISDASOIL":
+                    process_soils_isdasoil(**_soil_kwargs)
+                else:  # LUCAS
+                    process_soils_lucas(**_soil_kwargs, lucas_csv=LUCAS_CSV)
+
+                # Re-harvest failure CSV after download attempt
+                if os.path.exists(soil_fail_csv):
+                    try:
+                        fdf = pd.read_csv(soil_fail_csv, dtype=str)
+                        if not fdf.empty and "ID" in fdf.columns:
+                            p_ids = fdf["ID"].dropna().tolist()
+                            p_rsn = fdf["reason"].tolist() if "reason" in fdf.columns else ["no_soil_coverage"] * len(p_ids)
+                            save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
+                            unresolvable_soil_ids |= set(p_ids)
+                    except Exception:
+                        pass
+
+                existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+                missing_after = all_ids - (existing_sol | unresolvable_soil_ids)
+                if missing_after:
+                    save_unresolvable_point_ids(soil_unresolvable_file, list(missing_after), "failed_or_missing_profile")
+                    unresolvable_soil_ids |= missing_after
+
             sol_files = sorted([f for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")])
             with open(soilfile_DSSAT, "w", encoding="utf-8") as out_fh:
                 out_fh.write("*SOILS: Combined\n")
@@ -947,69 +1213,108 @@ if __name__ == '__main__':
             # virtual rasters streamed from ISRIC; reads each global raster once and
             # samples all points, so it scales better and avoids rate limits, but
             # needs rasterio). Set via config key `soilgrids_mode`.
-            import dssatutils.soil_soilgrids_online as _sg_mod
-            _sg_mod.USE_REST_API = (SOILGRIDS_MODE != "VRT")
-            print(f"SoilGrids online mode: {'VRT' if SOILGRIDS_MODE == 'VRT' else 'REST API'}")
-            try:
-                process_soils_soilgrids_online(
-                    gridfile=gridfile,
-                    soilfile_csv_path=soilfile_CSV,
-                    output_sol_dir=individual_sol_dir,
-                    id_col=POINT_ID_COLUMN,
-                )
-            except Exception as exc:
-                valid_ids = {
-                    os.path.splitext(f)[0]
-                    for f in os.listdir(individual_sol_dir)
-                    if f.upper().endswith(".SOL")
-                }
-                valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
-                if not valid_ids:
-                    raise
+            all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+            accounted_sol = existing_sol | unresolvable_soil_ids
+            missing_sol = all_ids - accounted_sol
+
+            if not missing_sol and existing_sol:
                 print(
-                    "WARNING: SoilGrids online extraction failed, but "
-                    f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
-                    f"are available; missing IDs will be skipped. Cause: {exc}"
+                    f"All {len(gridfile)} online soil profiles are accounted for "
+                    f"({len(existing_sol & all_ids)} valid .SOL, {len(unresolvable_soil_ids & all_ids)} unresolvable). "
+                    "Skipping SoilGrids processing."
                 )
-                if not os.path.exists(soilfile_CSV):
-                    pd.DataFrame({
-                        POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
-                        "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
-                    }).to_csv(soilfile_CSV, index=False)
+            else:
+                import dssatutils.soil_soilgrids_online as _sg_mod
+                _sg_mod.USE_REST_API = (SOILGRIDS_MODE != "VRT")
+                print(f"SoilGrids online mode: {'VRT' if SOILGRIDS_MODE == 'VRT' else 'REST API'}")
+                try:
+                    points_to_fetch = gridfile.loc[gridfile[POINT_ID_COLUMN].astype(str).isin(missing_sol)].reset_index(drop=True)
+                    process_soils_soilgrids_online(
+                        gridfile=points_to_fetch if not points_to_fetch.empty else gridfile,
+                        soilfile_csv_path=soilfile_CSV,
+                        output_sol_dir=individual_sol_dir,
+                        id_col=POINT_ID_COLUMN,
+                    )
+                except Exception as exc:
+                    valid_ids = {
+                        os.path.splitext(f)[0]
+                        for f in os.listdir(individual_sol_dir)
+                        if f.upper().endswith(".SOL")
+                    }
+                    valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
+                    if not valid_ids:
+                        raise
+                    print(
+                        "WARNING: SoilGrids online extraction failed, but "
+                        f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
+                        f"are available; missing IDs will be skipped. Cause: {exc}"
+                    )
+                    if not os.path.exists(soilfile_CSV):
+                        pd.DataFrame({
+                            POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
+                            "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
+                        }).to_csv(soilfile_CSV, index=False)
+
+                # Record any remaining missing IDs
+                new_existing = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+                missing_after = all_ids - (new_existing | unresolvable_soil_ids)
+                if missing_after:
+                    save_unresolvable_point_ids(soil_unresolvable_file, list(missing_after), "soilgrids_online_missing_layers")
+                    unresolvable_soil_ids |= missing_after
 
         elif SOIL_SOURCE == "POLARIS":
             # POLARIS = 30 m probabilistic disaggregation of SSURGO (CONUS).
             # Same output contract as SOILGRIDS_ONLINE: one .SOL per point named
             # by point ID + a CSV, streamed via GDAL /vsicurl. Water limits come
             # from POLARIS's van Genuchten curve (stat=p50 deterministic).
-            try:
-                process_soils_polaris(
-                    gridfile=gridfile,
-                    soilfile_csv_path=soilfile_CSV,
-                    output_sol_dir=individual_sol_dir,
-                    id_col=POINT_ID_COLUMN,
-                    stat=POLARIS_STAT,
-                    cache_dir=POLARIS_CACHE_DIR,
-                )
-            except Exception as exc:
-                valid_ids = {
-                    os.path.splitext(f)[0]
-                    for f in os.listdir(individual_sol_dir)
-                    if f.upper().endswith(".SOL")
-                }
-                valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
-                if not valid_ids:
-                    raise
+            all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+            accounted_sol = existing_sol | unresolvable_soil_ids
+            missing_sol = all_ids - accounted_sol
+
+            if not missing_sol and existing_sol:
                 print(
-                    "WARNING: POLARIS extraction failed, but "
-                    f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
-                    f"are available; missing IDs will be skipped. Cause: {exc}"
+                    f"All {len(gridfile)} POLARIS soil profiles are accounted for "
+                    f"({len(existing_sol & all_ids)} valid .SOL, {len(unresolvable_soil_ids & all_ids)} unresolvable). "
+                    "Skipping POLARIS processing."
                 )
-                if not os.path.exists(soilfile_CSV):
-                    pd.DataFrame({
-                        POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
-                        "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
-                    }).to_csv(soilfile_CSV, index=False)
+            else:
+                try:
+                    points_to_fetch = gridfile.loc[gridfile[POINT_ID_COLUMN].astype(str).isin(missing_sol)].reset_index(drop=True)
+                    process_soils_polaris(
+                        gridfile=points_to_fetch if not points_to_fetch.empty else gridfile,
+                        soilfile_csv_path=soilfile_CSV,
+                        output_sol_dir=individual_sol_dir,
+                        id_col=POINT_ID_COLUMN,
+                        stat=POLARIS_STAT,
+                        cache_dir=POLARIS_CACHE_DIR,
+                    )
+                except Exception as exc:
+                    valid_ids = {
+                        os.path.splitext(f)[0]
+                        for f in os.listdir(individual_sol_dir)
+                        if f.upper().endswith(".SOL")
+                    }
+                    valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
+                    if not valid_ids:
+                        raise
+                    print(
+                        "WARNING: POLARIS extraction failed, but "
+                        f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
+                        f"are available; missing IDs will be skipped. Cause: {exc}"
+                    )
+                    if not os.path.exists(soilfile_CSV):
+                        pd.DataFrame({
+                            POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
+                            "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
+                        }).to_csv(soilfile_CSV, index=False)
+
+                new_existing = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+                missing_after = all_ids - (new_existing | unresolvable_soil_ids)
+                if missing_after:
+                    save_unresolvable_point_ids(soil_unresolvable_file, list(missing_after), "polaris_raster_read_failed")
+                    unresolvable_soil_ids |= missing_after
 
         elif SOIL_SOURCE == "HWSD":
             process_soils_hwsd(
@@ -1078,27 +1383,31 @@ if __name__ == '__main__':
         os.makedirs(WEATHER_ROOT_DIR, exist_ok=True)
         os.makedirs(weather_dir, exist_ok=True)
 
+        weather_unresolvable_file = os.path.join(weather_dir, "unresolvable_points.json")
+        unresolvable_weather_ids = load_unresolvable_point_ids(weather_unresolvable_file)
+
         weather_ids = gridfile[POINT_ID_COLUMN].astype(str)
         if CHECK_WEATHER_DOWNLOADS:
             print("Verifying existing weather files for validity...")
             valid_mask = weather_ids.map(
-                lambda pid: is_wth_valid(
-                    os.path.join(weather_dir, f"{pid}.WTH"), WEATHER_END_YEAR
+                lambda pid: True if pid in unresolvable_weather_ids else weather_file_is_valid(
+                    os.path.join(weather_dir, f"{pid}.WTH")
                 )
             )
             invalid_existing = [
                 pid for pid, valid in zip(weather_ids, valid_mask)
-                if not valid and os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
+                if not valid and pid not in unresolvable_weather_ids and os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
             ]
             for pid in invalid_existing:
                 os.remove(os.path.join(weather_dir, f"{pid}.WTH"))
             if invalid_existing:
                 print(f"Deleted {len(invalid_existing)} invalid existing weather file(s).")
-            points_to_process = gridfile.loc[~valid_mask].reset_index(drop=True)
+            points_to_process = gridfile.loc[~valid_mask & ~weather_ids.isin(unresolvable_weather_ids)].reset_index(drop=True)
         else:
             existing_wth = {os.path.splitext(f)[0]
                             for f in os.listdir(weather_dir) if f.endswith(".WTH")}
-            points_to_process = gridfile.loc[~weather_ids.isin(existing_wth)].reset_index(drop=True)
+            accounted_wth = existing_wth | unresolvable_weather_ids
+            points_to_process = gridfile.loc[~weather_ids.isin(accounted_wth)].reset_index(drop=True)
 
         def process_weather_points(points):
             log_file    = os.path.join(weather_dir, "download_errors.log")
@@ -1188,7 +1497,12 @@ if __name__ == '__main__':
                 sys.exit(f"Unknown WEATHER_SOURCE: {WEATHER_SOURCE}")
 
         if points_to_process.empty:
-            print("All weather files already exist and are valid. Skipping processing.")
+            existing_wth = {os.path.splitext(f)[0] for f in os.listdir(weather_dir) if f.endswith(".WTH")}
+            print(
+                f"All {len(gridfile)} weather files are accounted for "
+                f"({len(existing_wth & set(weather_ids))} valid .WTH, {len(unresolvable_weather_ids & set(weather_ids))} unresolvable). "
+                "Skipping processing."
+            )
         else:
             attempt = 0
             while not points_to_process.empty and attempt < WEATHER_DOWNLOAD_RETRIES:
@@ -1204,29 +1518,31 @@ if __name__ == '__main__':
                 pending_ids = points_to_process[POINT_ID_COLUMN].astype(str)
                 if CHECK_WEATHER_DOWNLOADS:
                     valid = pending_ids.map(
-                        lambda pid: is_wth_valid(
-                            os.path.join(weather_dir, f"{pid}.WTH"), WEATHER_END_YEAR
+                        lambda pid: True if pid in unresolvable_weather_ids else weather_file_is_valid(
+                            os.path.join(weather_dir, f"{pid}.WTH")
                         )
                     )
                 else:
                     valid = pending_ids.map(
-                        lambda pid: os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
+                        lambda pid: pid in unresolvable_weather_ids or os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
                     )
                 points_to_process = points_to_process.loc[~valid.to_numpy()].reset_index(drop=True)
                 if (CHECK_WEATHER_DOWNLOADS and not points_to_process.empty
                         and attempt < WEATHER_DOWNLOAD_RETRIES):
-                    # Provider writers skip existing output paths. Delete only
-                    # files that failed validation so the next retry genuinely
-                    # downloads/regenerates them instead of becoming a no-op.
                     for pid in points_to_process[POINT_ID_COLUMN].astype(str):
                         invalid_path = os.path.join(weather_dir, f"{pid}.WTH")
                         if os.path.exists(invalid_path):
                             os.remove(invalid_path)
             if not points_to_process.empty:
+                failed_wth_ids = points_to_process[POINT_ID_COLUMN].astype(str).tolist()
+                save_unresolvable_point_ids(
+                    weather_unresolvable_file, failed_wth_ids,
+                    [f"failed_after_{WEATHER_DOWNLOAD_RETRIES}_retries"] * len(failed_wth_ids)
+                )
                 print(
                     f"WARNING: Failed to produce valid weather data for "
                     f"{len(points_to_process)} point(s) after "
-                    f"{WEATHER_DOWNLOAD_RETRIES} attempt(s)."
+                    f"{WEATHER_DOWNLOAD_RETRIES} attempt(s). Recorded in {os.path.basename(weather_unresolvable_file)}."
                 )
 
     if REPAIR_WEATHER_MISSING_VALUES:
@@ -1355,6 +1671,13 @@ if __name__ == '__main__':
                 "WARNING: extend_weather_data is true, but weather directory "
                 f"does not exist: {weather_dir}"
             )
+
+    if DOWNLOAD_ONLY:
+        print("=" * 60)
+        print("DOWNLOAD-ONLY MODE COMPLETE")
+        print("Soil and weather processing finished; DSSAT folders and simulations were not created.")
+        print("=" * 60)
+        sys.exit(0)
 
     # =============================================================================
     # STEP 3 - BUILD DSSAT FOLDERS AND RUN SIMULATIONS
@@ -1530,7 +1853,7 @@ if __name__ == '__main__':
                     lambda m: m.group(1) + ID[:8].ljust(8) + m.group(2),
                     content,
                 )
-            # Substitute real per-point coordinates into the *FIELDS tier-2 line.
+            # Substitute real per-point coordinates into every *FIELDS tier-2 line.
             # Preserve placeholder widths so DSSAT's fixed-column parser stays aligned.
             def _fit_field(value, width, digits):
                 try:
@@ -1560,19 +1883,25 @@ if __name__ == '__main__':
                     pass
                 return -99.0
 
-            coord_match = re.search(r"(?m)^.*LATITUDE.*LONGITUDE.*$", content)
-            if coord_match:
-                line = coord_match.group(0)
-                s_lat = _fit_field(row.get(LAT_COLUMN), 8, 3)
-                s_lon = _fit_field(row.get(LONG_COLUMN), 9, 3)
-                s_elev = _fit_field(_wth_elev_default(), 4, 0)
+            s_lat = _fit_field(row.get(LAT_COLUMN), 8, 3)
+            s_lon = _fit_field(row.get(LONG_COLUMN), 9, 3)
+            s_elev = _fit_field(_wth_elev_default(), 4, 0)
+
+            def _replace_field_coordinates(match):
+                line = match.group(0)
                 if s_lat is not None:
                     line = line.replace("LATITUDE", s_lat, 1)
                 if s_lon is not None:
                     line = line.replace("LONGITUDE", s_lon, 1)
                 if s_elev is not None:
                     line = line.replace("ELEV", s_elev, 1)
-                content = content[:coord_match.start()] + line + content[coord_match.end():]
+                return line
+
+            content = re.sub(
+                r"(?m)^.*LATITUDE.*LONGITUDE.*$",
+                _replace_field_coordinates,
+                content,
+            )
 
             with open(os.path.join(point_dir, TEMPLATE_FILE_NAME), "w", encoding="utf-8") as fh:
                 fh.write(content)
@@ -1702,14 +2031,11 @@ if __name__ == '__main__':
                 return f"{os.path.basename(f)} is missing"
             if os.path.getsize(f) == 0:
                 return f"{os.path.basename(f)} is empty"
-            if not is_wth_valid(
-                f,
-                WEATHER_END_YEAR,
-                required_columns=("SRAD", "TMAX", "TMIN", "RAIN"),
-            ):
+            required = weather_required_columns()
+            if not is_wth_valid(f, WEATHER_END_YEAR, required_columns=required):
                 return (
-                    f"{os.path.basename(f)} has missing or invalid core forcing "
-                    "(SRAD/TMAX/TMIN/RAIN)"
+                    f"{os.path.basename(f)} has missing or invalid required forcing "
+                    f"({'/'.join(required)})"
                 )
             return None
 
@@ -1846,12 +2172,17 @@ if __name__ == '__main__':
             )
             print(f"  See _run_error.log in each failed folder under: {DSSAT_RUN_DIR}")
 
+        failed_archive_created = False
+        if ARCHIVE_FAILED_RUN_FOLDERS:
+            failed_archive_created = archive_failed_run_folders(failed_ids)
+
         os.makedirs(FINAL_OUTPUT_DIR, exist_ok=True)
         if all_results:
             final_data = pd.concat(all_results, ignore_index=True)
             point_cols = [c for c in [
                 "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
-                "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha",
+                "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha", "full_ha",
+                "orig_lat", "orig_lon", "anchor_mv", "anchor_km",
             ] if c in gridfile.columns]
             if point_cols and POINT_ID_COLUMN in gridfile.columns:
                 point_attrs = gridfile[[POINT_ID_COLUMN] + point_cols].copy()
@@ -1878,14 +2209,31 @@ if __name__ == '__main__':
             )
             print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
+            diagnostic_location = (
+                FAILED_RUN_ARCHIVE_PATH
+                if ARCHIVE_FAILED_RUN_FOLDERS and failed_archive_created
+                else DSSAT_RUN_DIR
+            )
             raise RuntimeError(
                 "DSSAT execution produced zero point results. Per-point run "
-                f"folders were preserved for diagnosis under: {DSSAT_RUN_DIR}"
+                f"diagnostics are available at: {diagnostic_location}"
             )
 
         if CLEANUP_RUN_FOLDERS:
-            print("Cleaning up run folders...")
-            for ID in all_ids:
+            cleanup_ids = list(all_ids)
+            if (ARCHIVE_FAILED_RUN_FOLDERS and failed_ids
+                    and not failed_archive_created):
+                failed_set = set(failed_ids)
+                cleanup_ids = [ID for ID in all_ids if ID not in failed_set]
+                print(
+                    "Failed-run ZIP was not created; preserving failed folders "
+                    "uncompressed and cleaning successful folders only."
+                )
+            print(
+                f"Cleanup: deleting {len(cleanup_ids)} per-point run folder(s) "
+                f"under {DSSAT_RUN_DIR}"
+            )
+            for ID in cleanup_ids:
                 d = os.path.join(DSSAT_RUN_DIR, ID)
                 if os.path.isdir(d):
                     shutil.rmtree(d, ignore_errors=True)

@@ -102,6 +102,12 @@ A **crop model** is a mathematical representation of how crops respond to weathe
 
 > Models are only as good as their **inputs** and **calibration**. Always validate against field observations before applying at scale.
 
+The `CARINATA1984.SQX` rotation template uses 200 kg N/ha for corn, 120 kg
+N/ha for cotton, and no fertilizer N for soybean or peanut while symbiotic
+fixation is enabled. Carinata uses the same 0, 50, 100, and 150 kg N/ha series
+after both the corn–soybean and cotton–peanut rotations. Treatment details are
+recorded in `dssat_templates/CARINATA1984_management_options.xlsx`.
+
 Official overview: https://dssat.net/
 
 ---
@@ -491,6 +497,11 @@ then depends on the land-cover pixel at the shared point while target-cell
 fractions and hectares remain available as weights. The legacy
 `"cell_fraction"` basis can retain a coarse cell because it contains cropland
 even when its anchor is not cropland, so filtered membership may differ by level.
+By default, cell fractions and areas are calculated only within the selected
+boundary (`cropland_clip_to_boundary: true`). Optional relocation can move a
+retained point to the nearest selected cropland pixel, but this changes its
+coordinates and weakens exact coordinate pairing even though its master point
+ID is preserved.
 
 ---
 
@@ -545,6 +556,9 @@ cropland_classes:       [82]
 cropland_min_fraction:  0      # keep grid cells with >0 cropland
 cropland_strict:        false  # warn and continue all-land if raster is missing
 reuse_cropland_grid:    true
+cropland_filter_basis:  "cell_fraction"
+cropland_clip_to_boundary: true  # intersect square cells with study boundary
+cropland_relocate_anchor: false  # optionally move to nearest in-cell crop pixel
 ```
 
 The output grid shapefile stores:
@@ -552,12 +566,25 @@ The output grid shapefile stores:
 - `crop_frac` — cropland fraction from 0 to 1
 - `crop_pct` — cropland percentage from 0 to 100
 - `crop_ha` — cropland hectares inside the grid cell
-- `cell_ha` — total grid-cell hectares
+- `cell_ha` — grid-cell hectares inside the study boundary when clipping is on
+- `full_ha` — complete theoretical square-cell hectares
+- `orig_lat` / `orig_lon` — original anchor coordinates
+- `anchor_mv` / `anchor_km` — whether and how far the anchor was relocated
+
+Boundary clipping is enabled by default. The square around each anchor is
+intersected with the selected boundary before raster pixels, cell area, and
+cropland area are calculated. Set `cropland_clip_to_boundary: false` to use the
+former complete-square calculation. With `cropland_relocate_anchor: true`, the
+retained point is moved to the nearest selected cropland-pixel centre inside
+the clipped cell before soil and weather inputs are obtained. Point IDs remain
+unchanged and the original coordinates plus move distance are retained.
 
 Cropland grids are saved separately from all-land grids and reused on later
 runs with the same project, resolution, class list, and threshold. For example,
 `carinata_sweep_100km.shp` is the all-land grid, while
-`carinata_sweep_100km_cropland_82_min0.shp` is the NLCD class 82 cropland grid.
+`carinata_sweep_100km_cropland_82_min0_basiscell_fraction_clip1_move0.shp` is the NLCD class 82
+cropland grid using boundary clipping without relocation. The clip/move suffix
+prevents grids built under different spatial assumptions from being reused.
 Set `reuse_cropland_grid: false` to force regeneration.
 
 The final results CSV also includes `cropland_ha`, `gridcell_area_ha`,
@@ -1215,7 +1242,16 @@ At minimum, each point folder needs:
 
 Copy a working DSSAT example into `dssat_templates/`. For a quick test, copy `UFGA8201.MZX` from your DSSAT installation's `Maize/` folder plus the supporting `*.CUL`, `*.ECO`, `*.SPE` files for the CERES-Maize module.
 
-> **Key requirement:** your template must contain the **placeholder strings** that the pipeline replaces per point. Open the template in a text editor and confirm that the `*FIELDS` section has `WSTA` set to `00000000` and `ID_SOIL` set to `SOIL_ID`. The pipeline replaces these with the actual point ID and soil profile ID for each point.
+> **Key requirement:** your template must contain the **placeholder strings**
+> that the pipeline replaces per point. Prefer `WID00000` in the `WSTA`
+> column and `SID00000` in the `ID_SOIL` column; the older `00000000` and
+> `SOIL_ID` forms remain supported as fallbacks. Coordinate-tier data rows may
+> use `LATITUDE`, `LONGITUDE`, and `ELEV`; both pipelines replace every such
+> field level while preserving its fixed width. For multiple `*FIELDS` levels,
+> place all `ID_FIELD`/`WSTA` rows beneath the first `@L` header, followed by
+> one coordinate `@L` header and all matching coordinate/history rows. Do not
+> repeat the two headers separately for each field level—DSSAT will fail to
+> resolve the later level's weather station.
 
 ---
 
@@ -1264,15 +1300,27 @@ configuration plumbing and derived values; all user-facing knobs belong in
 - **Weather:** change `weather_source`, `weather_start_year`, and `weather_end_year`.
 - **Soil:** change `soil_source`; for `SOILGRIDS_10K`, set `external_soil_file`.
 - **Crop:** update `crop_extension` and `template_file_name` together.
+- **Input download only:** set `download_only: true` to stop immediately after
+  soil and weather processing. No DSSAT run folders, simulations, result merge,
+  or plots are created. Provider progress output remains visible to the calling
+  process.
 - **HPC prep:** set `run_dssat_execution: false` and `zip_for_hpc: true`.
+- **Large-run diagnostics:** set `cleanup_run_folders: true` together with
+  `archive_failed_run_folders: true`. After DSSAT finishes, every point folder
+  without `results_<ID>.csv` is saved to
+  `results/<scenario>_failed_run_folders.zip` before the remaining point
+  folders are deleted. The ZIP includes `FAILED_IDS.txt`, `_run_error.log`,
+  `WARNING.OUT`, and all other files present in each failed folder. If ZIP
+  creation fails, failed folders are retained uncompressed.
 
 ### R/Python parity note
 
 Both pipelines consume the same merged YAML and run the same engine contract.
 One internal optimization remains implementation-specific: Python can opt into
 symlinked support files with `use_symlinks`, while R currently copies them.
-Download validation/retry and per-point DSSAT failure isolation are matched in
-both drivers and do not change scientific output schemas. Keep
+Download validation/retry, per-point DSSAT failure isolation, and optional
+failed-folder ZIP preservation are matched in both drivers and do not change
+scientific output schemas. Keep
 `use_symlinks: false` for identical, portable run-folder contents.
 
 ### Running non-interactively (command line)
@@ -1598,7 +1646,7 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 ## Performance tips
 
 - **Tiny run folders (default):** when `DSSATPRO.V48` sits next to the DSSAT executable, the pipeline lets DSSAT resolve genotype/species/SDA/CO₂ files from the install directory instead of copying ~27 files into every point folder. Each folder then holds just the 4–5 essential files (`.WTH`, `SOIL.SOL`, FileX, `DSSBatch.V48`, `DSSATPRO.V48`). On a 10,000-point grid that's ~270,000 fewer files — a large saving on shared filesystems (Lustre/GPFS/NFS) where metadata ops dominate. Set `bundle_genotype_files: true` (auto-forced by `ZIP_FOR_HPC`) only when you need self-contained folders to ship to a host whose `DSSATPRO` doesn't match.
-- **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap and keys cache entries by geographic area. With `check_weather_downloads: true`, both drivers validate fixed-width DSSAT rows, consecutive dates, and plausible forcing before reuse; an invalid output is removed before each of up to `weather_download_retries` genuine regeneration attempts.
+- **Weather downloads are parallel/cached:** per-point sources (Daymet, NASA POWER, Open-Meteo) download across `WEATHER_CORES`; gridded sources (GridMET, CHIRPS, AgERA5) download once into a cache and extract all points locally. AgERA5 submits its CDS variable requests **concurrently** so the server-side queue waits overlap and keys cache entries by geographic area. Provider adapters write their `.WTH` values first; with `check_weather_downloads: true`, both drivers then apply the shared validation gate for fixed-width rows, consecutive dates, plausible forcing, and provider-required columns. An invalid output is removed before each of up to `weather_download_retries` genuine regeneration attempts.
 - **Point failures stay local:** a DSSAT error at one grid cell is recorded in that point's `_run_error.log`; the remaining cells continue and are combined. The parent summary reports every omitted point ID so partial spatial coverage remains explicit.
 - Use **scratch storage** (fast local SSD or parallel filesystem) for `base_dir` — DSSAT creates many small files per run.
 - Use `--cleanup_mode always` in production to remove transient DSSAT files after each point.

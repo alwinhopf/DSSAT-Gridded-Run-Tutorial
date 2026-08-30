@@ -81,6 +81,7 @@ This document outlines all weather and soil data sources available in `dssatutil
   - High-quality fusion of ERA5 + station data
   - Daily agrometeorological indicators downloaded once per variable-year and cached
   - Requests are queued server-side; transient CDS/DNS failures should be retried with the same cache directory
+  - The adapter writes provider values without a separate physical-quality gate. The shared engine validator then checks dates, ranges, temperature ordering, and all seven AgERA5 forcing columns consistently with the other weather sources.
 
 ### 6. **NASA-POWER CHIRPS Hybrid** (Global, Free)
 - **Coverage**: Global (focus on tropics/subtropics for CHIRPS)

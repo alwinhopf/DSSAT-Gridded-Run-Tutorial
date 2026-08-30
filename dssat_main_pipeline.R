@@ -253,13 +253,16 @@ STATE_NAME_FILTER        <- as.character(cfg_get("state_name_filter", c("Iowa"))
 #   crop_frac = cropland fraction [0-1]
 #   crop_pct  = cropland percent [0-100]
 #   crop_ha   = cropland hectares in the grid cell
-#   cell_ha   = full grid-cell hectares
+#   full_ha   = complete square grid-cell hectares
+#   cell_ha   = grid-cell hectares inside the study boundary (when clipped)
 USE_CROPLAND_MASK <- isTRUE(as.logical(cfg_get("use_cropland_mask", FALSE)))
 CROPLAND_RASTER_FILE <- as.character(cfg_get("cropland_raster_file", ""))
 CROPLAND_CLASSES <- as.integer(unlist(cfg_get("cropland_classes", c(82))))
 CROPLAND_MIN_FRACTION <- as.numeric(cfg_get("cropland_min_fraction", 0))
 CROPLAND_STRICT <- isTRUE(as.logical(cfg_get("cropland_strict", FALSE)))
 REUSE_CROPLAND_GRID <- isTRUE(as.logical(cfg_get("reuse_cropland_grid", TRUE)))
+CROPLAND_CLIP_TO_BOUNDARY <- isTRUE(as.logical(cfg_get("cropland_clip_to_boundary", TRUE)))
+CROPLAND_RELOCATE_ANCHOR <- isTRUE(as.logical(cfg_get("cropland_relocate_anchor", FALSE)))
 CROPLAND_FILTER_BASIS <- tolower(trimws(as.character(cfg_get(
   "cropland_filter_basis", "cell_fraction"
 ))))
@@ -419,7 +422,13 @@ CROPLAND_GRID_TAG <- ""
 if (USE_CROPLAND_MASK) {
   class_tag <- paste(CROPLAND_CLASSES, collapse = "-")
   min_tag <- gsub("\\.", "p", format(CROPLAND_MIN_FRACTION, trim = TRUE, scientific = FALSE))
-  CROPLAND_GRID_TAG <- gsub("[^A-Za-z0-9_\\-]", "_", paste0("_cropland_", class_tag, "_min", min_tag))
+  CROPLAND_GRID_TAG <- gsub(
+    "[^A-Za-z0-9_\\-]", "_",
+    paste0("_cropland_", class_tag, "_min", min_tag,
+           "_basis", CROPLAND_FILTER_BASIS,
+           "_clip", as.integer(CROPLAND_CLIP_TO_BOUNDARY),
+           "_move", as.integer(CROPLAND_RELOCATE_ANCHOR))
+  )
 }
 POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, CROPLAND_GRID_TAG, ".shp")
 ALL_LAND_POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
@@ -442,6 +451,9 @@ DSSAT_RUN_DIR <- file.path(RUNS_ROOT_DIR, DSSAT_RUN_NAME)
 FINAL_OUTPUT_DIR <- RESULTS_ROOT_DIR
 FINAL_RESULTS_PATH <- file.path(FINAL_OUTPUT_DIR, paste0(DSSAT_RUN_NAME, "_results.csv"))
 FINAL_PLOT_PATH <- file.path(FINAL_OUTPUT_DIR, paste0(DSSAT_RUN_NAME, "_yield_map.png"))
+FAILED_RUN_ARCHIVE_PATH <- file.path(
+  FINAL_OUTPUT_DIR, paste0(DSSAT_RUN_NAME, "_failed_run_folders.zip")
+)
 
 POINT_ID_COLUMN <- "ID"
 LAT_COLUMN <- "LAT"
@@ -522,9 +534,75 @@ ZIP_FOR_HPC <- isTRUE(as.logical(cfg_get("zip_for_hpc", FALSE)))
 # --- 7. Switches ---
 RUN_STEP_1_SOILS <- isTRUE(as.logical(cfg_get("run_step_1_soils", TRUE))) # Set to FALSE to only use already downloaded soil files
 RUN_STEP_2_WEATHER <- isTRUE(as.logical(cfg_get("run_step_2_weather", TRUE)))  # Set to FALSE to only use already downloaded weather files
+DOWNLOAD_ONLY <- isTRUE(as.logical(cfg_get("download_only", FALSE))) # Stop after input processing; never create DSSAT run folders
 RUN_DSSAT_EXECUTION <- isTRUE(as.logical(cfg_get("run_dssat_execution", TRUE))) # Set to FALSE for HPC preparation
 CLEANUP_RUN_FOLDERS <- isTRUE(as.logical(cfg_get("cleanup_run_folders", FALSE))) # Set to TRUE to delete all simulation folders after run
+ARCHIVE_FAILED_RUN_FOLDERS <- isTRUE(as.logical(cfg_get("archive_failed_run_folders", FALSE)))
 RESUME_DSSAT_RUNS <- isTRUE(as.logical(cfg_get("resume_dssat_runs", FALSE))) # Set to TRUE to skip creation of new folders
+
+archive_failed_run_folders <- function(failed_ids) {
+  failed_ids <- unique(as.character(failed_ids))
+  dir.create(FINAL_OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+  if (!length(failed_ids)) {
+    if (file.exists(FAILED_RUN_ARCHIVE_PATH)) {
+      unlink(FAILED_RUN_ARCHIVE_PATH, force = TRUE)
+      message("Removed stale failed-run archive: ", FAILED_RUN_ARCHIVE_PATH)
+    }
+    return(TRUE)
+  }
+
+  available_ids <- failed_ids[dir.exists(file.path(DSSAT_RUN_DIR, failed_ids))]
+  if (!length(available_ids)) {
+    warning(paste(
+      "Failed-run archiving was requested, but none of the failed point",
+      "folders exist; no ZIP was written."
+    ))
+    return(FALSE)
+  }
+
+  tmp_path <- paste0(FAILED_RUN_ARCHIVE_PATH, ".tmp.zip")
+  manifest_path <- file.path(DSSAT_RUN_DIR, "FAILED_IDS.txt")
+  old_wd <- getwd()
+  on.exit({
+    setwd(old_wd)
+    if (file.exists(manifest_path)) unlink(manifest_path, force = TRUE)
+    if (file.exists(tmp_path)) unlink(tmp_path, force = TRUE)
+  }, add = TRUE)
+
+  tryCatch({
+    if (file.exists(tmp_path)) unlink(tmp_path, force = TRUE)
+    writeLines(failed_ids, manifest_path, useBytes = TRUE)
+    setwd(DSSAT_RUN_DIR)
+    utils::zip(
+      zipfile = tmp_path,
+      files = c("FAILED_IDS.txt", available_ids),
+      flags = "-r9X"
+    )
+    setwd(old_wd)
+    if (!file.exists(tmp_path) || is.na(file.info(tmp_path)$size) || file.info(tmp_path)$size <= 0) {
+      stop("ZIP command did not create a non-empty archive")
+    }
+    if (file.exists(FAILED_RUN_ARCHIVE_PATH)) unlink(FAILED_RUN_ARCHIVE_PATH, force = TRUE)
+    if (!file.rename(tmp_path, FAILED_RUN_ARCHIVE_PATH)) {
+      stop("could not move the completed ZIP into the results folder")
+    }
+    message(sprintf("Archived %d failed run folder(s) -> %s",
+                    length(available_ids), FAILED_RUN_ARCHIVE_PATH))
+    missing_count <- length(failed_ids) - length(available_ids)
+    if (missing_count > 0) {
+      warning(sprintf("%d failed point folder(s) were absent and could not be included in the ZIP.",
+                      missing_count))
+    }
+    TRUE
+  }, error = function(e) {
+    warning(sprintf(
+      "Could not archive failed run folders: %s. Failed folders will be preserved uncompressed.",
+      conditionMessage(e)
+    ))
+    FALSE
+  })
+}
 
 # Validation and retry controls
 CHECK_WEATHER_DOWNLOADS <- isTRUE(as.logical(cfg_get("check_weather_downloads", FALSE)))
@@ -824,8 +902,21 @@ delete_numbered_folders <- function(ids) {
 }
 
 # --- Helper: Validate Weather File ---
+weather_required_columns <- function() {
+  core <- c("SRAD", "TMAX", "TMIN", "RAIN")
+  if (identical(toupper(WEATHER_SOURCE), "AGERA5")) {
+    c(core, "TDEW", "RH2M", "WIND")
+  } else {
+    core
+  }
+}
+
 is_wth_valid <- function(id, dir, end_yr) {
-  dssatutils::is_wth_valid(file.path(dir, paste0(id, ".WTH")), end_year = end_yr)
+  dssatutils::is_wth_valid(
+    file.path(dir, paste0(id, ".WTH")),
+    end_year = end_yr,
+    required_columns = weather_required_columns()
+  )
 }
 
 # --- Helper: Clean Invalid Soil Files ---
@@ -897,12 +988,14 @@ weather_input_issue <- function(id) {
   f <- file.path(id, paste0(id, ".WTH"))
   if (!file.exists(f)) return(paste0(basename(f), " is missing"))
   if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
+  required <- weather_required_columns()
   if (!dssatutils::is_wth_valid(
     f,
     end_year = WEATHER_END_YEAR,
-    required_columns = c("SRAD", "TMAX", "TMIN", "RAIN")
+    required_columns = required
   )) {
-    return(paste0(basename(f), " has missing or invalid core forcing (SRAD/TMAX/TMIN/RAIN)"))
+    return(sprintf("%s has missing or invalid required forcing (%s)",
+                   basename(f), paste(required, collapse = "/")))
   }
   NULL
 }
@@ -1108,7 +1201,10 @@ resolve_optional_path <- function(path) {
 
 apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
                                 min_fraction = 0, strict = FALSE,
-                                filter_basis = "cell_fraction") {
+                                filter_basis = "cell_fraction",
+                                boundary_sf = NULL,
+                                clip_to_boundary = TRUE,
+                                relocate_anchor = FALSE) {
   fallback <- function(text) {
     if (strict) stop(text, call. = FALSE)
     message("WARNING: ", text, " Continuing with all grid cells.")
@@ -1137,6 +1233,14 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
   message(sprintf("Applying cropland mask from %s (classes: %s)", raster_file, paste(classes, collapse = ", ")))
   pts_r <- st_transform(points_sf, terra::crs(r))
   xy <- st_coordinates(pts_r)
+  boundary_geom <- NULL
+  if (isTRUE(clip_to_boundary)) {
+    if (is.null(boundary_sf) || !nrow(boundary_sf)) {
+      message("WARNING: cropland_clip_to_boundary=true but no study boundary is available; using complete square cells.")
+    } else {
+      boundary_geom <- sf::st_union(sf::st_make_valid(sf::st_transform(boundary_sf, terra::crs(r))))
+    }
+  }
   point_values <- terra::extract(
     r, terra::vect(pts_r), ID = FALSE, raw = TRUE
   )
@@ -1147,22 +1251,55 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
   }
   point_crop <- ifelse(is.na(point_values), NA_real_, as.numeric(point_values %in% classes))
   half <- grid_spacing_m / 2
-  frac <- vapply(seq_len(nrow(pts_r)), function(i) {
+  stats <- lapply(seq_len(nrow(pts_r)), function(i) {
     x <- xy[i, 1]; y <- xy[i, 2]
-    cell_ext <- terra::ext(x - half, x + half, y - half, y + half)
-    cell_r <- tryCatch(terra::crop(r, cell_ext, snap = "out"), error = function(e) NULL)
-    if (is.null(cell_r) || terra::ncell(cell_r) == 0) return(NA_real_)
+    cell_geom <- sf::st_sfc(sf::st_polygon(list(matrix(c(
+      x - half, y - half, x + half, y - half,
+      x + half, y + half, x - half, y + half,
+      x - half, y - half
+    ), ncol = 2, byrow = TRUE))), crs = sf::st_crs(pts_r))
+    domain_geom <- if (is.null(boundary_geom)) cell_geom else {
+      suppressWarnings(sf::st_intersection(cell_geom, boundary_geom))
+    }
+    if (!length(domain_geom) || all(sf::st_is_empty(domain_geom))) {
+      return(list(frac = NA_real_, cell_ha = 0, nearest = c(NA_real_, NA_real_)))
+    }
+    domain_geom <- sf::st_union(domain_geom)
+    domain_ha <- as.numeric(sf::st_area(domain_geom)) / 10000
+    domain_v <- terra::vect(domain_geom)
+    cell_r <- tryCatch({
+      cropped <- terra::crop(r, domain_v, snap = "out")
+      terra::mask(cropped, domain_v)
+    }, error = function(e) NULL)
+    if (is.null(cell_r) || terra::ncell(cell_r) == 0) {
+      return(list(frac = NA_real_, cell_ha = domain_ha, nearest = c(NA_real_, NA_real_)))
+    }
     vals <- terra::values(cell_r, mat = FALSE, na.rm = TRUE)
-    if (length(vals) == 0) return(NA_real_)
-    mean(vals %in% classes)
-  }, numeric(1))
+    if (length(vals) == 0) {
+      return(list(frac = NA_real_, cell_ha = domain_ha, nearest = c(NA_real_, NA_real_)))
+    }
+    nearest <- c(NA_real_, NA_real_)
+    if (isTRUE(relocate_anchor)) {
+      all_vals <- terra::values(cell_r, mat = FALSE)
+      crop_cells <- which(!is.na(all_vals) & all_vals %in% classes)
+      if (length(crop_cells)) {
+        crop_xy <- terra::xyFromCell(cell_r, crop_cells)
+        nearest <- crop_xy[which.min((crop_xy[, 1] - x)^2 + (crop_xy[, 2] - y)^2), ]
+      }
+    }
+    list(frac = mean(vals %in% classes), cell_ha = domain_ha, nearest = nearest)
+  })
+  frac <- vapply(stats, `[[`, numeric(1), "frac")
+  domain_ha <- vapply(stats, `[[`, numeric(1), "cell_ha")
+  nearest_xy <- do.call(rbind, lapply(stats, `[[`, "nearest"))
   frac[is.nan(frac)] <- NA_real_
   frac <- pmax(0, pmin(1, frac))
 
   out <- points_sf
   out$crop_frac <- frac
   out$crop_pct <- round(100 * frac, 4)
-  out$cell_ha <- (grid_spacing_m^2) / 10000
+  out$full_ha <- (grid_spacing_m^2) / 10000
+  out$cell_ha <- round(domain_ha, 4)
   out$crop_ha <- round(out$cell_ha * frac, 4)
   out$crop_pt <- point_crop
 
@@ -1177,7 +1314,34 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
                   kept, nrow(out), if (nrow(out) > 0) 100 * kept / nrow(out) else 0))
   if (kept == 0) stop("Cropland mask removed all grid cells. Lower cropland_min_fraction or check cropland raster/classes.", call. = FALSE)
 
+  original_wgs <- sf::st_transform(points_sf, 4326)
+  original_xy <- sf::st_coordinates(original_wgs)
   out <- out[keep, ]
+  out$orig_lon <- original_xy[keep, 1]
+  out$orig_lat <- original_xy[keep, 2]
+  out$anchor_mv <- 0L
+  out$anchor_km <- 0
+  if (isTRUE(relocate_anchor)) {
+    moved_r <- pts_r[keep, ]
+    kept_rows <- which(keep)
+    moved_xy <- sf::st_coordinates(moved_r)
+    targets <- nearest_xy[kept_rows, , drop = FALSE]
+    can_move <- is.finite(targets[, 1]) & is.finite(targets[, 2])
+    moved_xy[can_move, ] <- targets[can_move, , drop = FALSE]
+    sf::st_geometry(moved_r) <- sf::st_sfc(
+      lapply(seq_len(nrow(moved_xy)), function(i) sf::st_point(moved_xy[i, ])),
+      crs = sf::st_crs(pts_r)
+    )
+    out$anchor_mv[can_move] <- 1L
+    old_xy <- xy[kept_rows, , drop = FALSE]
+    out$anchor_km[can_move] <- round(sqrt(rowSums(
+      (targets[can_move, , drop = FALSE] - old_xy[can_move, , drop = FALSE])^2
+    )) / 1000, 6)
+    sf::st_geometry(out) <- sf::st_geometry(sf::st_transform(moved_r, sf::st_crs(points_sf)))
+    moved_wgs_xy <- sf::st_coordinates(sf::st_transform(out, 4326))
+    if ("LONG" %in% names(out)) out$LONG <- moved_wgs_xy[, 1]
+    if ("LAT" %in% names(out)) out$LAT <- moved_wgs_xy[, 2]
+  }
   tryCatch(
     sf::st_write(out, POINT_SHAPEFILE_PATH, append = FALSE, delete_layer = TRUE, quiet = TRUE),
     error = function(e) message("WARNING: Could not rewrite cropland-filtered grid shapefile: ", e$message)
@@ -1195,6 +1359,7 @@ setwd(OUTPUT_ROOT_DIR)
 dir.create(GRIDPOINTS_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
 gridfile <- NULL
+boundary_sf <- NULL
 can_reuse_derived <- !USE_EXISTING_POINT_SHAPEFILE &&
   ((USE_CROPLAND_MASK && REUSE_CROPLAND_GRID) ||
    (USE_MASTER_GRID && REUSE_MASTER_GRID)) && file.exists(POINT_SHAPEFILE_PATH)
@@ -1267,11 +1432,59 @@ if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile))) {
     classes = CROPLAND_CLASSES,
     min_fraction = CROPLAND_MIN_FRACTION,
     strict = CROPLAND_STRICT,
-    filter_basis = CROPLAND_FILTER_BASIS
+    filter_basis = CROPLAND_FILTER_BASIS,
+    boundary_sf = boundary_sf,
+    clip_to_boundary = CROPLAND_CLIP_TO_BOUNDARY,
+    relocate_anchor = CROPLAND_RELOCATE_ANCHOR
   )
 }
 
 message(sprintf("Grid points ready: %d point(s)", nrow(gridfile)))
+
+# Helper functions for unresolvable/offline point caching
+load_unresolvable_point_ids <- function(cache_path) {
+  if (is.null(cache_path) || !nzchar(cache_path) || !file.exists(cache_path)) return(character(0))
+  tryCatch({
+    if (grepl("\\.json$", cache_path, ignore.case = TRUE)) {
+      dat <- jsonlite::fromJSON(cache_path)
+      if (is.character(dat)) return(unique(as.character(dat)))
+      if (is.list(dat) && !is.data.frame(dat)) return(unique(as.character(names(dat))))
+    } else if (grepl("\\.csv$", cache_path, ignore.case = TRUE)) {
+      d <- utils::read.csv(cache_path, stringsAsFactors = FALSE, colClasses = "character")
+      col <- intersect(c("ID", "point_id", "id"), names(d))
+      if (length(col)) return(unique(as.character(d[[col[1]]])))
+    }
+    character(0)
+  }, error = function(e) character(0))
+}
+
+save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
+  new_ids <- as.character(new_ids)
+  new_ids <- new_ids[nzchar(new_ids)]
+  if (length(new_ids) == 0) return(invisible(FALSE))
+  tryCatch({
+    dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
+    existing_data <- list()
+    if (file.exists(cache_path)) {
+      tryCatch({
+        parsed <- jsonlite::fromJSON(cache_path)
+        if (is.list(parsed) && !is.data.frame(parsed)) existing_data <- parsed
+      }, error = function(e) {})
+    }
+    tstr <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    for (i in seq_along(new_ids)) {
+      pid <- new_ids[i]
+      rsn <- if (!is.null(reasons) && length(reasons) >= i && nzchar(as.character(reasons[i]))) {
+        as.character(reasons[i])
+      } else {
+        "unresolvable_or_out_of_bounds"
+      }
+      existing_data[[pid]] <- list(reason = rsn, updated_at = tstr)
+    }
+    jsonlite::write_json(existing_data, cache_path, pretty = TRUE, auto_unbox = TRUE)
+    invisible(TRUE)
+  }, error = function(e) invisible(FALSE))
+}
 
 #-----------------------------------------------------------------------
 # STEP 1: SOIL DATA
@@ -1286,6 +1499,22 @@ if (RUN_STEP_1_SOILS) {
   soilfile_CSV <- paste0(soilfile_path_prefix, ".CSV")
   individual_sol_output_folder <- paste0(soilfile_path_prefix, "_individual_SOL")
   dir.create(individual_sol_output_folder, recursive = TRUE, showWarnings = FALSE)
+  soil_unresolvable_file <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_unresolvable.json"))
+  unresolvable_soil_ids <- load_unresolvable_point_ids(soil_unresolvable_file)
+
+  # Check for provider-generated failure CSV and harvest permanent failures
+  soil_fail_csv <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_download_failures.csv"))
+  if (file.exists(soil_fail_csv)) {
+    tryCatch({
+      fdf <- utils::read.csv(soil_fail_csv, stringsAsFactors = FALSE, colClasses = "character")
+      if (nrow(fdf) > 0 && "ID" %in% names(fdf)) {
+        p_ids <- as.character(fdf$ID)
+        p_rsn <- if ("reason" %in% names(fdf)) as.character(fdf$reason) else rep("no_soil_coverage", length(p_ids))
+        save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
+        unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, p_ids))
+      }
+    }, error = function(e) {})
+  }
   
   if (SOIL_SOURCE %in% PER_POINT_SOIL) {
     # All of these write one Saxton-&-Rawls .SOL per point named by point ID, so
@@ -1329,36 +1558,70 @@ if (RUN_STEP_1_SOILS) {
       close(out_con)
     }
 
-    repeat {
-      .soil_fn(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES,
-               POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
+    existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+    accounted_ids <- union(existing_files, unresolvable_soil_ids)
+    missing_ids <- setdiff(ids, accounted_ids)
 
+    if (length(missing_ids) == 0 && length(existing_files) > 0) {
+      message(sprintf("All %d soil profiles are accounted for (%d valid .SOL, %d unresolvable). Skipping %s processing.",
+                      length(ids), length(intersect(ids, existing_files)),
+                      length(intersect(ids, unresolvable_soil_ids)), SOIL_SOURCE))
       combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
-      
-      retry_count <- retry_count + 1
-      
-      if (CHECK_SOIL_DOWNLOADS) {
-        clean_invalid_soils(individual_sol_output_folder, ids)
-      }
+    } else {
+      repeat {
+        .soil_fn(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES,
+                 POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
 
-      existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-      missing_count <- sum(!ids %in% existing_files)
-      if (missing_count == 0) {
-        break
-      } else if (retry_count < max_retries) {
-        message(sprintf("%s: %d profiles missing%s. Retrying %d/%d...",
-                        SOIL_SOURCE,
-                        missing_count,
-                        if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
-                        retry_count,
-                        max_retries))
-      } else {
-        warning(sprintf("%s: %d profile(s) still missing%s after %d retries. Missing IDs will be skipped during DSSAT execution.",
-                        SOIL_SOURCE,
-                        missing_count,
-                        if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
-                        max_retries))
-        break
+        combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
+        
+        retry_count <- retry_count + 1
+        
+        if (CHECK_SOIL_DOWNLOADS) {
+          clean_invalid_soils(individual_sol_output_folder, ids)
+        }
+
+        # Refresh failure harvest
+        if (file.exists(soil_fail_csv)) {
+          tryCatch({
+            fdf <- utils::read.csv(soil_fail_csv, stringsAsFactors = FALSE, colClasses = "character")
+            if (nrow(fdf) > 0 && "ID" %in% names(fdf)) {
+              p_ids <- as.character(fdf$ID)
+              p_rsn <- if ("reason" %in% names(fdf)) as.character(fdf$reason) else rep("no_soil_coverage", length(p_ids))
+              save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
+              unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, p_ids))
+            }
+          }, error = function(e) {})
+        }
+
+        existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+        accounted_ids <- union(existing_files, unresolvable_soil_ids)
+        missing_ids <- setdiff(ids, accounted_ids)
+        missing_count <- length(missing_ids)
+
+        if (missing_count == 0) {
+          if (length(unresolvable_soil_ids) > 0) {
+            message(sprintf("%s: %d valid profile(s) ready; %d unresolvable point(s) recorded in %s.",
+                            SOIL_SOURCE, length(intersect(ids, existing_files)),
+                            length(intersect(ids, unresolvable_soil_ids)), basename(soil_unresolvable_file)))
+          }
+          break
+        } else if (retry_count < max_retries) {
+          message(sprintf("%s: %d profiles missing%s. Retrying %d/%d...",
+                          SOIL_SOURCE,
+                          missing_count,
+                          if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
+                          retry_count,
+                          max_retries))
+        } else {
+          save_unresolvable_point_ids(soil_unresolvable_file, missing_ids,
+                                      paste0("failed_after_", max_retries, "_retries"))
+          warning(sprintf("%s: %d profile(s) still missing%s after %d retries. Missing IDs recorded as unresolvable and skipped during DSSAT execution.",
+                          SOIL_SOURCE,
+                          missing_count,
+                          if (CHECK_SOIL_DOWNLOADS) "/invalid" else "",
+                          max_retries))
+          break
+        }
       }
     }
     
@@ -1373,12 +1636,27 @@ if (RUN_STEP_1_SOILS) {
     if (CHECK_SOIL_DOWNLOADS) {
       clean_invalid_soils(individual_sol_output_folder, ids)
     }
+    sg_log <- file.path(individual_sol_output_folder, "soil_processing_errors.log")
+    if (file.exists(sg_log)) {
+      tryCatch({
+        sg_lines <- readLines(sg_log, warn = FALSE)
+        err_lines <- grep("SKIPPED:\\s*ID:\\s*(\\w+)", sg_lines, value = TRUE)
+        if (length(err_lines) > 0) {
+          err_ids <- sub("^.*SKIPPED:\\s*ID:\\s*(\\w+).*$", "\\1", err_lines)
+          save_unresolvable_point_ids(soil_unresolvable_file, err_ids, err_lines)
+          unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, err_ids))
+        }
+      }, error = function(e) {})
+    }
     existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-    missing_mask <- ! (ids %in% existing_files)
+    accounted_ids <- union(existing_files, unresolvable_soil_ids)
+    missing_mask <- !(ids %in% accounted_ids)
     points_to_process <- gridfile[missing_mask, ]
     
     if (nrow(points_to_process) == 0) {
-      message("All online soil profiles already exist. Skipping SoilGrids processing.")
+      message(sprintf("All %d online soil profiles are accounted for (%d valid .SOL, %d unresolvable). Skipping SoilGrids processing.",
+                      length(ids), length(intersect(ids, existing_files)),
+                      length(intersect(ids, unresolvable_soil_ids))))
     } else {
       USE_REST_API <<- (SOILGRIDS_MODE != "VRT")
       message(sprintf("SoilGrids online mode: %s. Processing %d missing points...",
@@ -1406,24 +1684,37 @@ if (RUN_STEP_1_SOILS) {
         
         retry_count <- retry_count + 1
         
+        if (file.exists(sg_log)) {
+          tryCatch({
+            sg_lines <- readLines(sg_log, warn = FALSE)
+            err_lines <- grep("SKIPPED:\\s*ID:\\s*(\\w+)", sg_lines, value = TRUE)
+            if (length(err_lines) > 0) {
+              err_ids <- sub("^.*SKIPPED:\\s*ID:\\s*(\\w+).*$", "\\1", err_lines)
+              save_unresolvable_point_ids(soil_unresolvable_file, err_ids, err_lines)
+              unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, err_ids))
+            }
+          }, error = function(e) {})
+        }
+
         if (CHECK_SOIL_DOWNLOADS) {
           ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
           clean_invalid_soils(individual_sol_output_folder, ids_left)
           if (!ok) break
           existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-          missing_left_mask <- ! (ids_left %in% existing_left)
+          accounted_left <- union(existing_left, unresolvable_soil_ids)
+          missing_left_mask <- !(ids_left %in% accounted_left)
           points_to_process <- points_to_process[missing_left_mask, ]
         } else {
-          # No deep validity check requested — still confirm the .SOL files now
-          # exist on disk so successfully-fetched points are cleared and we don't
-          # emit a spurious "failed" warning for them.
           existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
           ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
-          points_to_process <- points_to_process[!(ids_left %in% existing_left), ]
+          accounted_left <- union(existing_left, unresolvable_soil_ids)
+          points_to_process <- points_to_process[!(ids_left %in% accounted_left), ]
         }
       }
       
       if (nrow(points_to_process) > 0) {
+        save_unresolvable_point_ids(soil_unresolvable_file, points_to_process[[POINT_ID_COLUMN]],
+                                    paste0("failed_after_", max_retries, "_retries"))
         warning(sprintf("Failed to successfully download soil data for %d points after %d retries.",
                         nrow(points_to_process), max_retries))
       }
@@ -1455,10 +1746,13 @@ if (RUN_STEP_1_SOILS) {
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
     existing_files <- tools::file_path_sans_ext(
       list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-    points_to_process <- gridfile[!(ids %in% existing_files), ]
+    accounted_ids <- union(existing_files, unresolvable_soil_ids)
+    points_to_process <- gridfile[!(ids %in% accounted_ids), ]
 
     if (nrow(points_to_process) == 0) {
-      message("All POLARIS soil profiles already exist. Skipping POLARIS processing.")
+      message(sprintf("All %d POLARIS soil profiles are accounted for (%d valid .SOL, %d unresolvable). Skipping POLARIS processing.",
+                      length(ids), length(intersect(ids, existing_files)),
+                      length(intersect(ids, unresolvable_soil_ids))))
     } else {
       message(sprintf("POLARIS (statistic=%s): processing %d missing point(s)...",
                       POLARIS_STAT, nrow(points_to_process)))
@@ -1471,6 +1765,14 @@ if (RUN_STEP_1_SOILS) {
         warning(sprintf("POLARIS extraction failed for this batch (%d point(s)): %s",
                         nrow(points_to_process), conditionMessage(e)))
       })
+      # Mark points that still failed as unresolvable
+      new_existing <- tools::file_path_sans_ext(
+        list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+      failed_ids <- setdiff(points_to_process[[POINT_ID_COLUMN]], new_existing)
+      if (length(failed_ids) > 0) {
+        save_unresolvable_point_ids(soil_unresolvable_file, failed_ids, "polaris_read_failed_or_out_of_bounds")
+        unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, failed_ids))
+      }
     }
 
     valid_ids <- intersect(ids, tools::file_path_sans_ext(
@@ -1533,13 +1835,19 @@ if (RUN_STEP_2_WEATHER) {
   # Uses new naming: [Location]_[Res]_[Source]
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   
+  weather_unresolvable_file <- file.path(output_dir, "unresolvable_points.json")
+  unresolvable_weather_ids <- load_unresolvable_point_ids(weather_unresolvable_file)
+  
   # --- SMART RESUME BLOCK ---
   ids <- as.character(gridfile[[POINT_ID_COLUMN]])
   if (CHECK_WEATHER_DOWNLOADS) {
     message("Verifying existing weather files for validity...")
-    valid_mask <- vapply(ids, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
+    valid_mask <- vapply(ids, function(id) {
+      if (id %in% unresolvable_weather_ids) return(TRUE)
+      is_wth_valid(id, output_dir, WEATHER_END_YEAR)
+    }, logical(1))
     missing_mask <- !valid_mask
-    invalid_existing <- ids[missing_mask & file.exists(file.path(output_dir, paste0(ids, ".WTH")))]
+    invalid_existing <- ids[missing_mask & !(ids %in% unresolvable_weather_ids) & file.exists(file.path(output_dir, paste0(ids, ".WTH")))]
     if (length(invalid_existing) > 0) {
       message(sprintf("Deleting %d invalid existing weather file(s) before retry: %s",
                       length(invalid_existing), paste(head(invalid_existing, 20), collapse = ", ")),
@@ -1548,12 +1856,15 @@ if (RUN_STEP_2_WEATHER) {
     }
   } else {
     existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
-    missing_mask <- ! (ids %in% existing_files)
+    accounted <- union(existing_files, unresolvable_weather_ids)
+    missing_mask <- !(ids %in% accounted)
   }
-  points_to_process <- gridfile[missing_mask, ]
+  points_to_process <- gridfile[missing_mask & !(ids %in% unresolvable_weather_ids), ]
   
   if (nrow(points_to_process) == 0) {
-    message("All weather files already exist and are valid. Skipping processing.")
+    existing_wth <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
+    message(sprintf("All %d weather files are accounted for (%d valid .WTH, %d unresolvable). Skipping weather processing.",
+                    length(ids), length(intersect(ids, existing_wth)), length(intersect(ids, unresolvable_weather_ids))))
   } else {
     log_file <- file.path(output_dir, "download_errors.log")
     
@@ -1647,8 +1958,11 @@ if (RUN_STEP_2_WEATHER) {
       
       if (CHECK_WEATHER_DOWNLOADS) {
         ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
-        valid_mask <- vapply(ids_left, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
-        points_to_process <- points_to_process[!valid_mask, ]
+        valid_mask <- vapply(ids_left, function(id) {
+          if (id %in% unresolvable_weather_ids) return(TRUE)
+          is_wth_valid(id, output_dir, WEATHER_END_YEAR)
+        }, logical(1))
+        points_to_process <- points_to_process[!valid_mask & !(ids_left %in% unresolvable_weather_ids), ]
 
         # Provider writers deliberately skip an existing path. Remove only the
         # files that just failed validation before another attempt; otherwise
@@ -1660,18 +1974,18 @@ if (RUN_STEP_2_WEATHER) {
           if (length(retry_paths) > 0) unlink(retry_paths, force = TRUE)
         }
       } else {
-        # No deep validity check requested — still confirm the .WTH files now
-        # exist on disk, so points that downloaded fine are cleared from the
-        # pending list and we don't emit a spurious "failed" warning for them.
         existing_files <- tools::file_path_sans_ext(list.files(output_dir, pattern = "\\.WTH$"))
         ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
-        points_to_process <- points_to_process[!(ids_left %in% existing_files), ]
+        accounted_left <- union(existing_files, unresolvable_weather_ids)
+        points_to_process <- points_to_process[!(ids_left %in% accounted_left), ]
       }
     }
     
     if (nrow(points_to_process) > 0) {
-      warning(sprintf("Failed to successfully download weather data for %d points after %d retries.", 
-                      nrow(points_to_process), max_retries))
+      save_unresolvable_point_ids(weather_unresolvable_file, points_to_process[[POINT_ID_COLUMN]],
+                                  paste0("failed_after_", max_retries, "_retries"))
+      warning(sprintf("Failed to successfully download weather data for %d points after %d retries. Recorded in %s and skipped during DSSAT execution.", 
+                      nrow(points_to_process), max_retries, basename(weather_unresolvable_file)))
     }
   }
 }
@@ -1842,6 +2156,14 @@ if (EXTEND_WEATHER_DATA) {
       output_dir
     ))
   }
+}
+
+if (DOWNLOAD_ONLY) {
+  message(paste(rep("=", 60), collapse = ""))
+  message("DOWNLOAD-ONLY MODE COMPLETE")
+  message("Soil and weather processing finished; DSSAT folders and simulations were not created.")
+  message(paste(rep("=", 60), collapse = ""))
+  quit(save = "no", status = 0)
 }
 
 #-----------------------------------------------------------------------
@@ -2026,14 +2348,14 @@ create_folders_and_files <- function(i) {
     # does not log "Error reading latitude/longitude/elevation". The template
     # placeholders (LATITUDE/LONGITUDE/ELEV) are right-justified at their field
     # edges, so each is swapped for a SAME-LENGTH number to preserve the
-    # fixed-width column alignment. Only the single data line that carries the
+    # fixed-width column alignment. Every field-level data line that carries the
     # LATITUDE/LONGITUDE placeholders is edited — "ELEV" also appears in the @L
     # header, so a global replace would corrupt it. Anything unexpected (bad
     # coord, width overflow) leaves the placeholder untouched: never fatal.
     content <- tryCatch({
       fld_idx <- which(grepl("LATITUDE", content, fixed = TRUE) &
                        grepl("LONGITUDE", content, fixed = TRUE))
-      if (length(fld_idx) == 1) {
+      if (length(fld_idx) >= 1) {
         lat  <- suppressWarnings(as.numeric(points[[LAT_COLUMN]][i]))
         lon  <- suppressWarnings(as.numeric(points[[LONG_COLUMN]][i]))
         elev <- -99  # DSSAT "missing"; valid number so no read error
@@ -2056,14 +2378,16 @@ create_folders_and_files <- function(i) {
           s <- formatC(x, format = "f", digits = digits, width = width)
           if (nchar(s) == width) s else NULL
         }
-        line  <- content[fld_idx]
         s_lat <- if (is.finite(lat)) fit(lat, 8, 3) else NULL  # "LATITUDE"  = 8
         s_lon <- if (is.finite(lon)) fit(lon, 9, 3) else NULL  # "LONGITUDE" = 9
         s_ele <- fit(elev, 4, 0)                               # "ELEV"      = 4
-        if (!is.null(s_lat)) line <- sub("LATITUDE",  s_lat, line, fixed = TRUE)
-        if (!is.null(s_lon)) line <- sub("LONGITUDE", s_lon, line, fixed = TRUE)
-        if (!is.null(s_ele)) line <- sub("ELEV",      s_ele, line, fixed = TRUE)
-        content[fld_idx] <- line
+        for (field_line_idx in fld_idx) {
+          line <- content[field_line_idx]
+          if (!is.null(s_lat)) line <- sub("LATITUDE",  s_lat, line, fixed = TRUE)
+          if (!is.null(s_lon)) line <- sub("LONGITUDE", s_lon, line, fixed = TRUE)
+          if (!is.null(s_ele)) line <- sub("ELEV",      s_ele, line, fixed = TRUE)
+          content[field_line_idx] <- line
+        }
       }
       content
     }, error = function(e) content)
@@ -2213,6 +2537,16 @@ if (RUN_DSSAT_EXECUTION) {
     }
   }
 
+  # Include invalid-input skips as well as DSSAT execution failures. Both leave
+  # a point folder without results_<ID>.csv and may contain useful diagnostics.
+  failed_ids <- all_ids[
+    !file.exists(file.path(DSSAT_RUN_DIR, all_ids, paste0("results_", all_ids, ".csv")))
+  ]
+  failed_archive_created <- FALSE
+  if (ARCHIVE_FAILED_RUN_FOLDERS) {
+    failed_archive_created <- archive_failed_run_folders(failed_ids)
+  }
+
   # --- 3.7. Combine Results ---
   if (!dir.exists(FINAL_OUTPUT_DIR)) dir.create(FINAL_OUTPUT_DIR, recursive = TRUE)
 
@@ -2234,7 +2568,8 @@ if (RUN_DSSAT_EXECUTION) {
     point_attrs <- st_drop_geometry(gridfile)
     keep_cols <- intersect(c(
       POINT_ID_COLUMN, "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
-      "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha"
+      "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha", "full_ha",
+      "orig_lat", "orig_lon", "anchor_mv", "anchor_km"
     ), names(point_attrs))
     if (length(keep_cols) > 1) {
       point_attrs <- point_attrs[, keep_cols, drop = FALSE]
@@ -2255,9 +2590,14 @@ if (RUN_DSSAT_EXECUTION) {
                          auto_unbox = TRUE, pretty = TRUE, null = "null")
     message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
   } else {
+    diagnostic_location <- if (ARCHIVE_FAILED_RUN_FOLDERS && failed_archive_created) {
+      FAILED_RUN_ARCHIVE_PATH
+    } else {
+      DSSAT_RUN_DIR
+    }
     stop(
-      "DSSAT execution produced zero point results. Per-point run folders were preserved for diagnosis under: ",
-      DSSAT_RUN_DIR,
+      "DSSAT execution produced zero point results. Per-point run diagnostics are available at: ",
+      diagnostic_location,
       call. = FALSE
     )
   }
@@ -2272,7 +2612,15 @@ if (RUN_DSSAT_EXECUTION) {
   # RESULTS_ROOT_DIR, outside DSSAT_RUN_DIR, so it survives the cleanup.
   if (CLEANUP_RUN_FOLDERS) {
     if (file.exists(FINAL_RESULTS_PATH)) {
-      point_dirs <- file.path(DSSAT_RUN_DIR, all_ids)
+      cleanup_ids <- all_ids
+      if (ARCHIVE_FAILED_RUN_FOLDERS && length(failed_ids) > 0 && !failed_archive_created) {
+        cleanup_ids <- setdiff(all_ids, failed_ids)
+        message(paste(
+          "Failed-run ZIP was not created; preserving failed folders",
+          "uncompressed and cleaning successful folders only."
+        ))
+      }
+      point_dirs <- file.path(DSSAT_RUN_DIR, cleanup_ids)
       point_dirs <- point_dirs[dir.exists(point_dirs)]
       if (length(point_dirs) > 0) {
         message(sprintf("Cleanup: deleting %d per-point run folder(s) under %s",
