@@ -1315,6 +1315,55 @@ configuration plumbing and derived values; all user-facing knobs belong in
 
 ### R/Python parity note
 
+Both drivers now delegate soil preflight to `dssatutils::soil_file_issue()` /
+`dssatutils.soil_file_issue()`, which checks DSSAT's actual fixed columns. A
+corrected local `dssatutils` installation is required before using these driver
+changes; the pinned remote revision does not contain uncommitted fixes. See
+the shared package's [input-cache recovery notes](../dssatutils/README.md#input-cache-integrity-fixes-2026-08-31).
+Installing new code does not invalidate existing `.WTH`, `.SOL`, point CSVs or
+completed sweep manifests automatically. Rebuild affected derived inputs and
+rerun their dependent results explicitly, preserving original caches.
+
+#### Sequence-calendar warning (2026-08-31)
+
+Native `Q` mode does **not** guarantee immutable crop-year slots after early
+crop failure. This is distinct from regional date selection or a 2/5-day
+turnaround assumption. The current carinata template/model behavior is:
+
+1. [`AUTHAR.for`](../dssat-csm-os/Management/AUTHAR.for) terminates a phase on
+   germination/emergence failure (CropStatus 12/13), even with a later prescribed
+   harvest date. [`CSM.for`](../dssat-csm-os/CSM_Main/CSM.for) starts the next
+   phase on the day after the actual phase end.
+2. For fallow, [`MgmtOps.for`](../dssat-csm-os/Management/MgmtOps.for) chooses
+   the next occurrence of the prescribed fallow-end **day of year**, adjusting
+   its year relative to the actual new start. The original crop-year offset is
+   not retained.
+3. [`AUTPLT.for`](../dssat-csm-os/Management/AUTPLT.for) similarly aligns the
+   next crop's planting to the next available occurrence of its day of year.
+
+Observed example: 300 km DAYMET / SOILGRIDS_10K, point `00582021`. Treatment 1
+(fallow control) maize planted `1991122` ended `1991143` with zero grain yield.
+Its next fallow ended `1991150`, then soybean planted `1991152`. Treatment 4
+(carinata 100N) had the same maize failure, but carinata occupied `1991274` to
+`1992150`, followed by soybean on `1992152`. Thus the control pulled soybean
+forward by a year; this is not an immediate maize replanting. Over the run the
+control had 96 phases versus 78 in treatment 4 (32 versus 26 maize crops;
+16 versus 13 soybean crops). Do not interpret this as a productive benefit of
+fallow or use unequal crop counts as matched rotation/LCA counterfactuals.
+
+**Required study policy:** retain an immutable ledger of crop-year slots. On
+failure, record the failed crop once, continue fallow water/carbon/nitrogen
+dynamics, and permit planting only in the next *scheduled* crop's window.
+Do not insert a replacement crop or accelerate the rotation. A missed optional
+carinata slot should be skipped, not rolled into the following year.
+
+This calendar correction is **not implemented** by the input-cache fixes.
+Changing only FileX year labels, expanding dated rows in `Q` mode, adjusting
+turnaround days, or resetting each crop independently will not safely enforce
+the policy. A calendar-aware sequence controller/native option must be tested
+for early failure and soil-state continuity before changing the production
+template. Audit actual planting years/crop counts, not just yield, until then.
+
 Both pipelines consume the same merged YAML and run the same engine contract.
 One internal optimization remains implementation-specific: Python can opt into
 symlinked support files with `use_symlinks`, while R currently copies them.

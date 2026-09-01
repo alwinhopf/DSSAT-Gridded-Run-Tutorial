@@ -819,6 +819,11 @@ message(sprintf("Using landcover helper scripts from: %s", SCRIPT_DIR))
 
 library(dssatutils)  # [dssatutils] shared weather/soil sources
 library(dssatengine) # [dssatengine] shared gridded run engine
+if (!"soil_file_issue" %in% getNamespaceExports("dssatutils")) {
+  stop("This driver requires the fixed-column soil preflight in the updated dssatutils package. ",
+       "Install the corrected local checkout and restart R before running; preserve existing caches.",
+       call. = FALSE)
+}
 
 ensure_dssatutils_chirps_v3 <- function() {
   if (!identical(WEATHER_SOURCE, "NASA_POWER_CHIRPS_V3")) {
@@ -961,27 +966,8 @@ write_input_error <- function(id, reason) {
 }
 
 soil_input_issue <- function(id) {
-  f <- file.path(id, "SOIL.SOL")
-  if (!file.exists(f)) return("SOIL.SOL is missing")
-  lines <- tryCatch(readLines(f, warn = FALSE, encoding = "UTF-8"), error = function(e) character())
-  if (!length(lines)) return("SOIL.SOL is empty or unreadable")
-  if (any(grepl("^\\*SOIL ERROR", lines))) {
-    return(paste(trimws(lines[grepl("^\\*SOIL ERROR|^Source missing|^No Soil ID", lines)]),
-                 collapse = " | "))
-  }
-
-  hdr <- grep("^@\\s+SLB\\b", lines)
-  if (!length(hdr)) return("SOIL.SOL has no @ SLB layer table")
-  layer_lines <- lines[(hdr[1] + 1):length(lines)]
-  layer_lines <- layer_lines[nzchar(trimws(layer_lines))]
-  layer_lines <- layer_lines[grepl("^\\s*\\d+\\s+", layer_lines)]
-  depths <- suppressWarnings(as.integer(sub("^\\s*(\\d+).*", "\\1", layer_lines)))
-  depths <- depths[is.finite(depths)]
-  if (!length(depths)) return("SOIL.SOL has no parseable SLB layer depths")
-  if (length(depths) > 19) return(sprintf("SOIL.SOL has %d layers; DSSAT accepts at most 19", length(depths)))
-  if (any(diff(depths) <= 0)) return(sprintf("SOIL.SOL layer depths are not strictly increasing: %s",
-                                             paste(depths, collapse = ",")))
-  NULL
+  # Shared fixed-column reader also rejects legacy shifted cached layer rows.
+  return(dssatutils::soil_file_issue(file.path(id, "SOIL.SOL")))
 }
 
 weather_input_issue <- function(id) {

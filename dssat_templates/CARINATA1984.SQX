@@ -527,15 +527,15 @@
 
 *PLANTING DETAILS
 @P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP  PLWT  PAGE  PENV  PLPH  SPRL                        PLNAME
- 1 84122 84130     9     9     S     U    10    90     1   -99   -99   -99   -99   -99                        S1 - Maize May 1st
- 2 85122 85130     9     9     S     U    10    90     1   -99   -99   -99   -99   -99                        S2 - Maize June 1st
- 3 86152 85160    40    40     S     U    10    90     1   -99   -99   -99   -99   -99                        S3 - Soybean June 1st
- 4 84135 86140    15    15     S     U    60    90     1   -99   -99   -99   -99   -99                        W1 - Winter Wheat Oct 1st
- 5 86155 86155    15    15     S     U    60    90     1   -99   -99   -99   -99   -99                        S3 - Peanut June
- 6 84274 84280   200   -99     S     U    10    90     1   -99   -99   -99   -99   -99                        W1 - Winter Wheat Oct 1st
+ 1 84122 84130     9     9     S     U    10    90     5   -99   -99   -99   -99   -99                        S1 - Maize May 1st
+ 2 85122 85130     9     9     S     U    10    90     5   -99   -99   -99   -99   -99                        S2 - Maize May 2nd
+ 3 86152 86160    40    40     S     U    10    90     3   -99   -99   -99   -99   -99                        S3 - Soybean June 1st
+ 4 84135 84140    15    15     S     U    60    90   1.5   -99   -99   -99   -99   -99                        W1 - Cotton May
+ 5 86155 86160    15    15     S     U    60    90     6   -99   -99   -99   -99   -99                        S3 - Peanut June
+ 6 84274 84280   200   -99     S     U    10    90     1   -99   -99   -99   -99   -99                        W1 - Fallow
  7 85274 85280    60   -99     S     U    10    90     1   -99   -99   -99   -99   -99                        W2 - Carinata Oct 1st
- 8 86274 86280    60   -99     S     U    10    90     1   -99   -99   -99   -99   -99                        W3 - Fallow Oct 1st
- 9 85135 85140    15    15     S     U    60    90     1   -99   -99   -99   -99   -99  
+ 8 86274 86280    60   -99     S     U    10    90     1   -99   -99   -99   -99   -99                        W3 - Fallow
+ 9 85135 85140    15    15     S     U    60    90   1.5   -99   -99   -99   -99   -99                        S2 - Cotton
 
 *FERTILIZERS (INORGANIC)
 @F FDATE  FMCD  FACD  FDEP  FAMN  FAMP  FAMK  FAMC  FAMO  FOCD FERNAME

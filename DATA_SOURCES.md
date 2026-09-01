@@ -138,20 +138,25 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Can be set up with `.vrt` (Virtual Raster) for efficient access
   - Recommended for production: cache locally, use offline mode
 
-### 3. **SSURGO** (US only, Free, Local Database)
+### 3. **SSURGO** (US only, Free, USDA Soil Data Access)
 - **Coverage**: CONUS only (some gaps in Alaska/Hawaii)
 - **Spatial Resolution**: 30 m
 - **Data Type**: Detailed soil properties (USDA Soil Taxonomy)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra` (R); `geopandas`, `shapely` (Python)
-- **Status**: ✅ Implemented for local SSURGO / gSSURGO-style inputs
-- **Implementation**: Local SQLite database via USDA NRCS Web Soil Survey
+- **Status**: ✅ Implemented through the shared `dssatutils` adapter
+- **Implementation**: USDA SDA spatial/tabular queries, cached layer mapping CSVs
+  and derived per-point DSSAT `.SOL` files. gNATSGO uses a WCS map-unit lookup
+  followed by SDA tabular queries; Alderman uses the full-profile conversion.
 - **Notes**:
   - Highest quality soil data for US (30 m resolution)
-  - Requires local SSURGO database setup
-  - Database file: ~5-10 GB for CONUS
   - Can have coverage gaps in mountainous/remote areas
-  - Must download via NRCS WSS: https://websoilsurvey.nrcs.usda.gov/
+  - Historical SSURGO/gNATSGO and Alderman layer-width errors require rebuilding
+    derived `.SOL` files, not deleting the raw data. See
+    [offline recovery](../dssatutils/README.md#input-cache-integrity-fixes-2026-08-31).
+  - R GRIDMET's historical invalid-cell row shift likewise requires re-extracting
+    affected `.WTH` files from the existing native NetCDF cache. Valid-looking
+    weather dates/values alone cannot detect weather assigned to the wrong ID.
 
 ### 4. **HWSD** (Global, Free, Local Database)
 - **Coverage**: Global

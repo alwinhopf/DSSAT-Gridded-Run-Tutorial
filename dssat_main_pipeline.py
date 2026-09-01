@@ -825,6 +825,14 @@ except ImportError:
     if os.path.isdir(dssatengine_path):
         sys.path.insert(0, dssatengine_path)
 
+try:
+    from dssatutils import soil_file_issue
+except ImportError as exc:
+    raise ImportError(
+        "This driver requires the fixed-column soil preflight in the updated dssatutils package. "
+        "Install the corrected local checkout before running; preserve existing caches."
+    ) from exc
+
 from dssatutils.weather_daymet        import process_weather_daymet
 from dssatutils.weather_nasapower     import process_weather_nasapower
 from dssatutils.weather_gridmet       import process_weather_gridmet
@@ -1975,55 +1983,7 @@ if __name__ == '__main__':
                 fh.write(line + "\n")
 
         def soil_input_issue(ID: str) -> Optional[str]:
-            f = os.path.join(DSSAT_RUN_DIR, ID, "SOIL.SOL")
-            if not os.path.exists(f):
-                return "SOIL.SOL is missing"
-            try:
-                with open(f, "r", encoding="utf-8") as fh:
-                    lines = fh.readlines()
-            except Exception:
-                return "SOIL.SOL is empty or unreadable"
-            if not lines:
-                return "SOIL.SOL is empty or unreadable"
-
-            error_lines = [
-                line.strip() for line in lines
-                if line.strip().startswith("*SOIL ERROR") or line.strip().startswith("Source missing") or line.strip().startswith("No Soil ID")
-            ]
-            if error_lines:
-                return " | ".join(error_lines)
-
-            hdr_idx = None
-            for idx, line in enumerate(lines):
-                if re.search(r"^@\s+SLB\b", line):
-                    hdr_idx = idx
-                    break
-            if hdr_idx is None:
-                return "SOIL.SOL has no @ SLB layer table"
-
-            layer_lines = lines[hdr_idx + 1:]
-            layer_lines = [l.strip() for l in layer_lines if l.strip()]
-            layer_lines = [l for l in layer_lines if re.match(r"^\s*\d+\s+", l) or re.match(r"^\d+\s+", l)]
-
-            depths = []
-            for l in layer_lines:
-                m = re.match(r"^\s*(\d+)", l)
-                if m:
-                    try:
-                        depths.append(int(m.group(1)))
-                    except ValueError:
-                        pass
-
-            if not depths:
-                return "SOIL.SOL has no parseable SLB layer depths"
-            if len(depths) > 19:
-                return f"SOIL.SOL has {len(depths)} layers; DSSAT accepts at most 19"
-
-            for d_i in range(1, len(depths)):
-                if depths[d_i] <= depths[d_i - 1]:
-                    return f"SOIL.SOL layer depths are not strictly increasing: {','.join(map(str, depths))}"
-
-            return None
+            return soil_file_issue(os.path.join(DSSAT_RUN_DIR, ID, "SOIL.SOL"))
 
         def weather_input_issue(ID: str) -> Optional[str]:
             f = os.path.join(DSSAT_RUN_DIR, ID, f"{ID}.WTH")
