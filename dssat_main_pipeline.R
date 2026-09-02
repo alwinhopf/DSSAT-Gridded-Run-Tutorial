@@ -409,9 +409,18 @@ CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
 AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
-AGERA5_BACKEND <- as.character(cfg_get("agera5_backend", "timeseries"))
-AGERA5_DATA_FORMAT <- as.character(cfg_get("agera5_data_format", "csv"))
+if (is.na(AGERA5_MAX_CONCURRENT_REQUESTS) || AGERA5_MAX_CONCURRENT_REQUESTS < 1L) {
+  stop("agera5_max_concurrent_requests must be at least 1.")
+}
+AGERA5_BACKEND <- tolower(as.character(cfg_get("agera5_backend", "timeseries")))
+if (!AGERA5_BACKEND %in% c("gridded", "timeseries")) {
+  stop("agera5_backend must be 'gridded' or 'timeseries'.")
+}
+AGERA5_DATA_FORMAT <- tolower(as.character(cfg_get("agera5_data_format", "csv")))
 AGERA5_TIMESERIES_CHUNK_DEGREES <- as.numeric(cfg_get("agera5_timeseries_chunk_degrees", 0.1))
+if (!is.finite(AGERA5_TIMESERIES_CHUNK_DEGREES) || AGERA5_TIMESERIES_CHUNK_DEGREES <= 0) {
+  stop("agera5_timeseries_chunk_degrees must be a positive number.")
+}
 DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
 EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
 

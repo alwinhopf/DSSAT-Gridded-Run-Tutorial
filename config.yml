@@ -102,8 +102,8 @@ chirps_gee_project:   ""             # GEE mode only: Google Earth Engine projec
 chirps_download_timeout: null         # seconds; null = dssatutils package default
 agera5_backend: "timeseries"         # recommended: compact point/small-area time series | gridded: legacy daily-NetCDF ZIPs
 agera5_data_format: "csv"             # time-series backend currently supports csv
-agera5_timeseries_chunk_degrees: 0.1  # 0.1 = reusable AgERA5-cell cache; larger fixed tiles reduce request count but download more cells
-agera5_max_concurrent_requests: 4    # AgERA5 only: concurrent CDS requests; 4 is a conservative max
+agera5_timeseries_chunk_degrees: 0.1  # 0.1 = reusable AgERA5-cell cache; <=4.6 leaves room for padding under CDS 5deg limit
+agera5_max_concurrent_requests: 4    # AgERA5 only: bounded CDS queue (hard cap in dssatutils: 4)
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
 eobs_use_cds:         false          # EOBS only: true = fetch via Copernicus CDS; run setup_cds_credentials() once
 xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)

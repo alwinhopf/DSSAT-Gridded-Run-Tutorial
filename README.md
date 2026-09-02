@@ -742,7 +742,7 @@ Set `weather_source` in `config.yml`.
 | `GRIDMET` | Contiguous US | ~4 km daily | High spatial resolution for US; requires `terra`, `ncdf4`, and `httr` |
 | `OPEN_METEO` | Global (1940–present) | ~9–11 km temperature/humidity plus ERA5 forcing (ERA5-Seamless) | Keyless, no registration; higher-resolution alternative to NASA-POWER for Europe / Asia / Africa / Oceania / South America. Writes API daily mean dewpoint and relative humidity to `TDEW` / `RH2M`; ERA5 supplies radiation, precipitation, and wind. Requires `httr` + `jsonlite` (R) / `requests` (Python). Data is CC-BY 4.0 (Copernicus/ECMWF) — cite when publishing. |
 | `NASA_POWER_CHIRPS` | Global, **rainfall 50°S–50°N** | NASA POWER ~0.5° + CHIRPS rain ~0.05° (~5.5 km) | **Hybrid**: all variables from NASA POWER, but rainfall replaced with high-resolution, station-blended CHIRPS — markedly better precipitation for the tropics / semi-arid (Africa, India). Outside 50°S–50°N (and over CHIRPS no-data) it falls back to NASA POWER rain, so output stays global. Keyless. Downloads CHIRPS yearly netCDF (cached); resolution via `chirps_resolution` (`p05` default / `p25`). Requires `xarray`+`netCDF4` (Python) / `terra` (R). Cite Funk et al. 2015. |
-| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | ECMWF agrometeorological reanalysis (ERA5 reprocessed for agriculture); all variables, higher-res than NASA POWER, covers high latitudes (unlike CHIRPS). The default `timeseries` backend caches compact all-variable CSVs on globally anchored AgERA5 cells; `gridded` retains the legacy daily-NetCDF ZIP path. **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the dataset licence once (see below). Requires `cdsapi` (Python) / `ecmwfr` (R). |
+| `AGERA5` | Global (1979–present), incl. poles | ~0.1° (~10 km) daily | AgERA5 **v2.0** (ECMWF agrometeorological reanalysis for agriculture; all variables, higher-res than NASA POWER, covers high latitudes). The default `timeseries` backend caches compact all-variable CSVs on globally anchored AgERA5 cells; `gridded` retains the legacy daily-NetCDF ZIP path. **Not keyless**: run `setup_cds_credentials()` or provide `CDSAPI_KEY` / `~/.cdsapirc`, then accept the selected dataset licence once (see below). Requests use a bounded queue (`agera5_max_concurrent_requests`) and validated cache. Requires `cdsapi`+`xarray` (Python) / `ecmwfr`+`terra` (R). |
 | `CHELSA_W5E5` | Global (1979–2016) | 30 arcsec (~1 km) daily | Topographically downscaled daily climate forcing. Requires local NetCDFs (`chelsa_nc_dir`) with `tasmax`, `tasmin`, `pr`, and `rsds`. |
 | `AGMERRA` / `AGCFSR` | Global (1980–2010) | 0.25° daily | AgMIP-standard historical climate forcing for benchmark/intercomparison studies. Requires local NetCDFs (`agmerra_nc_dir` / `agcfsr_nc_dir`). |
 | `SILO` | Australia (1889–present) | Australian gridded daily | Australian regional weather source. Requires local SILO NetCDFs via `silo_nc_dir`. |
@@ -774,6 +774,9 @@ Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give
    (Windows) and configures `ecmwfr` for R.
 3. **Accept the dataset licence** (otherwise the first request fails with `403 … required licences not accepted`): open
    https://cds.climate.copernicus.eu/datasets/sis-agrometeorological-indicators?tab=download and accept the licence(s) under *Manage licences*.
+   If using `agera5_backend: "timeseries"`, also open
+   https://cds.climate.copernicus.eu/datasets/sis-agrometeorological-indicators-timeseries?tab=download
+   and accept its licence.
 
 Then install the CDS client dependency (`pip install "dssatutils[cds] ..."` for
 Python, `install.packages("ecmwfr")` for R) and set the desired weather source.
@@ -792,7 +795,9 @@ agera5_max_concurrent_requests: 4
 `0.1` minimizes transfer and disk use for sparse crop-model points. A larger
 chunk groups neighboring cells into fixed globally aligned tiles, reducing the
 number of CDS requests while downloading more cells. Both the R and Python
-pipelines use the shared cache at `agera5_netcdf_cache/` under the engine input
+pipelines feed jobs through the bounded queue (`agera5_max_concurrent_requests`,
+hard cap of 4 in `dssatutils`), keep time-series chunks within the CDS 5 x 5
+degree area limit, and use the shared cache at `agera5_netcdf_cache/` under the engine input
 root.
 
 ---
