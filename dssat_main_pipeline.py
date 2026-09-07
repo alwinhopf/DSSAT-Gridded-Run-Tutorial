@@ -302,8 +302,10 @@ WISE30SEC_RASTER_DIR   = cfg_get("wise30sec_raster_dir", os.path.join(INPUT_ROOT
 WOSIS_PROFILE_CSV      = cfg_get("wosis_profile_csv", os.path.join(INPUT_ROOT_DIR, "WoSIS", "wosis_processed_profiles.csv"))
 
 # Constructed names
-SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}"
-WEATHER_DIR_NAME = f"{GRID_BASE_NAME}_{WEATHER_SOURCE}"
+_CACHE_IDENTITY = re.sub(r"[^A-Za-z0-9_-]", "_", str(cfg_get("cache_identity", "")).strip())
+_CACHE_SUFFIX = f"_{_CACHE_IDENTITY[:16]}" if _CACHE_IDENTITY else ""
+SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}{_CACHE_SUFFIX}"
+WEATHER_DIR_NAME = f"{GRID_BASE_NAME}_{WEATHER_SOURCE}{_CACHE_SUFFIX}"
 SCENARIO_ID      = f"{GRID_BASE_NAME}_{WEATHER_SOURCE}_{SOIL_SOURCE}"
 
 if RUN_NAME_OVERRIDE:
@@ -381,6 +383,10 @@ WEATHER_REFERENCE_YEAR = int(cfg_get("weather_reference_year", WEATHER_END_YEAR)
 REPAIR_WEATHER_MISSING_VALUES = bool(cfg_get("repair_weather_missing_values", False))
 REPAIR_WEATHER_DATE_GAPS = bool(cfg_get("repair_weather_date_gaps", False))
 REPAIR_WEATHER_TEMPERATURE_INVERSIONS = bool(cfg_get("repair_weather_temperature_inversions", False))
+WEATHER_REPAIR_INVERSION_METHOD = str(cfg_get("weather_repair_inversion_method", "neighbor"))
+WEATHER_REPAIR_MAX_INVERSION_C = float(cfg_get("weather_repair_max_inversion_c", 2.0))
+AGERA5_CACHE_ONLY = bool(cfg_get("agera5_cache_only", False))
+REEVALUATE_UNRESOLVABLE_WEATHER = bool(cfg_get("reevaluate_unresolvable_weather", False))
 AUDIT_WEATHER_QUALITY = bool(cfg_get("audit_weather_quality", False))
 WEATHER_REPAIR_MAX_GAP_DAYS = int(cfg_get("weather_repair_max_gap_days", 3))
 WEATHER_REPAIR_WINDOW_DAYS = int(cfg_get("weather_repair_window_days", 2))
@@ -847,6 +853,12 @@ from dssatutils.weather_nasapower_chirps import process_weather_nasapower_chirps
 from dssatutils.weather_chirps_v3     import process_weather_nasapower_chirps_v3
 from dssatutils.weather_agera5        import process_weather_agera5
 from dssatutils.weather_validation    import is_wth_valid
+from inspect import signature as _weather_signature
+if not {"start_date", "end_date"}.issubset(_weather_signature(is_wth_valid).parameters):
+    raise ImportError(
+        "This driver requires the weather-recovery update in dssatutils. "
+        "After active input jobs finish, install the corrected local checkout and restart Python."
+    )
 from dssatutils.weather_dwd           import process_weather_dwd
 from dssatutils.weather_eobs          import process_weather_eobs
 from dssatutils.weather_xavier        import process_weather_xavier
@@ -875,10 +887,21 @@ def weather_required_columns():
     return core
 
 
-def weather_file_is_valid(path):
+WEATHER_VALIDATION_END_DATE = f"{WEATHER_END_YEAR:04d}-12-31"
+if WEATHER_SOURCE.upper() == "AGERA5":
+    from datetime import date, timedelta
+    WEATHER_VALIDATION_END_DATE = min(
+        date(WEATHER_END_YEAR, 12, 31), date.today() - timedelta(days=10)).isoformat()
+
+
+def weather_file_is_valid(path, start_yr=None):
+    if start_yr is None:
+        start_yr = WEATHER_START_YEAR
     return is_wth_valid(
         path,
         WEATHER_END_YEAR,
+        start_year=start_yr,
+        end_date=WEATHER_VALIDATION_END_DATE,
         required_columns=weather_required_columns(),
     )
 
@@ -1084,6 +1107,21 @@ if __name__ == '__main__':
             return set()
         return set()
 
+    def load_weather_exclusions(cache_path):
+        """Only durable exclusions may suppress retries; legacy failures cannot."""
+        ids = load_unresolvable_point_ids(cache_path)
+        try:
+            with open(cache_path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                ids -= {str(pid) for pid, record in data.items()
+                        if isinstance(record, dict) and (
+                            str(record.get("reason", "")).startswith("failed_after_")
+                            or record.get("status") == "retryable")}
+        except (OSError, ValueError):
+            pass
+        return ids
+
     def save_unresolvable_point_ids(cache_path: str, new_ids, reasons=None) -> bool:
         ids = [str(x) for x in new_ids if str(x).strip()]
         if not ids:
@@ -1112,6 +1150,25 @@ if __name__ == '__main__':
             return True
         except Exception:
             return False
+
+    def remove_unresolvable_point_ids(cache_path: str, ids_to_remove) -> bool:
+        ids_set = set(str(x) for x in ids_to_remove if str(x).strip())
+        if not os.path.exists(cache_path) or not ids_set:
+            return False
+        try:
+            with open(cache_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                orig_len = len(data)
+                for pid in ids_set:
+                    data.pop(pid, None)
+                if len(data) != orig_len:
+                    with open(cache_path, "w", encoding="utf-8") as fh:
+                        json.dump(data, fh, indent=2)
+                return True
+        except Exception:
+            return False
+        return False
 
     # =============================================================================
     # STEP 1 - SOIL DATA
@@ -1393,21 +1450,92 @@ if __name__ == '__main__':
     print("=" * 60)
 
     weather_dir = os.path.join(WEATHER_ROOT_DIR, WEATHER_DIR_NAME)
+    def apply_weather_repairs(target_ids=None):
+        if not os.path.isdir(weather_dir):
+            return
+        repair_log = os.path.join(weather_dir, "weather_repair.log")
+        if REPAIR_WEATHER_MISSING_VALUES:
+            repair_summary = repair_weather_missing_values(
+                weather_dir,
+                ids=target_ids,
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                variables=WEATHER_REPAIR_VARIABLES,
+                log_file=repair_log,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                "Weather missing-value repair complete: "
+                f"{repaired_values} value(s) repaired; "
+                f"{unrepaired_values} missing value(s) left unrepaired. Log: {repair_log}"
+            )
+
+        if REPAIR_WEATHER_DATE_GAPS:
+            repair_summary = repair_weather_date_gaps(
+                weather_dir,
+                ids=target_ids,
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                variables=WEATHER_REPAIR_VARIABLES,
+                log_file=repair_log,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                "Weather date-gap repair complete: "
+                f"{repaired_values} missing day row(s) inserted; "
+                f"{unrepaired_values} missing day row(s) left unrepaired. Log: {repair_log}"
+            )
+
+        if REPAIR_WEATHER_TEMPERATURE_INVERSIONS:
+            repair_summary = repair_weather_temperature_inversions(
+                weather_dir,
+                ids=target_ids,
+                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
+                window_days=WEATHER_REPAIR_WINDOW_DAYS,
+                log_file=repair_log,
+                method=WEATHER_REPAIR_INVERSION_METHOD,
+                max_inversion_c=WEATHER_REPAIR_MAX_INVERSION_C,
+            )
+            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
+            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
+            print(
+                f"Weather Tmax/Tmin inversion repair complete ({WEATHER_REPAIR_INVERSION_METHOD}, max_inversion_c={WEATHER_REPAIR_MAX_INVERSION_C:.2f}): "
+                f"{repaired_values} day(s) repaired; "
+                f"{unrepaired_values} inversion day(s) left unrepaired. Log: {repair_log}"
+            )
+
+    weather_ids = gridfile[POINT_ID_COLUMN].astype(str)
+
+    # Run configured repairs on existing files before initial validation
+    if os.path.isdir(weather_dir):
+        apply_weather_repairs(weather_ids.tolist())
+
+
     if RUN_STEP_2_WEATHER:
         os.makedirs(WEATHER_ROOT_DIR, exist_ok=True)
         os.makedirs(weather_dir, exist_ok=True)
 
         weather_unresolvable_file = os.path.join(weather_dir, "unresolvable_points.json")
-        unresolvable_weather_ids = load_unresolvable_point_ids(weather_unresolvable_file)
+        weather_retryable_file = os.path.join(weather_dir, "retryable_weather_points.json")
+        unresolvable_weather_ids = set() if REEVALUATE_UNRESOLVABLE_WEATHER else load_weather_exclusions(weather_unresolvable_file)
 
-        weather_ids = gridfile[POINT_ID_COLUMN].astype(str)
         if CHECK_WEATHER_DOWNLOADS:
             print("Verifying existing weather files for validity...")
             valid_mask = weather_ids.map(
-                lambda pid: True if pid in unresolvable_weather_ids else weather_file_is_valid(
+                lambda pid: weather_file_is_valid(
                     os.path.join(weather_dir, f"{pid}.WTH")
                 )
             )
+
+            now_valid_ids = [pid for pid, valid in zip(weather_ids, valid_mask)
+                             if valid]
+            if now_valid_ids:
+                remove_unresolvable_point_ids(weather_unresolvable_file, now_valid_ids)
+                remove_unresolvable_point_ids(weather_retryable_file, now_valid_ids)
+                unresolvable_weather_ids = unresolvable_weather_ids - set(now_valid_ids)
+
             invalid_existing = [
                 pid for pid, valid in zip(weather_ids, valid_mask)
                 if not valid and pid not in unresolvable_weather_ids and os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
@@ -1475,6 +1603,7 @@ if __name__ == '__main__':
                     agera5_backend=AGERA5_BACKEND,
                     agera5_data_format=AGERA5_DATA_FORMAT,
                     agera5_timeseries_chunk_degrees=AGERA5_TIMESERIES_CHUNK_DEGREES,
+                    cache_only=AGERA5_CACHE_ONLY,
                 )
             elif WEATHER_SOURCE == "DWD":
                 process_weather_dwd(**common_args, dwd_cache_dir=DWD_CACHE_DIR)
@@ -1529,13 +1658,23 @@ if __name__ == '__main__':
                     print(f"Processing {len(points_to_process)} weather points...")
                 process_weather_points(points_to_process)
                 attempt += 1
+
+                # Apply repairs to newly downloaded/extracted points before validation
+                apply_weather_repairs(points_to_process[POINT_ID_COLUMN].astype(str).tolist())
+
                 pending_ids = points_to_process[POINT_ID_COLUMN].astype(str)
                 if CHECK_WEATHER_DOWNLOADS:
                     valid = pending_ids.map(
-                        lambda pid: True if pid in unresolvable_weather_ids else weather_file_is_valid(
+                        lambda pid: weather_file_is_valid(
                             os.path.join(weather_dir, f"{pid}.WTH")
                         )
                     )
+
+                    now_valid_ids = [pid for pid, v in zip(pending_ids, valid) if v]
+                    if now_valid_ids:
+                        remove_unresolvable_point_ids(weather_unresolvable_file, now_valid_ids)
+                        remove_unresolvable_point_ids(weather_retryable_file, now_valid_ids)
+                        unresolvable_weather_ids = unresolvable_weather_ids - set(now_valid_ids)
                 else:
                     valid = pending_ids.map(
                         lambda pid: pid in unresolvable_weather_ids or os.path.exists(os.path.join(weather_dir, f"{pid}.WTH"))
@@ -1549,86 +1688,18 @@ if __name__ == '__main__':
                             os.remove(invalid_path)
             if not points_to_process.empty:
                 failed_wth_ids = points_to_process[POINT_ID_COLUMN].astype(str).tolist()
-                save_unresolvable_point_ids(
-                    weather_unresolvable_file, failed_wth_ids,
+                recorded = save_unresolvable_point_ids(
+                    weather_retryable_file, failed_wth_ids,
                     [f"failed_after_{WEATHER_DOWNLOAD_RETRIES}_retries"] * len(failed_wth_ids)
                 )
+                if not recorded:
+                    raise RuntimeError("Could not save retryable weather failure records")
+                remove_unresolvable_point_ids(weather_unresolvable_file, failed_wth_ids)
                 print(
                     f"WARNING: Failed to produce valid weather data for "
                     f"{len(points_to_process)} point(s) after "
-                    f"{WEATHER_DOWNLOAD_RETRIES} attempt(s). Recorded in {os.path.basename(weather_unresolvable_file)}."
+                    f"{WEATHER_DOWNLOAD_RETRIES} attempt(s). Retryable failures recorded in {os.path.basename(weather_retryable_file)}."
                 )
-
-    if REPAIR_WEATHER_MISSING_VALUES:
-        if os.path.isdir(weather_dir):
-            repair_log = os.path.join(weather_dir, "weather_repair.log")
-            repair_summary = repair_weather_missing_values(
-                weather_dir,
-                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
-                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
-                window_days=WEATHER_REPAIR_WINDOW_DAYS,
-                variables=WEATHER_REPAIR_VARIABLES,
-                log_file=repair_log,
-            )
-            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
-            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
-            print(
-                "Weather missing-value repair complete: "
-                f"{repaired_values} value(s) repaired; "
-                f"{unrepaired_values} missing value(s) left unrepaired. Log: {repair_log}"
-            )
-        else:
-            print(
-                "WARNING: repair_weather_missing_values is true, but weather "
-                f"directory does not exist: {weather_dir}"
-            )
-
-    if REPAIR_WEATHER_DATE_GAPS:
-        if os.path.isdir(weather_dir):
-            repair_log = os.path.join(weather_dir, "weather_repair.log")
-            repair_summary = repair_weather_date_gaps(
-                weather_dir,
-                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
-                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
-                window_days=WEATHER_REPAIR_WINDOW_DAYS,
-                variables=WEATHER_REPAIR_VARIABLES,
-                log_file=repair_log,
-            )
-            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
-            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
-            print(
-                "Weather date-gap repair complete: "
-                f"{repaired_values} missing day row(s) inserted; "
-                f"{unrepaired_values} missing day row(s) left unrepaired. Log: {repair_log}"
-            )
-        else:
-            print(
-                "WARNING: repair_weather_date_gaps is true, but weather "
-                f"directory does not exist: {weather_dir}"
-            )
-
-    if REPAIR_WEATHER_TEMPERATURE_INVERSIONS:
-        if os.path.isdir(weather_dir):
-            repair_log = os.path.join(weather_dir, "weather_repair.log")
-            repair_summary = repair_weather_temperature_inversions(
-                weather_dir,
-                ids=gridfile[POINT_ID_COLUMN].astype(str).tolist(),
-                max_gap_days=WEATHER_REPAIR_MAX_GAP_DAYS,
-                window_days=WEATHER_REPAIR_WINDOW_DAYS,
-                log_file=repair_log,
-            )
-            repaired_values = int(repair_summary["repaired_count"].sum()) if not repair_summary.empty else 0
-            unrepaired_values = int(repair_summary["unrepaired_count"].sum()) if not repair_summary.empty else 0
-            print(
-                "Weather Tmax/Tmin inversion repair complete: "
-                f"{repaired_values} day(s) repaired; "
-                f"{unrepaired_values} inversion day(s) left unrepaired. Log: {repair_log}"
-            )
-        else:
-            print(
-                "WARNING: repair_weather_temperature_inversions is true, but weather "
-                f"directory does not exist: {weather_dir}"
-            )
 
     if AUDIT_WEATHER_QUALITY:
         if os.path.isdir(weather_dir):
@@ -1998,7 +2069,7 @@ if __name__ == '__main__':
             if os.path.getsize(f) == 0:
                 return f"{os.path.basename(f)} is empty"
             required = weather_required_columns()
-            if not is_wth_valid(f, WEATHER_END_YEAR, required_columns=required):
+            if not weather_file_is_valid(f):
                 return (
                     f"{os.path.basename(f)} has missing or invalid required forcing "
                     f"({'/'.join(required)})"
@@ -2274,6 +2345,26 @@ if __name__ == '__main__':
             import matplotlib.pyplot as plt
             import matplotlib.cm as cm
 
+            # A reused grid bypasses Step 0's boundary load. The backdrop is
+            # optional so missing geometry cannot suppress a valid point map.
+            plot_boundary = boundary_sf
+            try:
+                if plot_boundary is None and not USE_EXISTING_POINT_SHAPEFILE:
+                    boundary_path = os.path.join(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
+                    if os.path.exists(boundary_path):
+                        plot_boundary = gpd.read_file(boundary_path)
+                        if ENABLE_BOUNDARY_FILTER:
+                            plot_boundary = plot_boundary[
+                                plot_boundary[BOUNDARY_FILTER_COLUMN].isin(BOUNDARY_FILTER_VALUE)
+                            ]
+                if plot_boundary is not None and not plot_boundary.empty:
+                    plot_boundary = plot_boundary.to_crs(4326)
+                else:
+                    plot_boundary = None
+            except Exception as exc:
+                print(f"Map boundary unavailable; plotting points only: {exc}")
+                plot_boundary = None
+
             sim_data = pd.read_csv(FINAL_RESULTS_PATH)
 
             avg_yield = (
@@ -2287,6 +2378,8 @@ if __name__ == '__main__':
                 print("No yield data available for mapping.")
             else:
                 fig, ax = plt.subplots(figsize=(10, 8))
+                if plot_boundary is not None:
+                    plot_boundary.plot(ax=ax, facecolor="0.94", edgecolor="black", linewidth=0.5)
                 sc = ax.scatter(
                     avg_yield["longitude"],
                     avg_yield["latitude"],

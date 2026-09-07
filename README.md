@@ -81,6 +81,11 @@ The MPI runner (`hpc/dssat_mpi_runner.py`) was built to scale to large grids:
 - **Optional merge skip** (`--merge_mode none`): skip the rank-0 serial merge on very large grids and merge the per-rank parts later.
 - **Tiny run folders:** with `DSSATPRO.V48` next to the executable, genotype/support files are resolved from the install instead of copied per point (see [Performance tips](#performance-tips)) — far fewer files for the filesystem to track.
 
+Scenario maps reload the configured, filtered boundary when a derived grid is
+reused. Both R and Python also render point maps without a boundary when it is
+absent or unreadable; boundary loading does not require rebuilding the grid or
+rerunning DSSAT. Existing-point runs use point-only maps when no boundary was loaded.
+
 ### Known limitations
 
 - **Assumes CSV outputs:** the parser expects DSSAT CSV output files (`summary.csv`, `soilwat.csv`, etc.). If your DSSAT setup produces only `*.OUT` text files, you must enable CSV outputs or adapt the parser.
@@ -2051,3 +2056,21 @@ python -c "from mpi4py import MPI; c=MPI.COMM_WORLD; print('rank', c.Get_rank(),
 **Spatial boundaries**
 - US Census TIGER/Line states: https://www2.census.gov/geo/tiger/TIGER2024/STATE/tl_2024_us_state.zip
 - US Census TIGER/Line counties: https://www2.census.gov/geo/tiger/TIGER2024/COUNTY/tl_2024_us_county.zip
+
+### Weather retries and validation (2026-09-06)
+
+Both drivers validate the full requested date interval, including its boundary
+days, before weather reuse and model preflight. AgERA5 uses an explicit endpoint
+capped at the existing ten-day availability allowance. Configured repairs run
+before validation and can also run with `run_step_2_weather: false`.
+
+Actual file validation is separate from exclusion status. Only files that pass
+validation clear their old failure records. Legacy `failed_after_*` records do
+not suppress weather retries, even when `reevaluate_unresolvable_weather` is
+false; other exclusion reasons remain scoped and preserved. Exhausted weather
+attempts now go to `retryable_weather_points.json`, which never blocks a later
+attempt, rather than becoming permanent exclusions. These records diagnose
+retrieval/QC failures and do not establish geographic unavailability. Turning off
+weather processing still disables downloads; cache-only mode still cannot fetch
+absent years. The shared package must be reinstalled/reloaded before using the
+updated driver. R and Python follow the same rules.

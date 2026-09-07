@@ -187,12 +187,18 @@ weather_repair_max_gap_days: 3
 weather_repair_window_days: 2
 weather_quality_flatline_days: 10
 weather_repair_variables: ["SRAD", "TMAX", "TMIN", "RAIN", "TDEW", "RH2M", "WIND"]
+weather_repair_inversion_method: "swap"
+weather_repair_max_inversion_c: 2.0
+agera5_cache_only: false
+reevaluate_unresolvable_weather: true
 
 # --- Stop / Resume / HPC ---
 resume_dssat_runs:    false  # set to true to skip points whose results_{ID}.csv already exists
 zip_for_hpc:          false  # set to true to zip the run folder after creation (HPC upload)
 cleanup_run_folders:  false  # set to true to delete all per-point simulation folders after combining results
 archive_failed_run_folders: false  # zip failed point folders beside the scenario CSV before cleanup
+# Coordinate fingerprint supplied by regional sweeps to isolate input caches.
+cache_identity: ""
 
 # --- Download validation and retries ---
 check_weather_downloads:  false  # set to true to validate weather file contents and retry failures

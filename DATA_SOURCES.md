@@ -80,8 +80,9 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Accept the AgERA5 dataset licence once in the CDS web UI
   - High-quality fusion of ERA5 + station data
   - Daily agrometeorological indicators downloaded once per variable-year and cached
-  - Requests are queued server-side; transient CDS/DNS failures should be retried with the same cache directory
   - The adapter writes provider values without a separate physical-quality gate. The shared engine validator then checks dates, ranges, temperature ordering, and all seven AgERA5 forcing columns consistently with the other weather sources.
+  - Time-series backend validates cached annual CSVs per grid cell, acquires locks across workers, and enforces exact calendar coverage (refusing partial weather histories).
+  - Optional weather repairs (e.g. bounded temperature inversion swap/neighbor repair) run before simulation validation, and newly valid points are pruned from `unresolvable_points.json`.
 
 ### 6. **NASA-POWER CHIRPS Hybrid** (Global, Free)
 - **Coverage**: Global (focus on tropics/subtropics for CHIRPS)
@@ -374,3 +375,10 @@ Accept the AgERA5 dataset licence in the CDS web UI before the first run.
 - **SoilGrids**: https://soilgrids.org/
 - **SSURGO**: https://websoilsurvey.nrcs.usda.gov/
 - **HWSD**: https://www.fao.org/documents/card/en/c/CA12305EN/
+
+AgERA5 recovery integrity (2026-09-06): the mirrored downloaders validate annual
+per-cell calendars and all seven forcing variables, serialize cache publication
+with compatible OS locks, and preserve failed-cache evidence. The R dependency
+`filelock` is required. Full boundary-date validation and retryable weather
+failure records are described in the engine README; source-data inversions still
+require the explicitly configured shared repair policy.

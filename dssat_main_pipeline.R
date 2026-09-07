@@ -368,8 +368,10 @@ WOSIS_PROFILE_CSV      <- cfg_get("wosis_profile_csv", file.path(INPUT_ROOT_DIR,
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
-SOIL_BASENAME <- paste0(GRID_BASE_NAME, "_", SOIL_SOURCE)
-WEATHER_DIR_NAME <- paste0(GRID_BASE_NAME, "_", WEATHER_SOURCE)
+.CACHE_IDENTITY <- gsub("[^A-Za-z0-9_-]", "_", trimws(as.character(cfg_get("cache_identity", ""))))
+.CACHE_SUFFIX <- if (nzchar(.CACHE_IDENTITY)) paste0("_", substr(.CACHE_IDENTITY, 1L, 16L)) else ""
+SOIL_BASENAME <- paste0(GRID_BASE_NAME, "_", SOIL_SOURCE, .CACHE_SUFFIX)
+WEATHER_DIR_NAME <- paste0(GRID_BASE_NAME, "_", WEATHER_SOURCE, .CACHE_SUFFIX)
 
 # > Scenario ID (used for tracing back to input folders)
 SCENARIO_ID <- paste0(GRID_BASE_NAME, "_", WEATHER_SOURCE, "_", SOIL_SOURCE)
@@ -474,6 +476,10 @@ WEATHER_REFERENCE_YEAR <- as.integer(cfg_get("weather_reference_year", 2025))  #
 REPAIR_WEATHER_MISSING_VALUES <- isTRUE(as.logical(cfg_get("repair_weather_missing_values", FALSE)))
 REPAIR_WEATHER_DATE_GAPS <- isTRUE(as.logical(cfg_get("repair_weather_date_gaps", FALSE)))
 REPAIR_WEATHER_TEMPERATURE_INVERSIONS <- isTRUE(as.logical(cfg_get("repair_weather_temperature_inversions", FALSE)))
+WEATHER_REPAIR_INVERSION_METHOD <- as.character(cfg_get("weather_repair_inversion_method", "neighbor"))
+WEATHER_REPAIR_MAX_INVERSION_C <- as.numeric(cfg_get("weather_repair_max_inversion_c", 2.0))
+AGERA5_CACHE_ONLY <- isTRUE(as.logical(cfg_get("agera5_cache_only", FALSE)))
+REEVALUATE_UNRESOLVABLE_WEATHER <- isTRUE(as.logical(cfg_get("reevaluate_unresolvable_weather", FALSE)))
 AUDIT_WEATHER_QUALITY <- isTRUE(as.logical(cfg_get("audit_weather_quality", FALSE)))
 WEATHER_REPAIR_MAX_GAP_DAYS <- as.integer(cfg_get("weather_repair_max_gap_days", 3))
 WEATHER_REPAIR_WINDOW_DAYS <- as.integer(cfg_get("weather_repair_window_days", 2))
@@ -916,6 +922,11 @@ delete_numbered_folders <- function(ids) {
 }
 
 # --- Helper: Validate Weather File ---
+if (!all(c("start_date", "end_date") %in% names(formals(dssatutils::is_wth_valid)))) {
+  stop("This driver requires the weather-recovery update in dssatutils. ",
+       "After active input jobs finish, install the corrected local checkout into the study library and restart R.",
+       call. = FALSE)
+}
 weather_required_columns <- function() {
   core <- c("SRAD", "TMAX", "TMIN", "RAIN")
   if (identical(toupper(WEATHER_SOURCE), "AGERA5")) {
@@ -925,10 +936,18 @@ weather_required_columns <- function() {
   }
 }
 
-is_wth_valid <- function(id, dir, end_yr) {
+WEATHER_VALIDATION_END_DATE <- as.Date(sprintf("%04d-12-31", WEATHER_END_YEAR))
+if (toupper(WEATHER_SOURCE) == "AGERA5") {
+  WEATHER_VALIDATION_END_DATE <- min(WEATHER_VALIDATION_END_DATE, Sys.Date() - 10)
+}
+
+is_wth_valid <- function(id, dir, end_yr, start_yr = NULL) {
+  if (is.null(start_yr)) start_yr <- WEATHER_START_YEAR
   dssatutils::is_wth_valid(
     file.path(dir, paste0(id, ".WTH")),
     end_year = end_yr,
+    start_year = start_yr,
+    end_date = WEATHER_VALIDATION_END_DATE,
     required_columns = weather_required_columns()
   )
 }
@@ -987,6 +1006,8 @@ weather_input_issue <- function(id) {
   if (!dssatutils::is_wth_valid(
     f,
     end_year = WEATHER_END_YEAR,
+    start_year = WEATHER_START_YEAR,
+    end_date = WEATHER_VALIDATION_END_DATE,
     required_columns = required
   )) {
     return(sprintf("%s has missing or invalid required forcing (%s)",
@@ -1453,6 +1474,19 @@ load_unresolvable_point_ids <- function(cache_path) {
   }, error = function(e) character(0))
 }
 
+load_weather_exclusions <- function(cache_path) {
+  ids <- load_unresolvable_point_ids(cache_path)
+  data <- tryCatch(jsonlite::fromJSON(cache_path, simplifyVector = FALSE), error = function(e) NULL)
+  if (is.list(data) && !is.null(names(data))) {
+    retryable <- names(data)[vapply(data, function(record) {
+      is.list(record) && (isTRUE(startsWith(as.character(record$reason), "failed_after_")) ||
+                          identical(record$status, "retryable"))
+    }, logical(1))]
+    ids <- setdiff(ids, retryable)
+  }
+  ids
+}
+
 save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
   new_ids <- as.character(new_ids)
   new_ids <- new_ids[nzchar(new_ids)]
@@ -1479,6 +1513,24 @@ save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
     jsonlite::write_json(existing_data, cache_path, pretty = TRUE, auto_unbox = TRUE)
     invisible(TRUE)
   }, error = function(e) invisible(FALSE))
+}
+
+remove_unresolvable_point_ids <- function(cache_path, ids_to_remove) {
+  ids_to_remove <- as.character(ids_to_remove)
+  ids_to_remove <- ids_to_remove[nzchar(ids_to_remove)]
+  if (!file.exists(cache_path) || !length(ids_to_remove)) return(invisible(FALSE))
+  tryCatch({
+    parsed <- jsonlite::fromJSON(cache_path)
+    if (is.list(parsed) && !is.data.frame(parsed)) {
+      orig_len <- length(parsed)
+      for (id in ids_to_remove) parsed[[id]] <- NULL
+      if (length(parsed) != orig_len) {
+        jsonlite::write_json(parsed, cache_path, pretty = TRUE, auto_unbox = TRUE)
+      }
+      return(invisible(TRUE))
+    }
+  }, error = function(e) {})
+  invisible(FALSE)
 }
 
 #-----------------------------------------------------------------------
@@ -1824,6 +1876,73 @@ if (RUN_STEP_1_SOILS) {
 #-----------------------------------------------------------------------
 message("STEP 2: DOWNLOADING WEATHER DATA")
 output_dir <- file.path(CENTRAL_WEATHER_DIR, WEATHER_DIR_NAME)
+apply_weather_repairs <- function(target_ids = NULL) {
+  if (!dir.exists(output_dir)) return()
+  repair_log <- file.path(output_dir, "weather_repair.log")
+
+  if (REPAIR_WEATHER_MISSING_VALUES) {
+    repair_summary <- dssatutils::repair_weather_missing_values(
+      weather_dir = output_dir,
+      ids = target_ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      variables = WEATHER_REPAIR_VARIABLES,
+      log_file = repair_log
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather missing-value repair complete: %d value(s) repaired; %d missing value(s) left unrepaired. Log: %s",
+      repaired_values, unrepaired_values, repair_log
+    ))
+  }
+
+  if (REPAIR_WEATHER_DATE_GAPS) {
+    repair_summary <- dssatutils::repair_weather_date_gaps(
+      weather_dir = output_dir,
+      ids = target_ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      variables = WEATHER_REPAIR_VARIABLES,
+      log_file = repair_log
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather date-gap repair complete: %d missing day row(s) inserted; %d missing day row(s) left unrepaired. Log: %s",
+      repaired_values, unrepaired_values, repair_log
+    ))
+  }
+
+  if (REPAIR_WEATHER_TEMPERATURE_INVERSIONS) {
+    repair_summary <- dssatutils::repair_weather_temperature_inversions(
+      weather_dir = output_dir,
+      ids = target_ids,
+      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
+      window_days = WEATHER_REPAIR_WINDOW_DAYS,
+      log_file = repair_log,
+      method = WEATHER_REPAIR_INVERSION_METHOD,
+      max_inversion_c = WEATHER_REPAIR_MAX_INVERSION_C
+    )
+    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
+    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
+    message(sprintf(
+      "Weather Tmax/Tmin inversion repair complete (%s, max_inversion_c=%.2f): %d day(s) repaired; %d inversion day(s) left unrepaired. Log: %s",
+      WEATHER_REPAIR_INVERSION_METHOD, WEATHER_REPAIR_MAX_INVERSION_C,
+      repaired_values, unrepaired_values, repair_log
+    ))
+  }
+}
+
+# --- SMART RESUME BLOCK ---
+ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+
+# Run configured repairs on existing files before validation
+if (dir.exists(output_dir)) {
+  apply_weather_repairs(ids)
+}
+
+
 if (RUN_STEP_2_WEATHER) {
   dir.create(CENTRAL_WEATHER_DIR, showWarnings = FALSE, recursive = TRUE)
   
@@ -1831,16 +1950,22 @@ if (RUN_STEP_2_WEATHER) {
   if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   
   weather_unresolvable_file <- file.path(output_dir, "unresolvable_points.json")
-  unresolvable_weather_ids <- load_unresolvable_point_ids(weather_unresolvable_file)
-  
-  # --- SMART RESUME BLOCK ---
-  ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+  weather_retryable_file <- file.path(output_dir, "retryable_weather_points.json")
+  unresolvable_weather_ids <- if (REEVALUATE_UNRESOLVABLE_WEATHER) character(0) else load_weather_exclusions(weather_unresolvable_file)
+
   if (CHECK_WEATHER_DOWNLOADS) {
     message("Verifying existing weather files for validity...")
     valid_mask <- vapply(ids, function(id) {
-      if (id %in% unresolvable_weather_ids) return(TRUE)
       is_wth_valid(id, output_dir, WEATHER_END_YEAR)
     }, logical(1))
+
+    now_valid_ids <- ids[valid_mask]
+    if (length(now_valid_ids) > 0) {
+      remove_unresolvable_point_ids(weather_unresolvable_file, now_valid_ids)
+      remove_unresolvable_point_ids(weather_retryable_file, now_valid_ids)
+      unresolvable_weather_ids <- setdiff(unresolvable_weather_ids, now_valid_ids)
+    }
+
     missing_mask <- !valid_mask
     invalid_existing <- ids[missing_mask & !(ids %in% unresolvable_weather_ids) & file.exists(file.path(output_dir, paste0(ids, ".WTH")))]
     if (length(invalid_existing) > 0) {
@@ -1917,7 +2042,8 @@ if (RUN_STEP_2_WEATHER) {
             agera5_cache_dir = AGERA5_CACHE_DIR,
             agera5_backend = AGERA5_BACKEND,
             agera5_data_format = AGERA5_DATA_FORMAT,
-            agera5_timeseries_chunk_degrees = AGERA5_TIMESERIES_CHUNK_DEGREES
+            agera5_timeseries_chunk_degrees = AGERA5_TIMESERIES_CHUNK_DEGREES,
+            cache_only = AGERA5_CACHE_ONLY
           )))
         }
       else if (WEATHER_SOURCE == "DWD")
@@ -1951,12 +2077,22 @@ if (RUN_STEP_2_WEATHER) {
 
       retry_count <- retry_count + 1
       
+      # Run configured repairs on newly written points before checking validity
+      apply_weather_repairs(points_to_process[[POINT_ID_COLUMN]])
+
       if (CHECK_WEATHER_DOWNLOADS) {
         ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
         valid_mask <- vapply(ids_left, function(id) {
-          if (id %in% unresolvable_weather_ids) return(TRUE)
           is_wth_valid(id, output_dir, WEATHER_END_YEAR)
         }, logical(1))
+
+        now_valid_ids <- ids_left[valid_mask]
+        if (length(now_valid_ids) > 0) {
+          remove_unresolvable_point_ids(weather_unresolvable_file, now_valid_ids)
+          remove_unresolvable_point_ids(weather_retryable_file, now_valid_ids)
+          unresolvable_weather_ids <- setdiff(unresolvable_weather_ids, now_valid_ids)
+        }
+
         points_to_process <- points_to_process[!valid_mask & !(ids_left %in% unresolvable_weather_ids), ]
 
         # Provider writers deliberately skip an existing path. Remove only the
@@ -1977,88 +2113,13 @@ if (RUN_STEP_2_WEATHER) {
     }
     
     if (nrow(points_to_process) > 0) {
-      save_unresolvable_point_ids(weather_unresolvable_file, points_to_process[[POINT_ID_COLUMN]],
-                                  paste0("failed_after_", max_retries, "_retries"))
-      warning(sprintf("Failed to successfully download weather data for %d points after %d retries. Recorded in %s and skipped during DSSAT execution.", 
-                      nrow(points_to_process), max_retries, basename(weather_unresolvable_file)))
+      recorded <- save_unresolvable_point_ids(weather_retryable_file, points_to_process[[POINT_ID_COLUMN]],
+                                  rep(paste0("failed_after_", max_retries, "_retries"), nrow(points_to_process)))
+      if (!isTRUE(recorded)) stop("Could not save retryable weather failure records")
+      remove_unresolvable_point_ids(weather_unresolvable_file, points_to_process[[POINT_ID_COLUMN]])
+      warning(sprintf("Retryable failure to download weather data for %d points after %d retries. Recorded in %s and skipped during DSSAT execution.",
+                      nrow(points_to_process), max_retries, basename(weather_retryable_file)))
     }
-  }
-}
-
-if (REPAIR_WEATHER_MISSING_VALUES) {
-  if (dir.exists(output_dir)) {
-    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
-    repair_log <- file.path(output_dir, "weather_repair.log")
-    repair_summary <- dssatutils::repair_weather_missing_values(
-      weather_dir = output_dir,
-      ids = ids,
-      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
-      window_days = WEATHER_REPAIR_WINDOW_DAYS,
-      variables = WEATHER_REPAIR_VARIABLES,
-      log_file = repair_log
-    )
-    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
-    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
-    message(sprintf(
-      "Weather missing-value repair complete: %d value(s) repaired; %d missing value(s) left unrepaired. Log: %s",
-      repaired_values, unrepaired_values, repair_log
-    ))
-  } else {
-    warning(sprintf(
-      "repair_weather_missing_values is TRUE, but weather directory does not exist: %s",
-      output_dir
-    ))
-  }
-}
-
-if (REPAIR_WEATHER_DATE_GAPS) {
-  if (dir.exists(output_dir)) {
-    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
-    repair_log <- file.path(output_dir, "weather_repair.log")
-    repair_summary <- dssatutils::repair_weather_date_gaps(
-      weather_dir = output_dir,
-      ids = ids,
-      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
-      window_days = WEATHER_REPAIR_WINDOW_DAYS,
-      variables = WEATHER_REPAIR_VARIABLES,
-      log_file = repair_log
-    )
-    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
-    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
-    message(sprintf(
-      "Weather date-gap repair complete: %d missing day row(s) inserted; %d missing day row(s) left unrepaired. Log: %s",
-      repaired_values, unrepaired_values, repair_log
-    ))
-  } else {
-    warning(sprintf(
-      "repair_weather_date_gaps is TRUE, but weather directory does not exist: %s",
-      output_dir
-    ))
-  }
-}
-
-if (REPAIR_WEATHER_TEMPERATURE_INVERSIONS) {
-  if (dir.exists(output_dir)) {
-    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
-    repair_log <- file.path(output_dir, "weather_repair.log")
-    repair_summary <- dssatutils::repair_weather_temperature_inversions(
-      weather_dir = output_dir,
-      ids = ids,
-      max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
-      window_days = WEATHER_REPAIR_WINDOW_DAYS,
-      log_file = repair_log
-    )
-    repaired_values <- sum(repair_summary$repaired_count, na.rm = TRUE)
-    unrepaired_values <- sum(repair_summary$unrepaired_count, na.rm = TRUE)
-    message(sprintf(
-      "Weather Tmax/Tmin inversion repair complete: %d day(s) repaired; %d inversion day(s) left unrepaired. Log: %s",
-      repaired_values, unrepaired_values, repair_log
-    ))
-  } else {
-    warning(sprintf(
-      "repair_weather_temperature_inversions is TRUE, but weather directory does not exist: %s",
-      output_dir
-    ))
   }
 }
 
@@ -2746,29 +2807,48 @@ if (RUN_DSSAT_EXECUTION) {
     
     unique_treatments <- unique(avg_yield_data_by_treatment$treatment)
     
-    if(exists("boundary_sf")) {
-      boundary_sf_4326 <- st_transform(boundary_sf, 4326)
-      
-      for (trt in unique_treatments) {
-        message(sprintf("--- Generating map for Treatment %d ---", trt))
-        data_for_this_plot <- avg_yield_data_by_treatment %>% filter(treatment == trt)
-        avg_yield_data_sf <- st_as_sf(data_for_this_plot, coords = c("longitude", "latitude"), crs = 4326)
-        
-        yield_map <- ggplot() +
-          geom_sf(data = boundary_sf_4326, fill = "grey90", color = "black", linewidth = 0.5) +
-          geom_sf(data = avg_yield_data_sf, aes(color = avg_grain_yield), alpha = 0.8, size = 2.5) +
-          scale_color_viridis_c(option = "plasma", name = "Avg. Yield (kg/ha)") +
-          coord_sf(crs = 4326) + 
-          labs(title = sprintf("Average Simulated Grain Yield (Treatment %d)", trt),
-               subtitle = paste(sprintf("Weather Data: %s (%d-%d)", WEATHER_SOURCE, WEATHER_START_YEAR, WEATHER_END_YEAR), sep = "\n")) +
-          theme_minimal() +
-          theme(panel.background = element_rect(fill = "aliceblue", color = NA))
-        
-        base_plot_path <- tools::file_path_sans_ext(FINAL_PLOT_PATH)
-        new_plot_path <- sprintf("%s_treatment%d.png", base_plot_path, trt)
-        ggsave(new_plot_path, yield_map, width = 10, height = 8, dpi = 300)
-        message(paste("Plot saved to:", new_plot_path))
-      } 
+    # Reusing a derived grid skips Step 0's boundary load. Load an optional
+    # backdrop here, and still render point maps when no boundary is available.
+    boundary_sf_4326 <- tryCatch({
+      plot_boundary <- boundary_sf
+      if (is.null(plot_boundary) && !USE_EXISTING_POINT_SHAPEFILE) {
+        boundary_path <- file.path(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)
+        if (file.exists(boundary_path)) {
+          plot_boundary <- st_read(boundary_path, quiet = TRUE)
+          if (ENABLE_BOUNDARY_FILTER) {
+            plot_boundary <- plot_boundary[
+              plot_boundary[[BOUNDARY_FILTER_COLUMN]] %in% BOUNDARY_FILTER_VALUE, ]
+          }
+        }
+      }
+      if (!is.null(plot_boundary) && nrow(plot_boundary) > 0) {
+        st_transform(plot_boundary, 4326)
+      } else NULL
+    }, error = function(e) {
+      message("Map boundary unavailable; plotting points only: ", conditionMessage(e))
+      NULL
+    })
+
+    for (trt in unique_treatments) {
+      message(sprintf("--- Generating map for Treatment %d ---", trt))
+      data_for_this_plot <- avg_yield_data_by_treatment %>% filter(treatment == trt)
+      avg_yield_data_sf <- st_as_sf(data_for_this_plot, coords = c("longitude", "latitude"), crs = 4326)
+
+      yield_map <- ggplot() +
+        (if (!is.null(boundary_sf_4326))
+          geom_sf(data = boundary_sf_4326, fill = "grey90", color = "black", linewidth = 0.5)) +
+        geom_sf(data = avg_yield_data_sf, aes(color = avg_grain_yield), alpha = 0.8, size = 2.5) +
+        scale_color_viridis_c(option = "plasma", name = "Avg. Yield (kg/ha)") +
+        coord_sf(crs = 4326) +
+        labs(title = sprintf("Average Simulated Grain Yield (Treatment %d)", trt),
+             subtitle = paste(sprintf("Weather Data: %s (%d-%d)", WEATHER_SOURCE, WEATHER_START_YEAR, WEATHER_END_YEAR), sep = "\n")) +
+        theme_minimal() +
+        theme(panel.background = element_rect(fill = "aliceblue", color = NA))
+
+      base_plot_path <- tools::file_path_sans_ext(FINAL_PLOT_PATH)
+      new_plot_path <- sprintf("%s_treatment%d.png", base_plot_path, trt)
+      ggsave(new_plot_path, yield_map, width = 10, height = 8, dpi = 300)
+      message(paste("Plot saved to:", new_plot_path))
     }
   } else {
     message(paste("Plotting skipped: '", file_path, "' not found. Did simulations run correctly?"))
