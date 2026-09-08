@@ -1,11 +1,17 @@
-"""Exercise real plotting blocks without running downloads or simulations."""
 import ast
 from pathlib import Path
+import shutil
 import subprocess
-import geopandas as gpd
+
 import pandas as pd
 import pytest
-from shapely.geometry import Point
+
+try:
+    import geopandas as gpd
+    from shapely.geometry import Point
+except ImportError:
+    pytest.skip("geopandas and shapely are required for plotting tests", allow_module_level=True)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize('language', ['R', 'python'])
@@ -26,27 +32,36 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
              BOUNDARY_FILTER_COLUMN='NAME',BOUNDARY_FILTER_VALUE=['keep'],
              WEATHER_SOURCE='TEST',WEATHER_START_YEAR=1984,WEATHER_END_YEAR=2025)
     if language == 'python':
-        import matplotlib
+        matplotlib = pytest.importorskip('matplotlib')
         matplotlib.use('Agg')
-        tree=ast.parse((ROOT/'dssat_main_pipeline.py').read_text())
-        block=max((n for n in ast.walk(tree) if isinstance(n,ast.If) and 'STEP 4: VISUALIZING RESULTS' in ast.unparse(n)), key=lambda n:n.lineno)
-        env.update(pd=pd,gpd=gpd,os=__import__('os'))
-        exec(compile(ast.Module(body=[block],type_ignores=[]),'<plotting>','exec'),env)
-        assert (env['plot_boundary'] is not None)==(backdrop=='available')
-        if backdrop=='available': assert len(env['plot_boundary'])==1
+        tree = ast.parse((ROOT / 'dssat_main_pipeline.py').read_text(encoding="utf-8"))
+        block = max((n for n in ast.walk(tree) if isinstance(n, ast.If) and 'STEP 4: VISUALIZING RESULTS' in ast.unparse(n)), key=lambda n: n.lineno)
+        env.update(pd=pd, gpd=gpd, os=__import__('os'))
+        exec(compile(ast.Module(body=[block], type_ignores=[]), '<plotting>', 'exec'), env)
+        assert (env['plot_boundary'] is not None) == (backdrop == 'available')
+        if backdrop == 'available': assert len(env['plot_boundary']) == 1
     else:
-        import json, shutil
-        if not shutil.which('Rscript'): pytest.skip('Rscript unavailable')
+        import json
+        rscript = shutil.which('Rscript')
+        if not rscript:
+            pytest.skip('Rscript unavailable')
+        probe = subprocess.run(
+            [rscript, '--vanilla', '-e',
+             'quit(status=if(all(vapply(c("readr","dplyr","ggplot2","sf"), requireNamespace, logical(1), quietly=TRUE))) 0 else 1)'],
+            check=False,
+        )
+        if probe.returncode != 0:
+            pytest.skip("R plotting packages (readr, dplyr, ggplot2, sf) are not installed")
         def literal(x):
             if x is None: return 'NULL'
-            if isinstance(x,bool): return 'TRUE' if x else 'FALSE'
-            if isinstance(x,list): return 'c('+','.join(map(literal,x))+')'
+            if isinstance(x, bool): return 'TRUE' if x else 'FALSE'
+            if isinstance(x, list): return 'c(' + ','.join(map(literal, x)) + ')'
             return json.dumps(x)
-        setup='\n'.join(k+' <- '+literal(v) for k,v in env.items())+'\n'
-        block=(ROOT/'dssat_main_pipeline.R').read_text().split('# STEP 4: VISUALIZE RESULTS',1)[1]
-        script=tmp_path/'render.R'
-        script.write_text(setup+block+'\nstopifnot(is.null(boundary_sf_4326) == '+literal(backdrop!='available')+')\n')
-        completed=subprocess.run(['Rscript','--vanilla',str(script)],capture_output=True,text=True,timeout=60)
-        assert completed.returncode==0,completed.stderr
-        plot=tmp_path/'map_treatment4.png'
-    assert plot.exists() and plot.stat().st_size>1000
+        setup = '\n'.join(k + ' <- ' + literal(v) for k, v in env.items()) + '\n'
+        block = (ROOT / 'dssat_main_pipeline.R').read_text(encoding="utf-8").split('# STEP 4: VISUALIZE RESULTS', 1)[1]
+        script = tmp_path / 'render.R'
+        script.write_text(setup + block + '\nstopifnot(is.null(boundary_sf_4326) == ' + literal(backdrop != 'available') + ')\n')
+        completed = subprocess.run(['Rscript', '--vanilla', str(script)], capture_output=True, text=True, timeout=60)
+        assert completed.returncode == 0, completed.stderr
+        plot = tmp_path / 'map_treatment4.png'
+    assert plot.exists() and plot.stat().st_size > 1000

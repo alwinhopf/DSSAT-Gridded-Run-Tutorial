@@ -17,12 +17,13 @@ if not UTILS.is_dir():
 
 @pytest.mark.parametrize("language", ["python", "r"])
 def test_driver_rejects_shifted_soil_cache(tmp_path, language):
-    if not (UTILS / "python" / "dssatutils" / "soil_validation.py").is_file():
+    fixture_file = UTILS / "tests/fixtures/soil_mapping_rebuild.csv"
+    if not (UTILS / "python" / "dssatutils" / "soil_validation.py").is_file() or not fixture_file.is_file():
         pytest.skip("updated shared dssatutils source checkout needed")
     sys.path.insert(0, str(UTILS / "python"))
     from dssatutils import rebuild_soil_files_from_mapping, soil_file_issue
     records = rebuild_soil_files_from_mapping(
-        UTILS / "tests/fixtures/soil_mapping_rebuild.csv", tmp_path / "soil", "SSURGO")
+        fixture_file, tmp_path / "soil", "SSURGO")
     point = tmp_path / "00000001"
     point.mkdir()
     soil = point / "SOIL.SOL"
@@ -39,7 +40,16 @@ def test_driver_rejects_shifted_soil_cache(tmp_path, language):
         if not rscript:
             pytest.skip("Rscript unavailable")
         code = '''args <- commandArgs(TRUE)
-pkgload::load_all(args[1], quiet=TRUE)
+if (!requireNamespace("dssatutils", quietly = TRUE)) {
+  if (requireNamespace("pkgload", quietly = TRUE)) {
+    tryCatch(pkgload::load_all(args[1], quiet = TRUE), error = function(e) NULL)
+  }
+}
+if (!requireNamespace("dssatutils", quietly = TRUE) && file.exists(file.path(args[1], "R", "soil_validation.R"))) {
+  ns <- tryCatch(asNamespace("dssatutils"), error = function(e) makeNamespace("dssatutils"))
+  sys.source(file.path(args[1], "R", "soil_validation.R"), envir = ns)
+  namespaceExport(ns, "soil_file_issue")
+}
 expressions <- parse(args[2])
 env <- new.env()
 for (expr in expressions) {

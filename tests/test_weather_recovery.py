@@ -3,6 +3,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -12,7 +13,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 UTILS = ROOT.parent / 'dssatutils'
-sys.path.insert(0,str(UTILS/'python'))
+if not UTILS.is_dir():
+    UTILS = ROOT / '.ci-deps' / 'dssatutils'
+if (UTILS / 'python').is_dir():
+    sys.path.insert(0, str(UTILS / 'python'))
 from dssatutils.weather_validation import is_wth_valid
 
 
@@ -52,7 +56,20 @@ def test_real_engine_keeps_exclusions_but_retries_old_failures(tmp_path,language
         exec(compile(ast.Module(body=[failed],type_ignores=[]),'failure','exec'),env)
         assert '00000003' in json.loads((tmp_path/'retryable_weather_points.json').read_text())
     else:
-        code='''a<-commandArgs(TRUE); pkgload::load_all(a[1],quiet=TRUE)
+        rscript = shutil.which("Rscript")
+        if not rscript:
+            pytest.skip("Rscript unavailable")
+        code = '''a<-commandArgs(TRUE)
+if (!requireNamespace("dssatutils", quietly = TRUE)) {
+  if (requireNamespace("pkgload", quietly = TRUE)) {
+    tryCatch(pkgload::load_all(a[1], quiet = TRUE), error = function(e) NULL)
+  }
+}
+if (!requireNamespace("dssatutils", quietly = TRUE) && file.exists(file.path(a[1], "R", "weather_validation.R"))) {
+  ns <- tryCatch(asNamespace("dssatutils"), error = function(e) makeNamespace("dssatutils"))
+  sys.source(file.path(a[1], "R", "weather_validation.R"), envir = ns)
+  namespaceExport(ns, "is_wth_valid")
+}
 exprs<-parse(a[2]); env<-new.env()
 for(e in exprs) if(is.call(e)&&identical(e[[1]],as.name('<-'))&&as.character(e[[2]])[1] %in%
  c('load_unresolvable_point_ids','load_weather_exclusions','remove_unresolvable_point_ids','save_unresolvable_point_ids','is_wth_valid','weather_required_columns')) eval(e,env)
@@ -67,8 +84,8 @@ eval(selection,env)
 selected<-env$ids[env$missing_mask & !(env$ids %in% env$unresolvable_weather_ids)]
 stopifnot(identical(selected,'00000003'))
 '''
-        proc=subprocess.run(['Rscript','--vanilla','-e',code,str(UTILS),str(ROOT/'dssat_main_pipeline.R'),str(tmp_path)],capture_output=True,text=True,timeout=60)
-        assert proc.returncode==0,proc.stdout+proc.stderr
+        proc = subprocess.run(['Rscript', '--vanilla', '-e', code, str(UTILS), str(ROOT / 'dssat_main_pipeline.R'), str(tmp_path)], capture_output=True, text=True, timeout=60)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
     remaining=json.loads(p.read_text())
     assert '00000001' not in remaining
     assert remaining['00000002']['reason']=='outside_coverage'
