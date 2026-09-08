@@ -52,3 +52,13 @@ pytest tests/test_cross_language_parity.py
 pytest tests/test_e2e_comprehensive.py
 Rscript -e "testthat::test_file('tests/test_e2e_comprehensive.R')"
 ```
+
+## 5. CI and clean-checkout guardrails
+
+When a test imports a sibling package, update the immutable revision in
+`smoke.yml`, `e2e.yml`, README, environment/conda locks, renv metadata, and
+parity tests together. Re-run the suite against that exact pin, not only a
+working-tree sibling checkout. Test from a clean checkout/package artifact so
+untracked local files cannot hide missing modules. Keep live provider tests
+separate from offline tests and never commit weather/soil caches or DSSAT run
+folders.

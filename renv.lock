@@ -993,7 +993,7 @@
     },
     "dssatutils": {
       "Package": "dssatutils",
-      "Version": "0.4.0",
+      "Version": "0.5.0",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Shared Weather and Soil Download Utilities for DSSAT",
@@ -1037,8 +1037,8 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatutils",
-      "RemoteRef": "e9c859fa1d915623df23e2eb13084cb085dbfe3e",
-      "RemoteSha": "e9c859fa1d915623df23e2eb13084cb085dbfe3e"
+      "RemoteRef": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0",
+      "RemoteSha": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0"
     },
     "e1071": {
       "Package": "e1071",

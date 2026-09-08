@@ -3,7 +3,10 @@ name: smoke
 # Force JS actions to Node.js 24 on the runner (opt-in)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
+  # Keep this pin at a dssatutils commit that contains every module imported by
+  # the offline suite (including weather_validation.py). Update it whenever
+  # tutorial tests start using a newer sibling-repository API.
+  DSSATUTILS_REF: '197d3c5188a6681c7c0f0cb3305eb775d1b600b0'
   DSSATENGINE_REF: '31085c7eac1628db949e3ad9fdb16947a65d0834'
   DSSAT_REQUIRE_PARITY_SOURCES: '1'
 

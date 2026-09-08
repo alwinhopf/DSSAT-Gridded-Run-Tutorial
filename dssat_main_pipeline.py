@@ -897,13 +897,21 @@ if WEATHER_SOURCE.upper() == "AGERA5":
 def weather_file_is_valid(path, start_yr=None):
     if start_yr is None:
         start_yr = WEATHER_START_YEAR
-    return is_wth_valid(
-        path,
-        WEATHER_END_YEAR,
-        start_year=start_yr,
-        end_date=WEATHER_VALIDATION_END_DATE,
-        required_columns=weather_required_columns(),
-    )
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return False
+    key = (str(path), stat.st_size, stat.st_mtime_ns, start_yr, WEATHER_END_YEAR,
+           str(WEATHER_VALIDATION_END_DATE), tuple(weather_required_columns()))
+    cache = getattr(weather_file_is_valid, "_cache", None)
+    if cache is None:
+        cache = weather_file_is_valid._cache = {}
+    if key not in cache:
+        cache[key] = is_wth_valid(path, WEATHER_END_YEAR, start_year=start_yr,
+            end_date=WEATHER_VALIDATION_END_DATE, required_columns=weather_required_columns())
+        if len(cache) % 100 == 0:
+            print(f"Weather QA: {len(cache)} files checked", flush=True)
+    return cache[key]
 
 # Soil sources that write one .SOL per grid point named by the point ID (so
 # SOIL_ID == point ID and the per-point combine logic below applies). The other
@@ -1122,6 +1130,18 @@ if __name__ == '__main__':
             pass
         return ids
 
+    def load_soil_exclusions(cache_path):
+        try:
+            with open(cache_path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            return {str(pid) for pid, record in data.items()
+                    if isinstance(record, dict) and (
+                        record.get("status") == "permanent" or (
+                            "status" not in record and
+                            str(record.get("reason", "")).startswith(("no-soil:", "no-layers:"))))}
+        except (OSError, ValueError, AttributeError):
+            return set()
+
     def save_unresolvable_point_ids(cache_path: str, new_ids, reasons=None) -> bool:
         ids = [str(x) for x in new_ids if str(x).strip()]
         if not ids:
@@ -1138,13 +1158,18 @@ if __name__ == '__main__':
                 except Exception:
                     existing = {}
             tstr = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(reasons, str):
+                reasons = [reasons] * len(ids)
+            elif reasons is not None and len(reasons) == 1:
+                reasons = list(reasons) * len(ids)
             for i, pid in enumerate(ids):
                 rsn = (
                     str(reasons[i])
                     if reasons is not None and len(reasons) > i and str(reasons[i]).strip()
                     else "unresolvable_or_out_of_bounds"
                 )
-                existing[pid] = {"reason": rsn, "updated_at": tstr}
+                status = "permanent" if rsn.startswith(("no-soil:", "no-layers:", "no-coverage:", "no-tabular:")) else "retryable"
+                existing[pid] = {"reason": rsn, "status": status, "updated_at": tstr}
             with open(cache_path, "w", encoding="utf-8") as fh:
                 json.dump(existing, fh, indent=2)
             return True
@@ -1185,7 +1210,7 @@ if __name__ == '__main__':
         individual_sol_dir = soilfile_prefix + "_individual_SOL"
         os.makedirs(individual_sol_dir, exist_ok=True)
         soil_unresolvable_file = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_unresolvable.json")
-        unresolvable_soil_ids = load_unresolvable_point_ids(soil_unresolvable_file)
+        unresolvable_soil_ids = load_soil_exclusions(soil_unresolvable_file)
 
         # Harvest provider failure CSV if present
         soil_fail_csv = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_download_failures.csv")
@@ -1195,8 +1220,11 @@ if __name__ == '__main__':
                 if not fdf.empty and "ID" in fdf.columns:
                     p_ids = fdf["ID"].dropna().tolist()
                     p_rsn = fdf["reason"].tolist() if "reason" in fdf.columns else ["no_soil_coverage"] * len(p_ids)
+                    durable = [(pid, reason) for pid, reason in zip(p_ids, p_rsn)
+                               if str(reason).startswith(("no-soil:", "no-layers:"))]
+                    p_ids = [x[0] for x in durable]; p_rsn = [x[1] for x in durable]
                     save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
-                    unresolvable_soil_ids |= set(p_ids)
+                    unresolvable_soil_ids = load_soil_exclusions(soil_unresolvable_file)
             except Exception:
                 pass
 
@@ -1244,7 +1272,7 @@ if __name__ == '__main__':
                             p_ids = fdf["ID"].dropna().tolist()
                             p_rsn = fdf["reason"].tolist() if "reason" in fdf.columns else ["no_soil_coverage"] * len(p_ids)
                             save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
-                            unresolvable_soil_ids |= set(p_ids)
+                            unresolvable_soil_ids = load_soil_exclusions(soil_unresolvable_file)
                     except Exception:
                         pass
 
@@ -1758,11 +1786,33 @@ if __name__ == '__main__':
             )
 
     if DOWNLOAD_ONLY:
+        coverage = {}
+        point_ids = list(gridfile[POINT_ID_COLUMN].astype(str))
+        if RUN_STEP_1_SOILS:
+            valid = {pid for pid in point_ids if soil_file_issue(os.path.join(individual_sol_dir, pid + ".SOL")) is None}
+            excluded = (set(point_ids) & load_soil_exclusions(soil_unresolvable_file)) - valid
+            coverage["soil"] = dict(source=SOIL_SOURCE, expected=len(point_ids), valid=len(valid),
+                                    excluded=len(excluded), retryable=len(point_ids)-len(valid)-len(excluded))
+        if RUN_STEP_2_WEATHER:
+            valid = {pid for pid in point_ids if weather_file_is_valid(os.path.join(weather_dir, pid + ".WTH"))}
+            excluded = (set(point_ids) & load_weather_exclusions(weather_unresolvable_file)) - valid
+            coverage["weather"] = dict(source=WEATHER_SOURCE, expected=len(point_ids), valid=len(valid),
+                                       excluded=len(excluded), retryable=len(point_ids)-len(valid)-len(excluded))
+        for kind, item in coverage.items():
+            print(f"Input coverage {kind}/{item['source']}: {item['valid']}/{item['expected']} valid, "
+                  f"{item['excluded']} excluded, {item['retryable']} retryable")
+        status_path = os.environ.get("DSSAT_INPUT_STATUS_FILE")
+        if status_path:
+            tmp = status_path + f".tmp-{os.getpid()}"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(coverage, fh, indent=2)
+            os.replace(tmp, status_path)
+        incomplete = any(item["retryable"] for item in coverage.values())
         print("=" * 60)
         print("DOWNLOAD-ONLY MODE COMPLETE")
         print("Soil and weather processing finished; DSSAT folders and simulations were not created.")
         print("=" * 60)
-        sys.exit(0)
+        sys.exit(2 if incomplete else 0)
 
     # =============================================================================
     # STEP 3 - BUILD DSSAT FOLDERS AND RUN SIMULATIONS

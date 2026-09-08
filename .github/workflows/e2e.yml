@@ -11,10 +11,12 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # v0.4.0 validates GridMET/HDF5 downloads concurrently, which is unsafe on
+  # v0.5.0 validates GridMET/HDF5 downloads concurrently, which is unsafe on
   # some Linux runners. This exact follow-up commit serializes validation and
   # honors n_cores while retaining package version 0.4.0.
-  DSSATUTILS_REF: 'e9c859fa1d915623df23e2eb13084cb085dbfe3e'
+  # Must provide the modules imported by both the Python and R integration
+  # suites; keep this in sync with smoke.yml.
+  DSSATUTILS_REF: '197d3c5188a6681c7c0f0cb3305eb775d1b600b0'
   DSSATENGINE_REF: '31085c7eac1628db949e3ad9fdb16947a65d0834'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating

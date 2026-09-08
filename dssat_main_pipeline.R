@@ -943,13 +943,27 @@ if (toupper(WEATHER_SOURCE) == "AGERA5") {
 
 is_wth_valid <- function(id, dir, end_yr, start_yr = NULL) {
   if (is.null(start_yr)) start_yr <- WEATHER_START_YEAR
-  dssatutils::is_wth_valid(
-    file.path(dir, paste0(id, ".WTH")),
-    end_year = end_yr,
-    start_year = start_yr,
-    end_date = WEATHER_VALIDATION_END_DATE,
-    required_columns = weather_required_columns()
-  )
+  path <- file.path(dir, paste0(id, ".WTH"))
+  info <- file.info(path)
+  if (is.na(info$size) || info$size <= 0) return(FALSE)
+  scope <- environment(is_wth_valid)
+  cache <- get0("weather_validation_cache", envir = scope, inherits = FALSE)
+  if (is.null(cache)) {
+    cache <- new.env(parent = emptyenv())
+    cache$count <- 0L
+    cache$started <- proc.time()[[3]]
+    assign("weather_validation_cache", cache, envir = scope)
+  }
+  key <- paste(path, info$size, as.numeric(info$mtime), start_yr, end_yr,
+               WEATHER_VALIDATION_END_DATE, paste(weather_required_columns(), collapse = ","), sep = "|")
+  if (exists(key, cache, inherits = FALSE)) return(cache[[key]])
+  valid <- dssatutils::is_wth_valid(path, end_year = end_yr, start_year = start_yr,
+    end_date = WEATHER_VALIDATION_END_DATE, required_columns = weather_required_columns())
+  cache[[key]] <- valid
+  cache$count <- cache$count + 1L
+  if (cache$count %% 100L == 0L) message(sprintf(
+    "Weather QA: %d files checked in %.1f seconds", cache$count, proc.time()[[3]] - cache$started))
+  valid
 }
 
 # --- Helper: Clean Invalid Soil Files ---
@@ -1487,6 +1501,18 @@ load_weather_exclusions <- function(cache_path) {
   ids
 }
 
+# Legacy generic/no-coverage records may hide network or extraction errors.
+# Only explicitly classified new records, or documented no-soil/no-layer
+# responses, can suppress later attempts. Old ambiguous records retry once.
+load_soil_exclusions <- function(cache_path) {
+  data <- tryCatch(jsonlite::fromJSON(cache_path, simplifyVector = FALSE), error = function(e) NULL)
+  if (!is.list(data) || is.null(names(data))) return(character())
+  names(data)[vapply(data, function(x) {
+    is.list(x) && (identical(x$status, "permanent") ||
+      (is.null(x$status) && grepl("^no-(soil|layers):", as.character(if (is.null(x$reason)) "" else x$reason))))
+  }, logical(1))]
+}
+
 save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
   new_ids <- as.character(new_ids)
   new_ids <- new_ids[nzchar(new_ids)]
@@ -1501,6 +1527,7 @@ save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
       }, error = function(e) {})
     }
     tstr <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    if (length(reasons) == 1L) reasons <- rep(reasons, length(new_ids))
     for (i in seq_along(new_ids)) {
       pid <- new_ids[i]
       rsn <- if (!is.null(reasons) && length(reasons) >= i && nzchar(as.character(reasons[i]))) {
@@ -1508,7 +1535,8 @@ save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
       } else {
         "unresolvable_or_out_of_bounds"
       }
-      existing_data[[pid]] <- list(reason = rsn, updated_at = tstr)
+      status <- if (grepl("^no-(soil|layers|coverage|tabular):", rsn)) "permanent" else "retryable"
+      existing_data[[pid]] <- list(reason = rsn, status = status, updated_at = tstr)
     }
     jsonlite::write_json(existing_data, cache_path, pretty = TRUE, auto_unbox = TRUE)
     invisible(TRUE)
@@ -1547,7 +1575,7 @@ if (RUN_STEP_1_SOILS) {
   individual_sol_output_folder <- paste0(soilfile_path_prefix, "_individual_SOL")
   dir.create(individual_sol_output_folder, recursive = TRUE, showWarnings = FALSE)
   soil_unresolvable_file <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_unresolvable.json"))
-  unresolvable_soil_ids <- load_unresolvable_point_ids(soil_unresolvable_file)
+  unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
 
   # Check for provider-generated failure CSV and harvest permanent failures
   soil_fail_csv <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_download_failures.csv"))
@@ -1557,8 +1585,10 @@ if (RUN_STEP_1_SOILS) {
       if (nrow(fdf) > 0 && "ID" %in% names(fdf)) {
         p_ids <- as.character(fdf$ID)
         p_rsn <- if ("reason" %in% names(fdf)) as.character(fdf$reason) else rep("no_soil_coverage", length(p_ids))
+        durable <- grepl("^no-(soil|layers):", p_rsn)
+        p_ids <- p_ids[durable]; p_rsn <- p_rsn[durable]
         save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
-        unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, p_ids))
+        unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
       }
     }, error = function(e) {})
   }
@@ -1635,7 +1665,7 @@ if (RUN_STEP_1_SOILS) {
               p_ids <- as.character(fdf$ID)
               p_rsn <- if ("reason" %in% names(fdf)) as.character(fdf$reason) else rep("no_soil_coverage", length(p_ids))
               save_unresolvable_point_ids(soil_unresolvable_file, p_ids, p_rsn)
-              unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, p_ids))
+              unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
             }
           }, error = function(e) {})
         }
@@ -2215,11 +2245,38 @@ if (EXTEND_WEATHER_DATA) {
 }
 
 if (DOWNLOAD_ONLY) {
+  coverage <- list()
+  point_ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+  if (RUN_STEP_1_SOILS) {
+    valid <- vapply(point_ids, function(id) is.null(soil_file_issue(
+      file.path(individual_sol_output_folder, paste0(id, ".SOL")))), logical(1))
+    excluded <- point_ids %in% load_soil_exclusions(soil_unresolvable_file) & !valid
+    coverage$soil <- list(source = SOIL_SOURCE, expected = length(point_ids), valid = sum(valid),
+                          excluded = sum(excluded), retryable = sum(!valid & !excluded))
+  }
+  if (RUN_STEP_2_WEATHER) {
+    valid <- vapply(point_ids, function(id) is_wth_valid(id, output_dir, WEATHER_END_YEAR), logical(1))
+    excluded <- point_ids %in% load_weather_exclusions(weather_unresolvable_file) & !valid
+    coverage$weather <- list(source = WEATHER_SOURCE, expected = length(point_ids), valid = sum(valid),
+                             excluded = sum(excluded), retryable = sum(!valid & !excluded))
+  }
+  for (kind in names(coverage)) {
+    x <- coverage[[kind]]
+    message(sprintf("Input coverage %s/%s: %d/%d valid, %d excluded, %d retryable",
+      kind, x$source, x$valid, x$expected, x$excluded, x$retryable))
+  }
+  status_path <- Sys.getenv("DSSAT_INPUT_STATUS_FILE", "")
+  if (nzchar(status_path)) {
+    tmp <- paste0(status_path, ".tmp-", Sys.getpid())
+    jsonlite::write_json(coverage, tmp, auto_unbox = TRUE, pretty = TRUE)
+    if (!file.rename(tmp, status_path)) stop("Cannot publish input coverage status")
+  }
+  incomplete <- any(vapply(coverage, function(x) x$retryable > 0L, logical(1)))
   message(paste(rep("=", 60), collapse = ""))
   message("DOWNLOAD-ONLY MODE COMPLETE")
   message("Soil and weather processing finished; DSSAT folders and simulations were not created.")
   message(paste(rep("=", 60), collapse = ""))
-  quit(save = "no", status = 0)
+  quit(save = "no", status = if (incomplete) 2L else 0L)
 }
 
 #-----------------------------------------------------------------------
