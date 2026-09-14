@@ -9,6 +9,8 @@ from typing import Optional
 
 import pytest
 
+from tests.helpers.discovery import find_rscript
+
 ROOT = Path(__file__).resolve().parents[1]
 UTILS = ROOT.parent / "dssatutils"
 if not UTILS.is_dir():
@@ -36,7 +38,7 @@ def test_driver_rejects_shifted_soil_cache(tmp_path, language):
         exec(compile(ast.Module(body=[node], type_ignores=[]), "preflight", "exec"), namespace)
         check = lambda: namespace["soil_input_issue"]("00000001") or "OK"
     else:
-        rscript = shutil.which("Rscript")
+        rscript = find_rscript()
         if not rscript:
             pytest.skip("Rscript unavailable")
         code = '''args <- commandArgs(TRUE)

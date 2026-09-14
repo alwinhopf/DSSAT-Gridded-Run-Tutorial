@@ -12,6 +12,8 @@ try:
 except ImportError:
     pytest.skip("geopandas and shapely are required for plotting tests", allow_module_level=True)
 
+from tests.helpers.discovery import find_rscript
+
 ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.parametrize('language', ['R', 'python'])
@@ -42,7 +44,7 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
         if backdrop == 'available': assert len(env['plot_boundary']) == 1
     else:
         import json
-        rscript = shutil.which('Rscript')
+        rscript = find_rscript()
         if not rscript:
             pytest.skip('Rscript unavailable')
         probe = subprocess.run(
@@ -61,7 +63,7 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
         block = (ROOT / 'dssat_main_pipeline.R').read_text(encoding="utf-8").split('# STEP 4: VISUALIZE RESULTS', 1)[1]
         script = tmp_path / 'render.R'
         script.write_text(setup + block + '\nstopifnot(is.null(boundary_sf_4326) == ' + literal(backdrop != 'available') + ')\n')
-        completed = subprocess.run(['Rscript', '--vanilla', str(script)], capture_output=True, text=True, timeout=60)
+        completed = subprocess.run([rscript, '--vanilla', str(script)], capture_output=True, text=True, timeout=60)
         assert completed.returncode == 0, completed.stderr
         plot = tmp_path / 'map_treatment4.png'
     assert plot.exists() and plot.stat().st_size > 1000

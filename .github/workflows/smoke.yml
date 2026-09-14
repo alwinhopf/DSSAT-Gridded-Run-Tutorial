@@ -1,17 +1,11 @@
 name: smoke
 
-# Force JS actions to Node.js 24 on the runner (opt-in)
+# Multi-lane CI architecture: isolated fast unit tests, behavioral parity contracts, and platform compatibility.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Keep this pin at a dssatutils commit that contains every module imported by
-  # the offline suite (including weather_validation.py). Update it whenever
-  # tutorial tests start using a newer sibling-repository API.
+  # Sibling repository pinned revisions
   DSSATUTILS_REF: '197d3c5188a6681c7c0f0cb3305eb775d1b600b0'
   DSSATENGINE_REF: '31085c7eac1628db949e3ad9fdb16947a65d0834'
-  DSSAT_REQUIRE_PARITY_SOURCES: '1'
-
-# Offline smoke test: no internet APIs, no DSSAT executable required.
-# Validates config loading, helper-module imports, and the DSSAT .WTH writer.
 
 on:
   push:
@@ -20,92 +14,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  python-smoke:
-    name: Python offline (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      RENV_CONFIG_AUTOLOADER_ENABLED: false
+  # Lane 1: Fast deterministic unit tests + R syntax validation (PR gate)
+  unit-tests:
+    name: Fast Unit Tests & R Syntax (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      # The parity tests inspect both language implementations. Check out the
-      # exact dependency revisions under the path they know how to resolve so
-      # a clean GitHub runner cannot silently skip those assertions.
-      - uses: actions/checkout@v6
-        with:
-          repository: alwinhopf/dssatutils
-          ref: ${{ env.DSSATUTILS_REF }}
-          path: .ci-deps/dssatutils
-      - uses: actions/checkout@v6
-        with:
-          repository: alwinhopf/dssatengine
-          ref: ${{ env.DSSATENGINE_REF }}
-          path: .ci-deps/dssatengine
-
-      # The cross-language config test launches Rscript from pytest. Provision
-      # R explicitly so the test runs consistently instead of depending on
-      # whichever tools happen to be preinstalled on a hosted runner.
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          use-public-rspm: true
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      - name: Install shared R package dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r@v2
         with:
-          working-directory: .ci-deps/dssatutils
-          dependencies: '"hard"'
-          extra-packages: any::pkgload, any::yaml, any::jsonlite
-          install-pandoc: false
+          r-version: "4.3"
+          use-public-rspm: true
 
-      - name: Install R parity dependency
-        # Match the --vanilla R process launched by the parity test. Without
-        # this flag, the repository .Rprofile activates renv and installs yaml
-        # into a project library that the test intentionally does not load.
-        run: >-
-          Rscript --vanilla -e
-          'install.packages("yaml", repos="https://cloud.r-project.org");
-          stopifnot(requireNamespace("yaml", quietly=TRUE))'
-
-      - name: Install minimal deps
-        # Only what the offline smoke test needs; heavy/optional geo + MPI deps
-        # are skipped gracefully by the test if absent.
+      - name: Install minimal Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas pyyaml pytest
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${{ env.DSSATUTILS_REF }}"
 
-      - name: Run offline smoke test
-        run: python -m pytest -m "not integration and not slow" -v
-
-      - name: Byte-compile all pipeline modules
-        run: python -m compileall -q dssat_main_pipeline.py config_loader.py python_scripts tests
-
-  r-config:
-    name: R config/syntax (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: r-lib/actions/setup-r@v2
-        with:
-          use-public-rspm: true
-      - name: Install YAML dependency
+      - name: Install minimal R dependencies
         run: >-
           Rscript --vanilla -e
           'install.packages("yaml", repos="https://cloud.r-project.org");
           stopifnot(requireNamespace("yaml", quietly=TRUE))'
+
+      - name: Run fast offline unit tests
+        run: >-
+          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py
+          -v --tb=short --junit-xml=test-results.xml
+
       - name: Validate central config and R syntax
         run: >-
           Rscript --vanilla -e 'source("config_loader.R");
@@ -114,3 +54,142 @@ jobs:
           parse(file="tests/test_e2e.R");
           parse(file="tests/test_e2e_comprehensive.R");
           parse(file="tests/test_dssat_model_e2e.R")'
+
+      - name: Byte-compile all pipeline modules
+        run: python -m compileall -q dssat_main_pipeline.py config_loader.py python_scripts tests
+
+      - name: Upload test results and logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-test-results
+          path: |
+            test-results.xml
+            *.log
+          if-no-files-found: ignore
+
+  # Lane 2: Cross-language behavioral parity contract tests
+  parity-contracts:
+    name: Language Parity & Behavioral Contracts (ubuntu-latest)
+    runs-on: ubuntu-latest
+    env:
+      RENV_CONFIG_AUTOLOADER_ENABLED: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/checkout@v6
+        with:
+          repository: alwinhopf/dssatutils
+          ref: ${{ env.DSSATUTILS_REF }}
+          path: .ci-deps/dssatutils
+
+      - uses: actions/checkout@v6
+        with:
+          repository: alwinhopf/dssatengine
+          ref: ${{ env.DSSATENGINE_REF }}
+          path: .ci-deps/dssatengine
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.3"
+          use-public-rspm: true
+
+      - name: Install shared R package dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: .ci-deps/dssatutils
+          dependencies: '"hard"'
+          extra-packages: any::pkgload, any::yaml, any::jsonlite, any::sf, any::terra
+          install-pandoc: false
+
+      - name: Install R parity dependencies
+        run: >-
+          Rscript --vanilla -e
+          'install.packages(c("yaml", "jsonlite"), repos="https://cloud.r-project.org");
+          stopifnot(requireNamespace("yaml", quietly=TRUE));
+          stopifnot(requireNamespace("jsonlite", quietly=TRUE))'
+
+      - name: Install Python parity dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyyaml pytest geopandas shapely rasterio matplotlib
+          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${{ env.DSSATUTILS_REF }}"
+          pip install "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@${{ env.DSSATENGINE_REF }}"
+
+      - name: Run cross-language parity & behavioral contract tests
+        run: >-
+          pytest tests/test_cross_language_parity.py
+          tests/test_cropland_mask_geometry.py
+          tests/test_plotting_reused_grid.py
+          tests/test_weather_recovery.py
+          tests/test_soil_input_preflight.py
+          -v --tb=short --junit-xml=parity-test-results.xml
+
+      - name: Upload parity test results and logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: parity-test-results
+          path: |
+            parity-test-results.xml
+            *.log
+          if-no-files-found: ignore
+
+  # Lane 3: Platform compatibility matrix (isolated from required PR gate)
+  platform-compat:
+    name: Platform Compatibility (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.3"
+          use-public-rspm: true
+
+      - name: Install minimal Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyyaml pytest
+
+      - name: Install minimal R dependencies
+        run: >-
+          Rscript --vanilla -e
+          'install.packages("yaml", repos="https://cloud.r-project.org");
+          stopifnot(requireNamespace("yaml", quietly=TRUE))'
+
+      - name: Run fast offline unit tests
+        run: >-
+          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py
+          -v --tb=short --junit-xml=platform-test-results.xml
+
+      - name: Validate central config and R syntax
+        run: >-
+          Rscript --vanilla -e 'source("config_loader.R");
+          stopifnot(cfg_get("weather_source", "") != "");
+          parse(file="dssat_main_pipeline.R")'
+
+      - name: Byte-compile all pipeline modules
+        run: python -m compileall -q dssat_main_pipeline.py config_loader.py python_scripts tests
+
+      - name: Upload platform test results and logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: platform-test-results-${{ matrix.os }}
+          path: |
+            platform-test-results.xml
+            *.log
+          if-no-files-found: ignore

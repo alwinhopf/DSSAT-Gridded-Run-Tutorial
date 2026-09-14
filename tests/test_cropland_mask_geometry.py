@@ -13,6 +13,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import Point, box, mapping
 
+from tests.helpers.discovery import find_rscript
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,7 +83,7 @@ def test_boundary_clipping_and_anchor_relocation_python(tmp_path):
 
 
 def test_boundary_clipping_and_anchor_relocation_r_matches_python(tmp_path):
-    rscript = shutil.which("Rscript")
+    rscript = find_rscript()
     if rscript is None:
         pytest.skip("Rscript is not installed")
     probe = subprocess.run(
