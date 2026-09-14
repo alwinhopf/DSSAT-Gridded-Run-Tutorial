@@ -40,16 +40,8 @@ def test_driver_rejects_shifted_soil_cache(tmp_path, language):
         if not rscript:
             pytest.skip("Rscript unavailable")
         code = '''args <- commandArgs(TRUE)
-if (!requireNamespace("dssatutils", quietly = TRUE)) {
-  if (requireNamespace("pkgload", quietly = TRUE)) {
-    tryCatch(pkgload::load_all(args[1], quiet = TRUE), error = function(e) NULL)
-  }
-}
-if (!requireNamespace("dssatutils", quietly = TRUE) && file.exists(file.path(args[1], "R", "soil_validation.R"))) {
-  ns <- tryCatch(asNamespace("dssatutils"), error = function(e) makeNamespace("dssatutils"))
-  sys.source(file.path(args[1], "R", "soil_validation.R"), envir = ns)
-  namespaceExport(ns, "soil_file_issue")
-}
+# Load the tested source revision, even if another version is installed.
+pkgload::load_all(args[1], quiet = TRUE)
 expressions <- parse(args[2])
 env <- new.env()
 for (expr in expressions) {

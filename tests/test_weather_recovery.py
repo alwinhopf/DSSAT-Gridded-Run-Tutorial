@@ -60,16 +60,8 @@ def test_real_engine_keeps_exclusions_but_retries_old_failures(tmp_path,language
         if not rscript:
             pytest.skip("Rscript unavailable")
         code = '''a<-commandArgs(TRUE)
-if (!requireNamespace("dssatutils", quietly = TRUE)) {
-  if (requireNamespace("pkgload", quietly = TRUE)) {
-    tryCatch(pkgload::load_all(a[1], quiet = TRUE), error = function(e) NULL)
-  }
-}
-if (!requireNamespace("dssatutils", quietly = TRUE) && file.exists(file.path(a[1], "R", "weather_validation.R"))) {
-  ns <- tryCatch(asNamespace("dssatutils"), error = function(e) makeNamespace("dssatutils"))
-  sys.source(file.path(a[1], "R", "weather_validation.R"), envir = ns)
-  namespaceExport(ns, "is_wth_valid")
-}
+# Load the tested source revision, even if another version is installed.
+pkgload::load_all(a[1], quiet = TRUE)
 exprs<-parse(a[2]); env<-new.env()
 for(e in exprs) if(is.call(e)&&identical(e[[1]],as.name('<-'))&&as.character(e[[2]])[1] %in%
  c('load_unresolvable_point_ids','load_weather_exclusions','remove_unresolvable_point_ids','save_unresolvable_point_ids','is_wth_valid','weather_required_columns')) eval(e,env)

@@ -1469,7 +1469,10 @@ Python modules, and validates R configuration/syntax on Ubuntu, macOS, and
 Windows. This catches platform-specific path/config regressions on every push
 and pull request. The workflow installs the R `yaml` dependency with
 `Rscript --vanilla`, matching the cross-language parity subprocess rather than
-the repository's `renv`-activated interactive environment.
+the repository's `renv`-activated interactive environment. The R preflight and
+weather-recovery checks use `pkgload::load_all()` on the pinned `.ci-deps/dssatutils`
+checkout; CI installs its required R dependencies before running these checks.
+Local runs likewise need `pkgload` and the shared package dependencies.
 
 `.github/workflows/e2e.yml` runs live Python and R provider checks on Ubuntu on
 pushes, pull requests, a weekly schedule, and manual dispatch. Live provider
