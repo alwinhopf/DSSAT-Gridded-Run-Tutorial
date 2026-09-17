@@ -38,3 +38,4 @@
 __pycache__/
 *.pyc
 /chirps_v3_netcdf_cache
+/chirps_netcdf_cache_v2

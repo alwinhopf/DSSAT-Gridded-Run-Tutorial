@@ -848,7 +848,9 @@ ensure_dssatutils_chirps_v3 <- function() {
   sibling_root <- normalizePath(file.path(CODE_ROOT_DIR, "..", "dssatutils"),
                                 mustWork = FALSE)
   candidates <- c(
+    file.path(sibling_root, "R", "config.R"),
     file.path(sibling_root, "R", "utils.R"),
+    file.path(sibling_root, "R", "provider_retry.R"),
     file.path(sibling_root, "R", "weather_missing_normalization.R"),
     file.path(sibling_root, "R", "weather_rainfall_merge.R"),
     file.path(sibling_root, "R", "weather_chirps_v3.R")
