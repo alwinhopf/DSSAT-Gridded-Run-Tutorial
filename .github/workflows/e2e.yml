@@ -11,9 +11,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # v0.5.0 validates GridMET/HDF5 downloads concurrently, which is unsafe on
-  # some Linux runners. This exact follow-up commit serializes validation and
-  # honors n_cores while retaining package version 0.4.0.
+  # Immutable shared revisions include serialized GridMET/HDF5 validation,
+  # declared weather units, and aligned missing-value handling.
   # Must provide the modules imported by both the Python and R integration
   # suites; keep this in sync with smoke.yml.
   DSSATUTILS_REF: 'f728cd810923465360e4730d8893bb566dc0773c'
