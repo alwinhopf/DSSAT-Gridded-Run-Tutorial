@@ -1851,6 +1851,8 @@ if __name__ == '__main__':
 
     RUN_PROVENANCE["implementation"] = {
         "engine_version": _engine_ver,
+        "engine_source_sha256": _sha256_file_collection(Path(dssatengine.__file__).parent.rglob("*.py")),
+        "driver_sha256": _sha256_file(__file__),
         "output_metric_schema": 2,
     }
     RUN_PROVENANCE["resolved_inputs"] = {

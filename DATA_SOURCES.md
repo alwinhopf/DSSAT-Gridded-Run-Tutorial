@@ -382,3 +382,7 @@ with compatible OS locks, and preserve failed-cache evidence. The R dependency
 `filelock` is required. Full boundary-date validation and retryable weather
 failure records are described in the engine README; source-data inversions still
 require the explicitly configured shared repair policy.
+
+Generic daily NetCDF sources now require explicit physical units and geographic coordinates.
+Supply wind `height_m` metadata; ambiguous units, projected coordinates, subdaily or duplicate dates,
+and outside-domain points must be resolved before acquisition. See dssatutils README for the contract.

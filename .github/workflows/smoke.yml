@@ -4,8 +4,8 @@ name: smoke
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Sibling repository pinned revisions
-  DSSATUTILS_REF: '197d3c5188a6681c7c0f0cb3305eb775d1b600b0'
-  DSSATENGINE_REF: '31085c7eac1628db949e3ad9fdb16947a65d0834'
+  DSSATUTILS_REF: 'a4202fbc6377a62b391340c317c92c96d157e031'
+  DSSATENGINE_REF: '2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57'
 
 on:
   push:

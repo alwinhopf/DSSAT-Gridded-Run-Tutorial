@@ -960,7 +960,7 @@
     },
     "dssatengine": {
       "Package": "dssatengine",
-      "Version": "0.4.1",
+      "Version": "0.4.2",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
@@ -988,12 +988,12 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatengine",
-      "RemoteRef": "31085c7eac1628db949e3ad9fdb16947a65d0834",
-      "RemoteSha": "31085c7eac1628db949e3ad9fdb16947a65d0834"
+      "RemoteRef": "2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57",
+      "RemoteSha": "2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57"
     },
     "dssatutils": {
       "Package": "dssatutils",
-      "Version": "0.5.0",
+      "Version": "0.5.1",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Shared Weather and Soil Download Utilities for DSSAT",
@@ -1037,8 +1037,8 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatutils",
-      "RemoteRef": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0",
-      "RemoteSha": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0"
+      "RemoteRef": "a4202fbc6377a62b391340c317c92c96d157e031",
+      "RemoteSha": "a4202fbc6377a62b391340c317c92c96d157e031"
     },
     "e1071": {
       "Package": "e1071",

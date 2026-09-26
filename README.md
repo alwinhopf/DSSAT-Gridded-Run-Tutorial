@@ -170,11 +170,11 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
      PAT fallback:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -2077,3 +2077,13 @@ retrieval/QC failures and do not establish geographic unavailability. Turning of
 weather processing still disables downloads; cache-only mode still cannot fetch
 absent years. The shared package must be reinstalled/reloaded before using the
 updated driver. R and Python follow the same rules.
+
+## Result and resume integrity
+
+MPI output normalizes all numeric DSSAT missing/overflow values before arithmetic.
+A missing SOC endpoint yields a missing delta, and CO2EM is converted from kg C
+to kg CO2 using 44/12, matching the local engine. Existing affected HPC result
+files must be regenerated; updating code does not repair archived outputs.
+Run provenance fingerprints installed engine implementation contents in addition
+to package versions and scientific support inputs. Dependency revisions are
+pinned consistently across environments, workflows and lockfiles.

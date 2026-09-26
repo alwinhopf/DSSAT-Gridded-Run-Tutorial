@@ -421,6 +421,15 @@ def write_dssbatch_file(folder_path, sqx_file_name, config, treatment):
         print(f"Error writing {config['control_file_name']} in {folder_path}: {e}")
         return False
 
+def dssat_number(value):
+    """One numeric missing-value contract for all MPI output metrics."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and not math.isclose(number, -99.0, rel_tol=0, abs_tol=1e-6) else None
+
+
 def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
     processed_rows_list = []
     try:
@@ -447,14 +456,10 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
             som_start, som_end, som_delta = None, None, None
             
             if run_val and run_val in soil_org_grouped and soil_org_grouped[run_val]:
-                try:
-                    start_val = soil_org_grouped[run_val][0].get('SOMCT')
-                    end_val = soil_org_grouped[run_val][-1].get('SOMCT')
-                    if start_val and end_val:
-                        som_start = float(start_val)
-                        som_end = float(end_val)
-                        som_delta = som_end - som_start
-                except ValueError: pass
+                som_start = dssat_number(soil_org_grouped[run_val][0].get('SOMCT'))
+                som_end = dssat_number(soil_org_grouped[run_val][-1].get('SOMCT'))
+                if som_start is not None and som_end is not None:
+                    som_delta = som_end - som_start
 
             napc, nlcc, ni_m = None, None, None
             if run_val and run_val in soil_ni_grouped and soil_ni_grouped[run_val]:
@@ -498,20 +503,13 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
                 wsgd_avg = stress_rec.get('wsgd')
                 nstd_avg = stress_rec.get('nstd')
 
-            raw_co2em = summary_row.get('CO2EM', '')
-            try:
-                co2_val = float(raw_co2em) if raw_co2em not in ('', None, '*****') else float('nan')
-                # Mask DSSAT missing-value sentinel (-99 in any string form)
-                if math.isfinite(co2_val) and abs(co2_val - (-99.0)) < 0.5:
-                    co2_val = float('nan')
-            except (ValueError, TypeError):
-                co2_val = float('nan')
-            co2_kg_ha = co2_val * (44.0 / 12.0) if math.isfinite(co2_val) else ''
+            raw_co2em = dssat_number(summary_row.get('CO2EM'))
+            co2_kg_ha = raw_co2em * (44.0 / 12.0) if raw_co2em is not None else None
 
             processed_row = {
                 'point_id': point_id,
                 'run_number': summary_row.get('RUNNO', ''),
-                'treatment': treatment,
+                'treatment': summary_row.get('TRNO', treatment),
                 'crop_code': summary_row.get('CR', ''),
                 'latitude': summary_row.get('LAT', ''),
                 'longitude': summary_row.get('LONG', ''),
@@ -551,6 +549,10 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
                 'water_stress_development_avg': wsgd_avg,
                 'nitrogen_stress_avg': nstd_avg
             }
+            text_fields = {'point_id', 'crop_code', 'weather_station_id', 'soil_profile_id',
+                           'dssat_file_id', 'dssat_description', 'flux_period_basis', 'soc_delta_period_basis'}
+            for key in processed_row.keys() - text_fields:
+                processed_row[key] = dssat_number(processed_row[key])
             processed_rows_list.append(processed_row)
         return processed_rows_list
     except Exception as e:

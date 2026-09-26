@@ -61,8 +61,8 @@ renv::install(pkgs)
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
 shared_refs <- c(
   # Immutable workspace baselines; update environment.yml and both lockfiles together.
-  dssatutils = "197d3c5188a6681c7c0f0cb3305eb775d1b600b0",
-  dssatengine = "31085c7eac1628db949e3ad9fdb16947a65d0834"
+  dssatutils = "a4202fbc6377a62b391340c317c92c96d157e031",
+  dssatengine = "2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57"
 )
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
 for (pkg in names(shared_refs)) {
