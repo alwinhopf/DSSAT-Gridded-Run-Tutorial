@@ -170,11 +170,11 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
+     `pip install "git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      PAT fallback:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031"`
+     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on

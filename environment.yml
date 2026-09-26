@@ -33,7 +33,7 @@ dependencies:
       # Shared package pins. Bump these deliberately when validating a new
       # workspace release; avoid branch pins so clean installs are reproducible.
       # Immutable workspace baselines; update setup_renv.R and both lockfiles together.
-      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57
+      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c
+      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@14871db233af97a378fd42fb0c9749b5ff9b9453
       # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
       # still require user credentials; run setup_cds_credentials() once.

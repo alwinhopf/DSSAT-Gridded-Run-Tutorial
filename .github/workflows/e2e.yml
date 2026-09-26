@@ -16,8 +16,8 @@ env:
   # honors n_cores while retaining package version 0.4.0.
   # Must provide the modules imported by both the Python and R integration
   # suites; keep this in sync with smoke.yml.
-  DSSATUTILS_REF: 'a4202fbc6377a62b391340c317c92c96d157e031'
-  DSSATENGINE_REF: '2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57'
+  DSSATUTILS_REF: 'f728cd810923465360e4730d8893bb566dc0773c'
+  DSSATENGINE_REF: '14871db233af97a378fd42fb0c9749b5ff9b9453'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.

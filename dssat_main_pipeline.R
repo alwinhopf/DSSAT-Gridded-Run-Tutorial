@@ -2374,7 +2374,7 @@ RUN_PROVENANCE[["implementation"]] <- list(
   engine_version       = .engine_ver,
   engine_implementation = .hash_object(lapply(sort(ls(asNamespace("dssatengine"), all.names = TRUE)), function(n) {
     x <- get(n, asNamespace("dssatengine"))
-    if (is.function(x)) list(formals(x), body(x)) else NULL
+    if (is.function(x)) list(deparse(formals(x)), deparse(body(x))) else NULL
   })),
   output_metric_schema = 2L
 )
