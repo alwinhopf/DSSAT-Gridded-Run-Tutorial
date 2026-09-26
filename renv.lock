@@ -1004,11 +1004,13 @@
       "License": "MIT + file LICENSE",
       "Encoding": "UTF-8",
       "Imports": [
+        "filelock",
         "daymetr",
         "nasapower",
         "soilDB",
         "sf",
         "terra",
+        "ncdf4",
         "httr",
         "jsonlite",
         "dplyr",
@@ -1024,6 +1026,7 @@
       ],
       "Suggests": [
         "ecmwfr",
+        "xml2",
         "DBI",
         "RSQLite",
         "odbc",
@@ -1116,6 +1119,12 @@
       "NeedsCompilation": "yes",
       "Author": "Winston Chang [aut, cre], Posit Software, PBC [cph, fnd], Tessil [cph] (hopscotch_map library)",
       "Maintainer": "Winston Chang <winston@posit.co>",
+      "Repository": "CRAN"
+    },
+    "filelock": {
+      "Package": "filelock",
+      "Version": "1.0.3",
+      "Source": "Repository",
       "Repository": "CRAN"
     },
     "foreach": {
