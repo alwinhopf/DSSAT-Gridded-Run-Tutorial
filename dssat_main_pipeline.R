@@ -663,7 +663,7 @@ is_custom_or_missing <- function(fname, template_dir, dssat_dir) {
 }
 
 # Precompute support files to copy
-all_templates <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = FALSE)
+all_templates <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE|CDE|CO2)$", full.names = FALSE, ignore.case = TRUE)
 if (COPY_SUPPORT_FILES) {
   SUPPORT_FILES <- all_templates
   message("Genotype files resolution: BUNDLE_GENOTYPE_FILES/ZIP_FOR_HPC or no DSSATPRO.V48 (copying all support files).")
@@ -994,28 +994,50 @@ clean_invalid_soils <- function(dir, ids) {
 }
 
 clear_run_diagnostics <- function(ids) {
-  artifacts <- c("_run_error.log", "dssat_B_stdout_stderr.log", "dssat_Q_stdout_stderr.log",
-                 "ERROR.OUT", "WARNING.OUT", "INFO.OUT", "Summary.OUT", "summary.csv")
+  artifacts <- c("_run_error.log", "dssat_A_stdout_stderr.log", "dssat_B_stdout_stderr.log",
+                 "dssat_Q_stdout_stderr.log", "ERROR.OUT", "WARNING.OUT", "INFO.OUT",
+                 "Summary.OUT", "summary.csv")
   for (id in ids) {
-    unlink(file.path(id, artifacts), force = TRUE)
+    dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+      file.path(DSSAT_RUN_DIR, id)
+    } else {
+      id
+    }
+    unlink(file.path(dir_path, artifacts), force = TRUE)
+    unlink(file.path(dir_path, paste0("results_", id, ".csv")), force = TRUE)
   }
 }
 
 write_input_error <- function(id, reason) {
-  dir.create(id, showWarnings = FALSE, recursive = TRUE)
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
+  dir.create(dir_path, showWarnings = FALSE, recursive = TRUE)
   line <- sprintf("[%s] ID %s: INPUT: %s", format(Sys.time()), id, reason)
-  con <- file(file.path(id, "_run_error.log"), open = "w", encoding = "UTF-8")
+  con <- file(file.path(dir_path, "_run_error.log"), open = "w", encoding = "UTF-8")
   writeLines(line, con = con)
   close(con)
 }
 
 soil_input_issue <- function(id) {
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
   # Shared fixed-column reader also rejects legacy shifted cached layer rows.
-  return(dssatutils::soil_file_issue(file.path(id, "SOIL.SOL")))
+  return(dssatutils::soil_file_issue(file.path(dir_path, "SOIL.SOL")))
 }
 
 weather_input_issue <- function(id) {
-  f <- file.path(id, paste0(id, ".WTH"))
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
+  f <- file.path(dir_path, paste0(id, ".WTH"))
   if (!file.exists(f)) return(paste0(basename(f), " is missing"))
   if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
   required <- weather_required_columns()
@@ -2328,9 +2350,31 @@ RUN_PROVENANCE <- list(
     support_files = .hash_file_set(list.files(
       TEMPLATE_DIR, pattern = "[.](CUL|ECO|SPE|SDA|WDA|CDE|CO2)$",
       full.names = TRUE, ignore.case = TRUE
-    ))
+    )),
+    install_support_sha256 = .hash_file_set(unlist(lapply(
+      c("Genotype", "StandardData"),
+      function(subd) {
+        d <- file.path(DSSAT_BASE, subd)
+        if (dir.exists(d)) {
+          list.files(d, pattern = "[.](CUL|ECO|SPE|SDA|WDA|CDE|CO2)$", full.names = TRUE, ignore.case = TRUE)
+        } else {
+          character()
+        }
+      }
+    )))
   )
 )
+
+# Implementation identity -- matches Python twin's RUN_PROVENANCE["implementation"]
+.engine_ver <- tryCatch(
+  as.character(utils::packageVersion("dssatengine")),
+  error = function(e) "unknown"
+)
+RUN_PROVENANCE[["implementation"]] <- list(
+  engine_version       = .engine_ver,
+  output_metric_schema = 2L
+)
+
 RUN_CACHE_KEY <- substr(.hash_object(RUN_PROVENANCE), 1L, 12L)
 DSSAT_RUN_DIR <- paste0(DSSAT_RUN_DIR, "_", RUN_CACHE_KEY)
 

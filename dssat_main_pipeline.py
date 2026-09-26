@@ -1833,6 +1833,26 @@ if __name__ == '__main__':
         path for path in Path(TEMPLATE_DIR).iterdir()
         if path.is_file() and path.suffix.upper() in _support_exts
     ] if Path(TEMPLATE_DIR).is_dir() else []
+    _dssat_base = os.environ.get("DSSAT_DIR", os.environ.get("DSSAT_BASE", DSSAT_BASE))
+    _install_support = []
+    if os.path.isdir(_dssat_base):
+        for sub in ("Genotype", "StandardData"):
+            s_dir = Path(_dssat_base) / sub
+            if s_dir.is_dir():
+                _install_support.extend(
+                    p for p in s_dir.iterdir()
+                    if p.is_file() and p.suffix.upper() in _support_exts
+                )
+    try:
+        import dssatengine
+        _engine_ver = getattr(dssatengine, "__version__", "unknown")
+    except Exception:
+        _engine_ver = "unknown"
+
+    RUN_PROVENANCE["implementation"] = {
+        "engine_version": _engine_ver,
+        "output_metric_schema": 2,
+    }
     RUN_PROVENANCE["resolved_inputs"] = {
         "weather_wth_sha256": _sha256_file_collection(_weather_repo.glob("*.WTH")),
         "soil_sol_sha256": _sha256_file_collection(_soil_folder.glob("*.SOL")),
@@ -1842,6 +1862,7 @@ if __name__ == '__main__':
             os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
         ),
         "support_files_sha256": _sha256_file_collection(_support_inputs),
+        "install_support_sha256": _sha256_file_collection(_install_support),
     }
     RUN_CACHE_KEY = hashlib.sha256(
         json.dumps(RUN_PROVENANCE, sort_keys=True, default=str).encode("utf-8")
@@ -1882,7 +1903,7 @@ if __name__ == '__main__':
     # explicitly wants self-contained folders (BUNDLE_GENOTYPE_FILES).
     _DSSATPRO_SRC      = os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
     _DSSATPRO_OK       = os.path.exists(_DSSATPRO_SRC)
-    _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE"}
+    _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE", ".CO2"}
 
     dssat_dir = os.environ.get("DSSAT_DIR", os.environ.get("DSSAT_BASE", DSSAT_BASE))
 
@@ -2140,6 +2161,12 @@ if __name__ == '__main__':
                             os.remove(f_art)
                         except Exception:
                             pass
+                res_f = os.path.join(DSSAT_RUN_DIR, ID, f"results_{ID}.csv")
+                if os.path.exists(res_f):
+                    try:
+                        os.remove(res_f)
+                    except Exception:
+                        pass
 
         if ids_to_run:
             clear_run_diagnostics(ids_to_run)

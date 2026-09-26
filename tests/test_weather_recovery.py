@@ -87,8 +87,16 @@ stopifnot(identical(selected,'00000003'))
         # Rscript.exe through a PATH entry that is visible to shutil.which()
         # but not reliably discoverable again from a child process launched
         # with the bare command name.
-        proc = subprocess.run([rscript, '--vanilla', '-e', code, str(UTILS), str(ROOT / 'dssat_main_pipeline.R'), str(tmp_path)], capture_output=True, text=True, timeout=60)
-        assert proc.returncode == 0, proc.stdout + proc.stderr
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".R", delete=False) as tf:
+            tf.write(code)
+            tf_path = tf.name
+        try:
+            proc = subprocess.run([rscript, '--vanilla', tf_path, str(UTILS), str(ROOT / 'dssat_main_pipeline.R'), str(tmp_path)], capture_output=True, text=True, timeout=60)
+            assert proc.returncode == 0, proc.stdout + proc.stderr
+        finally:
+            if os.path.exists(tf_path):
+                os.unlink(tf_path)
     remaining=json.loads(p.read_text())
     assert '00000001' not in remaining
     assert remaining['00000002']['reason']=='outside_coverage'

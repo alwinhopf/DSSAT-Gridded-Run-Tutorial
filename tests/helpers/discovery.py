@@ -61,8 +61,22 @@ def find_rscript() -> Optional[str]:
             Path("/usr/local/bin/Rscript"),
         ])
 
+    import subprocess
+    valid_candidates: list[Path] = []
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate.resolve())
+            try:
+                probe = subprocess.run(
+                    [str(candidate), "--vanilla", "-e", "quit(status=if(requireNamespace('yaml',quietly=TRUE))0 else 1)"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if probe.returncode == 0:
+                    return str(candidate.resolve())
+            except Exception:
+                pass
+            valid_candidates.append(candidate)
+
+    if valid_candidates:
+        return str(valid_candidates[0].resolve())
 
     return None
