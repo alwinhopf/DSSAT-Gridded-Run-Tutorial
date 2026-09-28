@@ -82,6 +82,7 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Daily agrometeorological indicators downloaded once per variable-year and cached
   - The adapter writes provider values without a separate physical-quality gate. The shared engine validator then checks dates, ranges, temperature ordering, and all seven AgERA5 forcing columns consistently with the other weather sources.
   - Time-series backend validates cached annual CSVs per grid cell, acquires locks across workers, and enforces exact calendar coverage (refusing partial weather histories).
+  - Both R and Python assemble one tile across all requested years, publish complete point weather files, then release the tile data before advancing. Concurrent requests are limited to years within the current tile; memory scales with its points and history length rather than the whole study. Existing annual caches remain reusable.
   - Optional weather repairs (e.g. bounded temperature inversion swap/neighbor repair) run before simulation validation, and newly valid points are pruned from `unresolvable_points.json`.
 
 ### 6. **NASA-POWER CHIRPS Hybrid** (Global, Free)

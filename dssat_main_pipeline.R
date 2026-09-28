@@ -406,10 +406,12 @@ RESULTS_SUBDIR <- "results"
 # of which study consumes them, so keeping them with the engine lets every output
 # project reuse one cache instead of re-downloading (e.g. GridMET 1984-2025) per
 # study. These dirs are gitignored — they hold large generated downloads.
-GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
-CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
-CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
-AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
+PROVIDER_CACHE_ROOT <- resolve_config_path(cfg_get("provider_cache_root", ""), INPUT_ROOT_DIR)
+if (!nzchar(PROVIDER_CACHE_ROOT)) PROVIDER_CACHE_ROOT <- INPUT_ROOT_DIR
+GRIDMET_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_netcdf_cache")
+CHIRPS_V3_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_v3_netcdf_cache")
+AGERA5_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
 if (is.na(AGERA5_MAX_CONCURRENT_REQUESTS) || AGERA5_MAX_CONCURRENT_REQUESTS < 1L) {
   stop("agera5_max_concurrent_requests must be at least 1.")
@@ -423,8 +425,8 @@ AGERA5_TIMESERIES_CHUNK_DEGREES <- as.numeric(cfg_get("agera5_timeseries_chunk_d
 if (!is.finite(AGERA5_TIMESERIES_CHUNK_DEGREES) || AGERA5_TIMESERIES_CHUNK_DEGREES <= 0) {
   stop("agera5_timeseries_chunk_degrees must be a positive number.")
 }
-DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
-EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
+DWD_CACHE_DIR    <- file.path(PROVIDER_CACHE_ROOT, "dwd_station_cache")
+EOBS_CACHE_DIR   <- file.path(PROVIDER_CACHE_ROOT, "eobs_cds_cache")
 
 # Input Paths
 GRIDPOINTS_OUTPUT_DIR <- GRIDPOINTS_DIR
@@ -2516,6 +2518,7 @@ create_folders_and_files <- function(i) {
     # header, so a global replace would corrupt it. Anything unexpected (bad
     # coord, width overflow) leaves the placeholder untouched: never fatal.
     content <- tryCatch({
+      # Accept either placeholder order; XCRD must be longitude in templates.
       fld_idx <- which(grepl("LATITUDE", content, fixed = TRUE) &
                        grepl("LONGITUDE", content, fixed = TRUE))
       if (length(fld_idx) >= 1) {

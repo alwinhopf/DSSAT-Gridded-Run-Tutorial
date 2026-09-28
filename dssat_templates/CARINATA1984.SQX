@@ -510,8 +510,8 @@
  1 00000000 WID00000   -99   -99   -99   -99   -99   -99 -99    -99  SID00000   -99
  2 00000000 WID00000   -99   -99   -99   -99   -99   -99 -99    -99  SID00000   -99
 @L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR
- 1        LATITUDE       LONGITUDE        40                 0     0     0     0 FH101    99
- 2        LATITUDE       LONGITUDE        40                 0     0     0     0 FH102    99
+ 1       LONGITUDE        LATITUDE        40                 0     0     0     0 FH101    99
+ 2       LONGITUDE        LATITUDE        40                 0     0     0     0 FH102    99
 
 *INITIAL CONDITIONS
 @C   PCR ICDAT  ICRT  ICND  ICRN  ICRE  ICWD ICRES ICREN ICREP ICRIP ICRID ICNAME
