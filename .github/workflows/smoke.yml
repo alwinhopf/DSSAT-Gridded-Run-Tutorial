@@ -44,7 +44,7 @@ jobs:
 
       - name: Run fast offline unit tests
         run: >-
-          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py
+          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py
           -v --tb=short --junit-xml=test-results.xml
 
       - name: Validate central config and R syntax
@@ -174,7 +174,7 @@ jobs:
 
       - name: Run fast offline unit tests
         run: >-
-          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py
+          pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py
           -v --tb=short --junit-xml=platform-test-results.xml
 
       - name: Validate central config and R syntax

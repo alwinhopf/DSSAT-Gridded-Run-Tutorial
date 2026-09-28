@@ -13,7 +13,7 @@ cd "${REPO_ROOT}"
 echo "======================================================================"
 echo "1. Running fast unit tests (pytest)"
 echo "======================================================================"
-pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py -v
+pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py -v
 
 echo "======================================================================"
 echo "2. Running central config validation (Rscript)"

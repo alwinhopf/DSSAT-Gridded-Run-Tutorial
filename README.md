@@ -2077,3 +2077,19 @@ retrieval/QC failures and do not establish geographic unavailability. Turning of
 weather processing still disables downloads; cache-only mode still cannot fetch
 absent years. The shared package must be reinstalled/reloaded before using the
 updated driver. R and Python follow the same rules.
+
+### Shared provider caches and field coordinates (2026-09-28)
+
+Both R and Python resolve raw GRIDMET, CHIRPS, CHIRPS v3, AgERA5, DWD and E-OBS
+caches under `input_root_dir`, independently of the study's `output_root_dir`.
+`provider_cache_root` optionally overrides that root (relative paths resolve
+against `input_root_dir`; blank retains the default). This corrects the Python
+engine's former study-local GRIDMET/CHIRPS cache paths and lets validation share
+the regional run's downloaded products. Point WTH/SOL files and model outputs
+remain study-local. No existing cache files are moved or deleted automatically.
+
+The Carinata rotation template uses XCRD=longitude and YCRD=latitude. Python's
+placeholder replacement now accepts either token order, matching R, while keeping
+fixed-width fields and headers intact. The Bioenergy validation adapter applies
+the same ordering to field experiments. Previously generated outputs are not
+rewritten by these changes.
