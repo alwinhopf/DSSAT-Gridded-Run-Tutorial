@@ -1,47 +1,9 @@
 #!/usr/bin/env bash
-# File: scripts/pre-push.sh
-# -----------------------------------------------------------------------------
-# Local pre-push validation script. Runs the exact fast unit test suite executed
-# by the primary PR CI lane (unit-tests in .github/workflows/smoke.yml).
-# -----------------------------------------------------------------------------
+# Exact fast CI lane, including the central R configuration and syntax checks.
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
-echo "======================================================================"
-echo "1. Running fast unit tests (pytest)"
-echo "======================================================================"
-pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py -v
-
-echo "======================================================================"
-echo "2. Running central config validation (Rscript)"
-echo "======================================================================"
-
-# Discover Rscript (respects RSCRIPT or PATH, checks common locations)
-RSCRIPT_BIN="${RSCRIPT:-$(which Rscript 2>/dev/null || true)}"
-if [ -z "${RSCRIPT_BIN}" ]; then
-  for candidate in \
-    "/usr/local/bin/Rscript" \
-    "/opt/homebrew/bin/Rscript" \
-    "/usr/bin/Rscript" \
-    "/Library/Frameworks/R.framework/Resources/bin/Rscript" \
-    "C:/Program Files/R/R-*/bin/Rscript.exe"; do
-    if [ -x "${candidate}" ]; then
-      RSCRIPT_BIN="${candidate}"
-      break
-    fi
-  done
-fi
-
-if [ -n "${RSCRIPT_BIN}" ] && [ -x "${RSCRIPT_BIN}" ]; then
-  "${RSCRIPT_BIN}" --vanilla -e 'source("config_loader.R"); stopifnot(cfg_get("weather_source", "") != "")'
-  echo "R config check passed."
-else
-  echo "Warning: Rscript not found on PATH or standard locations; skipping R config check."
-fi
-
-echo "======================================================================"
-echo "All local pre-push checks passed successfully!"
-echo "======================================================================"
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="$(command -v python || command -v python3)"
+"$PYTHON_BIN" -m pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py -v --tb=short --junit-xml=test-results.xml 2>&1 | tee fast-tests.log
+RSCRIPT_BIN="$("$PYTHON_BIN" -c 'from dssatutils import find_rscript; path=find_rscript(); assert path, "Rscript is required for the fast CI lane"; print(path)')"
+"$RSCRIPT_BIN" --vanilla -e 'source("config_loader.R"); stopifnot(cfg_get("weather_source", "") != ""); parse(file="dssat_main_pipeline.R"); parse(file="tests/test_e2e.R"); parse(file="tests/test_e2e_comprehensive.R"); parse(file="tests/test_dssat_model_e2e.R")' > r-syntax.log
+"$PYTHON_BIN" -m compileall -q dssat_main_pipeline.py config_loader.py python_scripts tests

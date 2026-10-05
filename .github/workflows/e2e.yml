@@ -1,10 +1,6 @@
 name: Comprehensive E2E Tests
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * 0'  # Weekly Sunday 2 AM UTC
@@ -39,18 +35,18 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       
       # --- Python Setup ---
       - name: Set up Python
         if: matrix.test-type == 'python'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
       
       - name: Cache Python packages
         if: matrix.test-type == 'python'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -73,7 +69,7 @@ jobs:
       
       - name: Upload Python test results
         if: matrix.test-type == 'python' && always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: pytest-results
           path: pytest-results.xml
@@ -82,14 +78,14 @@ jobs:
       # --- R Setup ---
       - name: Set up R
         if: matrix.test-type == 'r'
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
           r-version: ${{ matrix.r-version }}
           use-public-rspm: true
       
       - name: Cache R packages
         if: matrix.test-type == 'r'
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.cache/R
           key: ${{ runner.os }}-r-${{ matrix.r-version }}-${{ hashFiles('**/DESCRIPTION') }}
@@ -133,7 +129,7 @@ jobs:
       
       - name: Upload R test logs
         if: matrix.test-type == 'r' && always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: r-test-logs
           path: 'dssat_runs/e2e-r-*/**/*.log'

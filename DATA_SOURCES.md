@@ -387,3 +387,26 @@ require the explicitly configured shared repair policy.
 Generic daily NetCDF sources now require explicit physical units and geographic coordinates.
 Supply wind `height_m` metadata; ambiguous units, projected coordinates, subdaily or duplicate dates,
 and outside-domain points must be resolved before acquisition. See dssatutils README for the contract.
+
+### Wind serialization for the active Carinata comparison adapters
+
+NASA POWER, NASA POWER + CHIRPS, and AgERA5 wind is supplied in m/s and must
+be multiplied by 86.4 for DSSAT v4.8 WTH `WIND` (km/day; see `WEATHER.CDE`).
+The shared R/Python writers perform this conversion at serialization, retaining
+missing markers and raw provider cache units. Older generated WTH caches require
+writer-provenance verification and regeneration or a backed-up conversion;
+do not guess units from magnitude or rescale already-correct files.
+
+Daymet station metadata must preserve DSSAT header column boundaries; the R
+writer now matches Python rather than shifting its coordinates one column.
+GRIDMET AMP uses the full mean annual range of monthly temperatures, matching
+the other active adapters. DSSAT STEMP divides that value by two internally.
+Existing weather files require deliberate header regeneration for these fixes.
+The five active comparison adapters also reserve nine station-longitude
+columns in both R and Python. Three-digit negative longitudes must not shift
+ELEV, TAV or AMP relative to the header labels; whitespace token checks alone
+do not establish correct DSSAT parsing.
+AgERA5 writes two temperature decimals for pairs within 0.05°C of zero so
+rounding does not unnecessarily create a DSSAT-rejected zero pair. True source
+zeros remain zero. Existing affected caches need repair from the raw provider
+values, not an arbitrary temperature offset.
