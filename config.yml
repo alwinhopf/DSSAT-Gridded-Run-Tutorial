@@ -114,6 +114,7 @@ agmerra_nc_dir:       ""
 agcfsr_nc_dir:        ""
 silo_nc_dir:          ""
 prism_cache_dir:      ""
+prism_backend:        "acis"         # PRISM only: acis (fast point API) | nacse (CONUS 4km raster grids)
 mswx_nc_dir:          ""
 mswep_nc_dir:         ""
 crujra_nc_dir:        ""

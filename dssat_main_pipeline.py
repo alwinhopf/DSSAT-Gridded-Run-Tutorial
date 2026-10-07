@@ -287,8 +287,8 @@ CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(INPUT_ROOT_DIR, "cmfd_n
 CHELSA_NC_DIR      = cfg_get("chelsa_nc_dir", os.path.join(INPUT_ROOT_DIR, "chelsa_w5e5_netcdf"))
 AGMERRA_NC_DIR     = cfg_get("agmerra_nc_dir", os.path.join(INPUT_ROOT_DIR, "agmerra_netcdf"))
 AGCFSR_NC_DIR      = cfg_get("agcfsr_nc_dir", os.path.join(INPUT_ROOT_DIR, "agcfsr_netcdf"))
-SILO_NC_DIR        = cfg_get("silo_nc_dir", os.path.join(INPUT_ROOT_DIR, "silo_netcdf"))
 PRISM_CACHE_DIR    = cfg_get("prism_cache_dir", os.path.join(INPUT_ROOT_DIR, "prism_cache"))
+PRISM_BACKEND      = cfg_get("prism_backend", "acis")
 MSWX_NC_DIR        = cfg_get("mswx_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswx_netcdf"))
 MSWEP_NC_DIR       = cfg_get("mswep_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswep_netcdf"))
 CRUJRA_NC_DIR      = cfg_get("crujra_nc_dir", os.path.join(INPUT_ROOT_DIR, "crujra_netcdf"))
@@ -1657,7 +1657,7 @@ if __name__ == '__main__':
             elif WEATHER_SOURCE == "SILO":
                 process_weather_silo(**common_args, silo_nc_dir=SILO_NC_DIR)
             elif WEATHER_SOURCE == "PRISM":
-                process_weather_prism(**common_args, prism_cache_dir=PRISM_CACHE_DIR)
+                process_weather_prism(**common_args, prism_cache_dir=PRISM_CACHE_DIR, backend=PRISM_BACKEND)
             elif WEATHER_SOURCE == "MSWX":
                 process_weather_mswx(**common_args, mswx_nc_dir=MSWX_NC_DIR)
             elif WEATHER_SOURCE == "MSWEP":
