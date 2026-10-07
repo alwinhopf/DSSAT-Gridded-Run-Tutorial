@@ -287,8 +287,8 @@ CMFD_NC_DIR        = cfg_get("cmfd_nc_dir", os.path.join(INPUT_ROOT_DIR, "cmfd_n
 CHELSA_NC_DIR      = cfg_get("chelsa_nc_dir", os.path.join(INPUT_ROOT_DIR, "chelsa_w5e5_netcdf"))
 AGMERRA_NC_DIR     = cfg_get("agmerra_nc_dir", os.path.join(INPUT_ROOT_DIR, "agmerra_netcdf"))
 AGCFSR_NC_DIR      = cfg_get("agcfsr_nc_dir", os.path.join(INPUT_ROOT_DIR, "agcfsr_netcdf"))
-SILO_NC_DIR        = cfg_get("silo_nc_dir", os.path.join(INPUT_ROOT_DIR, "silo_netcdf"))
 PRISM_CACHE_DIR    = cfg_get("prism_cache_dir", os.path.join(INPUT_ROOT_DIR, "prism_cache"))
+PRISM_BACKEND      = cfg_get("prism_backend", "acis")
 MSWX_NC_DIR        = cfg_get("mswx_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswx_netcdf"))
 MSWEP_NC_DIR       = cfg_get("mswep_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswep_netcdf"))
 CRUJRA_NC_DIR      = cfg_get("crujra_nc_dir", os.path.join(INPUT_ROOT_DIR, "crujra_netcdf"))
@@ -321,10 +321,12 @@ else:
 DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 
 # --- 0.6 Dynamic paths ------------------------------------------------------
-GRIDMET_CACHE_DIR     = os.path.join(OUTPUT_ROOT_DIR, "gridmet_netcdf_cache")
-CHIRPS_CACHE_DIR      = os.path.join(OUTPUT_ROOT_DIR, "chirps_netcdf_cache")
-CHIRPS_V3_CACHE_DIR   = os.path.join(OUTPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
-AGERA5_CACHE_DIR      = os.path.join(INPUT_ROOT_DIR, "agera5_netcdf_cache")
+# Raw provider products are shared across study and validation output roots.
+PROVIDER_CACHE_ROOT = resolve_config_path(cfg_get("provider_cache_root", ""), INPUT_ROOT_DIR) or INPUT_ROOT_DIR
+GRIDMET_CACHE_DIR     = os.path.join(PROVIDER_CACHE_ROOT, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR      = os.path.join(PROVIDER_CACHE_ROOT, "chirps_netcdf_cache")
+CHIRPS_V3_CACHE_DIR   = os.path.join(PROVIDER_CACHE_ROOT, "chirps_v3_netcdf_cache")
+AGERA5_CACHE_DIR      = os.path.join(PROVIDER_CACHE_ROOT, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS = int(cfg_get("agera5_max_concurrent_requests", 4))
 if AGERA5_MAX_CONCURRENT_REQUESTS < 1:
     sys.exit("agera5_max_concurrent_requests must be at least 1.")
@@ -335,8 +337,8 @@ AGERA5_DATA_FORMAT = str(cfg_get("agera5_data_format", "csv")).strip().lower()
 AGERA5_TIMESERIES_CHUNK_DEGREES = float(cfg_get("agera5_timeseries_chunk_degrees", 0.1))
 if AGERA5_TIMESERIES_CHUNK_DEGREES <= 0:
     sys.exit("agera5_timeseries_chunk_degrees must be a positive number.")
-DWD_CACHE_DIR         = os.path.join(OUTPUT_ROOT_DIR, "dwd_station_cache")
-EOBS_CACHE_DIR        = os.path.join(OUTPUT_ROOT_DIR, "eobs_cds_cache")
+DWD_CACHE_DIR         = os.path.join(PROVIDER_CACHE_ROOT, "dwd_station_cache")
+EOBS_CACHE_DIR        = os.path.join(PROVIDER_CACHE_ROOT, "eobs_cds_cache")
 GRIDPOINTS_OUTPUT_DIR = GRIDPOINTS_DIR
 ALL_LAND_POINT_SHAPEFILE_NAME = f"{GRID_BASE_NAME}.shp"
 CROPLAND_GRID_TAG = ""
@@ -1655,7 +1657,7 @@ if __name__ == '__main__':
             elif WEATHER_SOURCE == "SILO":
                 process_weather_silo(**common_args, silo_nc_dir=SILO_NC_DIR)
             elif WEATHER_SOURCE == "PRISM":
-                process_weather_prism(**common_args, prism_cache_dir=PRISM_CACHE_DIR)
+                process_weather_prism(**common_args, prism_cache_dir=PRISM_CACHE_DIR, backend=PRISM_BACKEND)
             elif WEATHER_SOURCE == "MSWX":
                 process_weather_mswx(**common_args, mswx_nc_dir=MSWX_NC_DIR)
             elif WEATHER_SOURCE == "MSWEP":
@@ -1833,6 +1835,28 @@ if __name__ == '__main__':
         path for path in Path(TEMPLATE_DIR).iterdir()
         if path.is_file() and path.suffix.upper() in _support_exts
     ] if Path(TEMPLATE_DIR).is_dir() else []
+    _dssat_base = os.environ.get("DSSAT_DIR", os.environ.get("DSSAT_BASE", DSSAT_BASE))
+    _install_support = []
+    if os.path.isdir(_dssat_base):
+        for sub in ("Genotype", "StandardData"):
+            s_dir = Path(_dssat_base) / sub
+            if s_dir.is_dir():
+                _install_support.extend(
+                    p for p in s_dir.iterdir()
+                    if p.is_file() and p.suffix.upper() in _support_exts
+                )
+    try:
+        import dssatengine
+        _engine_ver = getattr(dssatengine, "__version__", "unknown")
+    except Exception:
+        _engine_ver = "unknown"
+
+    RUN_PROVENANCE["implementation"] = {
+        "engine_version": _engine_ver,
+        "engine_source_sha256": _sha256_file_collection(Path(dssatengine.__file__).parent.rglob("*.py")),
+        "driver_sha256": _sha256_file(__file__),
+        "output_metric_schema": 2,
+    }
     RUN_PROVENANCE["resolved_inputs"] = {
         "weather_wth_sha256": _sha256_file_collection(_weather_repo.glob("*.WTH")),
         "soil_sol_sha256": _sha256_file_collection(_soil_folder.glob("*.SOL")),
@@ -1842,6 +1866,7 @@ if __name__ == '__main__':
             os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
         ),
         "support_files_sha256": _sha256_file_collection(_support_inputs),
+        "install_support_sha256": _sha256_file_collection(_install_support),
     }
     RUN_CACHE_KEY = hashlib.sha256(
         json.dumps(RUN_PROVENANCE, sort_keys=True, default=str).encode("utf-8")
@@ -1882,7 +1907,7 @@ if __name__ == '__main__':
     # explicitly wants self-contained folders (BUNDLE_GENOTYPE_FILES).
     _DSSATPRO_SRC      = os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
     _DSSATPRO_OK       = os.path.exists(_DSSATPRO_SRC)
-    _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE"}
+    _SUPPORT_EXTS      = {".CUL", ".ECO", ".SPE", ".SDA", ".WDA", ".CDE", ".CO2"}
 
     dssat_dir = os.environ.get("DSSAT_DIR", os.environ.get("DSSAT_BASE", DSSAT_BASE))
 
@@ -2033,7 +2058,7 @@ if __name__ == '__main__':
                 return line
 
             content = re.sub(
-                r"(?m)^.*LATITUDE.*LONGITUDE.*$",
+                r"(?m)^(?=.*LATITUDE)(?=.*LONGITUDE).*$",
                 _replace_field_coordinates,
                 content,
             )
@@ -2140,6 +2165,12 @@ if __name__ == '__main__':
                             os.remove(f_art)
                         except Exception:
                             pass
+                res_f = os.path.join(DSSAT_RUN_DIR, ID, f"results_{ID}.csv")
+                if os.path.exists(res_f):
+                    try:
+                        os.remove(res_f)
+                    except Exception:
+                        pass
 
         if ids_to_run:
             clear_run_diagnostics(ids_to_run)

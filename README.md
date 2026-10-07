@@ -170,11 +170,11 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      PAT fallback:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@197d3c5188a6681c7c0f0cb3305eb775d1b600b0"`
+     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -2077,3 +2077,25 @@ retrieval/QC failures and do not establish geographic unavailability. Turning of
 weather processing still disables downloads; cache-only mode still cannot fetch
 absent years. The shared package must be reinstalled/reloaded before using the
 updated driver. R and Python follow the same rules.
+
+### Shared provider caches and field coordinates (2026-09-28)
+
+Both R and Python resolve raw GRIDMET, CHIRPS, CHIRPS v3, AgERA5, DWD and E-OBS
+caches under `input_root_dir`, independently of the study's `output_root_dir`.
+`provider_cache_root` optionally overrides that root (relative paths resolve
+against `input_root_dir`; blank retains the default). This corrects the Python
+engine's former study-local GRIDMET/CHIRPS cache paths and lets validation share
+the regional run's downloaded products. Point WTH/SOL files and model outputs
+remain study-local. No existing cache files are moved or deleted automatically.
+
+The Carinata rotation template uses XCRD=longitude and YCRD=latitude. Python's
+placeholder replacement now accepts either token order, matching R, while keeping
+fixed-width fields and headers intact. The Bioenergy validation adapter applies
+the same ordering to field experiments. Previously generated outputs are not
+rewritten by these changes.
+
+Live-provider end-to-end checks run on schedule or manual dispatch; offline tests
+remain the pull-request gate. To test current sibling working copies independently
+of the tutorial's study pins, use the workspace's
+`cropmodel_workflows/scripts/validate_workspace.py --output /tmp/cropmodel-validation`
+after installing those sources. This does not change the recorded study revisions.

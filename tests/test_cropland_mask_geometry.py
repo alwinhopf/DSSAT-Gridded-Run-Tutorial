@@ -118,10 +118,18 @@ def test_boundary_clipping_and_anchor_relocation_r_matches_python(tmp_path):
       cell_ha=out$cell_ha[[1]], crop_ha=out$crop_ha[[1]], anchor_mv=out$anchor_mv[[1]],
       anchor_km=out$anchor_km[[1]], x=xy[1,1], y=xy[1,2]), auto_unbox=TRUE))
     """
-    result = subprocess.run(
-        [rscript, "--vanilla", "-e", r_code], cwd=ROOT,
-        check=False, capture_output=True, text=True,
-    )
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".R", delete=False) as tf:
+        tf.write(r_code)
+        tf_path = tf.name
+    try:
+        result = subprocess.run(
+            [rscript, "--vanilla", tf_path], cwd=ROOT,
+            check=False, capture_output=True, text=True,
+        )
+    finally:
+        if os.path.exists(tf_path):
+            os.unlink(tf_path)
     assert result.returncode == 0, result.stderr
     got = json.loads(result.stdout[result.stdout.index("{"):])
     assert got["crop_frac"] == pytest.approx(float(py.crop_frac))

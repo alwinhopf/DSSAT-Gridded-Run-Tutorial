@@ -89,6 +89,7 @@ cropland_relocate_anchor: false      # optionally move retained points to the ne
 # | XAVIER (Brazil 0.1deg BR-DWGD grid; local NetCDFs; see xavier_nc_dir)
 # | CMFD (China 0.1deg, 3-hourly->daily; local NetCDFs, free TPDC account; see cmfd_nc_dir)
 # | gridpoints_weather (offline/cached or pre-generated)
+provider_cache_root: ""             # blank = input_root_dir; shared raw weather caches
 weather_source:       "NASA_POWER"
 weather_start_year:   1992           # NASA_POWER not available before 1984
 weather_end_year:     1992
@@ -113,6 +114,7 @@ agmerra_nc_dir:       ""
 agcfsr_nc_dir:        ""
 silo_nc_dir:          ""
 prism_cache_dir:      ""
+prism_backend:        "acis"         # PRISM only: acis (fast point API) | nacse (CONUS 4km raster grids)
 mswx_nc_dir:          ""
 mswep_nc_dir:         ""
 crujra_nc_dir:        ""

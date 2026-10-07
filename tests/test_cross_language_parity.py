@@ -259,8 +259,8 @@ def test_conda_lock_covers_supported_desktop_platforms():
 def test_shared_package_pins_are_consistent_across_install_paths():
     """Keep CI, conda, renv, and documented fresh installs on one revision."""
     expected = {
-        "dssatutils": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0",
-        "dssatengine": "31085c7eac1628db949e3ad9fdb16947a65d0834",
+        "dssatutils": "f728cd810923465360e4730d8893bb566dc0773c",
+        "dssatengine": "14871db233af97a378fd42fb0c9749b5ff9b9453",
     }
     e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
     smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))

@@ -39,3 +39,10 @@ __pycache__/
 *.pyc
 /chirps_v3_netcdf_cache
 /chirps_netcdf_cache_v2
+
+fast-tests.log
+r-syntax.log
+
+fast-tests.log
+r-tests.log
+test-results.xml

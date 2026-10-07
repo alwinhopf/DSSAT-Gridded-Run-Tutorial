@@ -960,7 +960,7 @@
     },
     "dssatengine": {
       "Package": "dssatengine",
-      "Version": "0.4.1",
+      "Version": "0.4.2",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Canonical Gridded Crop Modeling Engine for DSSAT",
@@ -988,12 +988,12 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatengine",
-      "RemoteRef": "31085c7eac1628db949e3ad9fdb16947a65d0834",
-      "RemoteSha": "31085c7eac1628db949e3ad9fdb16947a65d0834"
+      "RemoteRef": "14871db233af97a378fd42fb0c9749b5ff9b9453",
+      "RemoteSha": "14871db233af97a378fd42fb0c9749b5ff9b9453"
     },
     "dssatutils": {
       "Package": "dssatutils",
-      "Version": "0.5.0",
+      "Version": "0.5.1",
       "Source": "GitHub",
       "Type": "Package",
       "Title": "Shared Weather and Soil Download Utilities for DSSAT",
@@ -1004,11 +1004,13 @@
       "License": "MIT + file LICENSE",
       "Encoding": "UTF-8",
       "Imports": [
+        "filelock",
         "daymetr",
         "nasapower",
         "soilDB",
         "sf",
         "terra",
+        "ncdf4",
         "httr",
         "jsonlite",
         "dplyr",
@@ -1024,6 +1026,7 @@
       ],
       "Suggests": [
         "ecmwfr",
+        "xml2",
         "DBI",
         "RSQLite",
         "odbc",
@@ -1037,8 +1040,8 @@
       "RemoteHost": "api.github.com",
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "dssatutils",
-      "RemoteRef": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0",
-      "RemoteSha": "197d3c5188a6681c7c0f0cb3305eb775d1b600b0"
+      "RemoteRef": "f728cd810923465360e4730d8893bb566dc0773c",
+      "RemoteSha": "f728cd810923465360e4730d8893bb566dc0773c"
     },
     "e1071": {
       "Package": "e1071",
@@ -1116,6 +1119,12 @@
       "NeedsCompilation": "yes",
       "Author": "Winston Chang [aut, cre], Posit Software, PBC [cph, fnd], Tessil [cph] (hopscotch_map library)",
       "Maintainer": "Winston Chang <winston@posit.co>",
+      "Repository": "CRAN"
+    },
+    "filelock": {
+      "Package": "filelock",
+      "Version": "1.0.3",
+      "Source": "Repository",
       "Repository": "CRAN"
     },
     "foreach": {

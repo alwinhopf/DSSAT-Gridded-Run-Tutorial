@@ -82,6 +82,7 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Daily agrometeorological indicators downloaded once per variable-year and cached
   - The adapter writes provider values without a separate physical-quality gate. The shared engine validator then checks dates, ranges, temperature ordering, and all seven AgERA5 forcing columns consistently with the other weather sources.
   - Time-series backend validates cached annual CSVs per grid cell, acquires locks across workers, and enforces exact calendar coverage (refusing partial weather histories).
+  - Both R and Python assemble one tile across all requested years, publish complete point weather files, then release the tile data before advancing. Concurrent requests are limited to years within the current tile; memory scales with its points and history length rather than the whole study. Existing annual caches remain reusable.
   - Optional weather repairs (e.g. bounded temperature inversion swap/neighbor repair) run before simulation validation, and newly valid points are pruned from `unresolvable_points.json`.
 
 ### 6. **NASA-POWER CHIRPS Hybrid** (Global, Free)
@@ -199,7 +200,7 @@ The following sources were reviewed online in June 2026 and have now been implem
 | 2 | **[CHELSA-W5E5 daily](https://www.chelsa-climate.org/datasets/chelsaw5e5)** | Weather, global 30 arcsec (~1 km), 1979-2016 | `CHELSA_W5E5` / `process_weather_chelsa_w5e5`, reading local NetCDF files. | Historical only through 2016; humidity/wind are not required and are written missing unless provided by companion files. |
 | 3 | **[SILO](https://www.longpaddock.qld.gov.au/silo/) + [SLGA](https://www.csiro.au/en/research/natural-environment/land/soil-and-landscape-grid-of-australia)** | Weather + soil, Australia | `SILO` / `process_weather_silo` for local NetCDF weather; `SLGA` / `process_soils_slga` for local soil rasters. | Regional Australia-only pair; data access/download is managed outside the pipeline cache. |
 | 4 | **[AgMERRA / AgCFSR](https://data.giss.nasa.gov/impacts/agmipcf/)** | Weather, global 0.25 degree, 1980-2010 | `AGMERRA` and `AGCFSR` / local NetCDF readers. | Ends in 2010, so it is for historical baselines and AgMIP intercomparison. |
-| 5 | **[PRISM](https://prism.oregonstate.edu/)** | Weather, US 4 km | `PRISM` / `process_weather_prism`, downloading public daily grids into `prism_cache_dir`. | No daily SRAD/wind/RH in this path → those columns are `-99`. NACSE throttles rapid requests, so the backend adds a 1 s inter-request delay and validates each zip (throttled days degrade to a skip, not a crash). |
+| 5 | **[PRISM](https://prism.oregonstate.edu/)** | Weather, US 4 km | `PRISM` / `process_weather_prism`: default `prism_backend: "acis"` queries daily point histories; `"nacse"` downloads CONUS rasters. Both use `prism_cache_dir`. | SRAD is estimated with Bristow-Campbell by default; ACIS dewpoint/wind/RH are -99. Versioned point caches validate coordinates, dates, variables and units; incomplete core forcing is retried and not published. Old ID-only caches are preserved but not trusted. |
 | 6 | **WISE30sec** | Soil, global 30 arcsec | `WISE30SEC` / `process_soils_wise30sec`, reading local GeoTIFF/VRT rasters. | Uses WISE30sec's own 7 depth layers — rasters must carry a property token (sand/clay/silt/BD/OC) **and** a depth token `d1`–`d7` in the filename. WISE is natively a map-unit raster + attribute table; rasterize that join to per-property/per-depth grids first. |
 | 7 | **MSWX / MSWEP** | Weather, global ~0.1 degree | `MSWX` local full-weather NetCDF reader; `MSWEP` NASA POWER + local MSWEP rainfall hybrid. | MSWEP is precipitation-only, so it is not a standalone full-weather source. |
 | 8 | **CRU-JRA** | Weather, global 0.5 degree | `CRUJRA` / local NetCDF reader. | Coarser than the other gridded products. |
@@ -382,3 +383,30 @@ with compatible OS locks, and preserve failed-cache evidence. The R dependency
 `filelock` is required. Full boundary-date validation and retryable weather
 failure records are described in the engine README; source-data inversions still
 require the explicitly configured shared repair policy.
+
+Generic daily NetCDF sources now require explicit physical units and geographic coordinates.
+Supply wind `height_m` metadata; ambiguous units, projected coordinates, subdaily or duplicate dates,
+and outside-domain points must be resolved before acquisition. See dssatutils README for the contract.
+
+### Wind serialization for the active Carinata comparison adapters
+
+NASA POWER, NASA POWER + CHIRPS, and AgERA5 wind is supplied in m/s and must
+be multiplied by 86.4 for DSSAT v4.8 WTH `WIND` (km/day; see `WEATHER.CDE`).
+The shared R/Python writers perform this conversion at serialization, retaining
+missing markers and raw provider cache units. Older generated WTH caches require
+writer-provenance verification and regeneration or a backed-up conversion;
+do not guess units from magnitude or rescale already-correct files.
+
+Daymet station metadata must preserve DSSAT header column boundaries; the R
+writer now matches Python rather than shifting its coordinates one column.
+GRIDMET AMP uses the full mean annual range of monthly temperatures, matching
+the other active adapters. DSSAT STEMP divides that value by two internally.
+Existing weather files require deliberate header regeneration for these fixes.
+The five active comparison adapters also reserve nine station-longitude
+columns in both R and Python. Three-digit negative longitudes must not shift
+ELEV, TAV or AMP relative to the header labels; whitespace token checks alone
+do not establish correct DSSAT parsing.
+AgERA5 writes two temperature decimals for pairs within 0.05°C of zero so
+rounding does not unnecessarily create a DSSAT-rejected zero pair. True source
+zeros remain zero. Existing affected caches need repair from the raw provider
+values, not an arbitrary temperature offset.

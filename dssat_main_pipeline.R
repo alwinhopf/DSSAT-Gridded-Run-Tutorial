@@ -352,8 +352,8 @@ CMFD_NC_DIR        <- cfg_get("cmfd_nc_dir", file.path(INPUT_ROOT_DIR, "cmfd_net
 CHELSA_NC_DIR      <- cfg_get("chelsa_nc_dir", file.path(INPUT_ROOT_DIR, "chelsa_w5e5_netcdf"))
 AGMERRA_NC_DIR     <- cfg_get("agmerra_nc_dir", file.path(INPUT_ROOT_DIR, "agmerra_netcdf"))
 AGCFSR_NC_DIR      <- cfg_get("agcfsr_nc_dir", file.path(INPUT_ROOT_DIR, "agcfsr_netcdf"))
-SILO_NC_DIR        <- cfg_get("silo_nc_dir", file.path(INPUT_ROOT_DIR, "silo_netcdf"))
 PRISM_CACHE_DIR    <- cfg_get("prism_cache_dir", file.path(INPUT_ROOT_DIR, "prism_cache"))
+PRISM_BACKEND      <- cfg_get("prism_backend", "acis")
 MSWX_NC_DIR        <- cfg_get("mswx_nc_dir", file.path(INPUT_ROOT_DIR, "mswx_netcdf"))
 MSWEP_NC_DIR       <- cfg_get("mswep_nc_dir", file.path(INPUT_ROOT_DIR, "mswep_netcdf"))
 CRUJRA_NC_DIR      <- cfg_get("crujra_nc_dir", file.path(INPUT_ROOT_DIR, "crujra_netcdf"))
@@ -406,10 +406,12 @@ RESULTS_SUBDIR <- "results"
 # of which study consumes them, so keeping them with the engine lets every output
 # project reuse one cache instead of re-downloading (e.g. GridMET 1984-2025) per
 # study. These dirs are gitignored — they hold large generated downloads.
-GRIDMET_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "gridmet_netcdf_cache")
-CHIRPS_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_netcdf_cache")
-CHIRPS_V3_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "chirps_v3_netcdf_cache")
-AGERA5_CACHE_DIR <- file.path(INPUT_ROOT_DIR, "agera5_netcdf_cache")
+PROVIDER_CACHE_ROOT <- resolve_config_path(cfg_get("provider_cache_root", ""), INPUT_ROOT_DIR)
+if (!nzchar(PROVIDER_CACHE_ROOT)) PROVIDER_CACHE_ROOT <- INPUT_ROOT_DIR
+GRIDMET_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "gridmet_netcdf_cache")
+CHIRPS_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_netcdf_cache")
+CHIRPS_V3_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_v3_netcdf_cache")
+AGERA5_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "agera5_netcdf_cache")
 AGERA5_MAX_CONCURRENT_REQUESTS <- as.integer(cfg_get("agera5_max_concurrent_requests", 4))
 if (is.na(AGERA5_MAX_CONCURRENT_REQUESTS) || AGERA5_MAX_CONCURRENT_REQUESTS < 1L) {
   stop("agera5_max_concurrent_requests must be at least 1.")
@@ -423,8 +425,8 @@ AGERA5_TIMESERIES_CHUNK_DEGREES <- as.numeric(cfg_get("agera5_timeseries_chunk_d
 if (!is.finite(AGERA5_TIMESERIES_CHUNK_DEGREES) || AGERA5_TIMESERIES_CHUNK_DEGREES <= 0) {
   stop("agera5_timeseries_chunk_degrees must be a positive number.")
 }
-DWD_CACHE_DIR    <- file.path(INPUT_ROOT_DIR, "dwd_station_cache")
-EOBS_CACHE_DIR   <- file.path(INPUT_ROOT_DIR, "eobs_cds_cache")
+DWD_CACHE_DIR    <- file.path(PROVIDER_CACHE_ROOT, "dwd_station_cache")
+EOBS_CACHE_DIR   <- file.path(PROVIDER_CACHE_ROOT, "eobs_cds_cache")
 
 # Input Paths
 GRIDPOINTS_OUTPUT_DIR <- GRIDPOINTS_DIR
@@ -663,7 +665,7 @@ is_custom_or_missing <- function(fname, template_dir, dssat_dir) {
 }
 
 # Precompute support files to copy
-all_templates <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE)$", full.names = FALSE)
+all_templates <- list.files(TEMPLATE_DIR, pattern = "\\.(WDA|SDA|CUL|ECO|SPE|CDE|CO2)$", full.names = FALSE, ignore.case = TRUE)
 if (COPY_SUPPORT_FILES) {
   SUPPORT_FILES <- all_templates
   message("Genotype files resolution: BUNDLE_GENOTYPE_FILES/ZIP_FOR_HPC or no DSSATPRO.V48 (copying all support files).")
@@ -994,28 +996,50 @@ clean_invalid_soils <- function(dir, ids) {
 }
 
 clear_run_diagnostics <- function(ids) {
-  artifacts <- c("_run_error.log", "dssat_B_stdout_stderr.log", "dssat_Q_stdout_stderr.log",
-                 "ERROR.OUT", "WARNING.OUT", "INFO.OUT", "Summary.OUT", "summary.csv")
+  artifacts <- c("_run_error.log", "dssat_A_stdout_stderr.log", "dssat_B_stdout_stderr.log",
+                 "dssat_Q_stdout_stderr.log", "ERROR.OUT", "WARNING.OUT", "INFO.OUT",
+                 "Summary.OUT", "summary.csv")
   for (id in ids) {
-    unlink(file.path(id, artifacts), force = TRUE)
+    dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+      file.path(DSSAT_RUN_DIR, id)
+    } else {
+      id
+    }
+    unlink(file.path(dir_path, artifacts), force = TRUE)
+    unlink(file.path(dir_path, paste0("results_", id, ".csv")), force = TRUE)
   }
 }
 
 write_input_error <- function(id, reason) {
-  dir.create(id, showWarnings = FALSE, recursive = TRUE)
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
+  dir.create(dir_path, showWarnings = FALSE, recursive = TRUE)
   line <- sprintf("[%s] ID %s: INPUT: %s", format(Sys.time()), id, reason)
-  con <- file(file.path(id, "_run_error.log"), open = "w", encoding = "UTF-8")
+  con <- file(file.path(dir_path, "_run_error.log"), open = "w", encoding = "UTF-8")
   writeLines(line, con = con)
   close(con)
 }
 
 soil_input_issue <- function(id) {
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
   # Shared fixed-column reader also rejects legacy shifted cached layer rows.
-  return(dssatutils::soil_file_issue(file.path(id, "SOIL.SOL")))
+  return(dssatutils::soil_file_issue(file.path(dir_path, "SOIL.SOL")))
 }
 
 weather_input_issue <- function(id) {
-  f <- file.path(id, paste0(id, ".WTH"))
+  dir_path <- if (exists("DSSAT_RUN_DIR") && nzchar(DSSAT_RUN_DIR) && dir.exists(file.path(DSSAT_RUN_DIR, id))) {
+    file.path(DSSAT_RUN_DIR, id)
+  } else {
+    id
+  }
+  f <- file.path(dir_path, paste0(id, ".WTH"))
   if (!file.exists(f)) return(paste0(basename(f), " is missing"))
   if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
   required <- weather_required_columns()
@@ -2097,7 +2121,8 @@ if (RUN_STEP_2_WEATHER) {
       else if (WEATHER_SOURCE == "SILO")
         do.call(process_weather_silo, c(common_args, list(silo_nc_dir = SILO_NC_DIR)))
       else if (WEATHER_SOURCE == "PRISM")
-        do.call(process_weather_prism, c(common_args, list(prism_cache_dir = PRISM_CACHE_DIR)))
+        do.call(process_weather_prism, c(common_args, list(prism_cache_dir = PRISM_CACHE_DIR,
+                                                           backend = PRISM_BACKEND)))
       else if (WEATHER_SOURCE == "MSWX")
         do.call(process_weather_mswx, c(common_args, list(mswx_nc_dir = MSWX_NC_DIR)))
       else if (WEATHER_SOURCE == "MSWEP")
@@ -2328,9 +2353,35 @@ RUN_PROVENANCE <- list(
     support_files = .hash_file_set(list.files(
       TEMPLATE_DIR, pattern = "[.](CUL|ECO|SPE|SDA|WDA|CDE|CO2)$",
       full.names = TRUE, ignore.case = TRUE
-    ))
+    )),
+    install_support_sha256 = .hash_file_set(unlist(lapply(
+      c("Genotype", "StandardData"),
+      function(subd) {
+        d <- file.path(DSSAT_BASE, subd)
+        if (dir.exists(d)) {
+          list.files(d, pattern = "[.](CUL|ECO|SPE|SDA|WDA|CDE|CO2)$", full.names = TRUE, ignore.case = TRUE)
+        } else {
+          character()
+        }
+      }
+    )))
   )
 )
+
+# Implementation identity -- matches Python twin's RUN_PROVENANCE["implementation"]
+.engine_ver <- tryCatch(
+  as.character(utils::packageVersion("dssatengine")),
+  error = function(e) "unknown"
+)
+RUN_PROVENANCE[["implementation"]] <- list(
+  engine_version       = .engine_ver,
+  engine_implementation = .hash_object(lapply(sort(ls(asNamespace("dssatengine"), all.names = TRUE)), function(n) {
+    x <- get(n, asNamespace("dssatengine"))
+    if (is.function(x)) list(deparse(formals(x)), deparse(body(x))) else NULL
+  })),
+  output_metric_schema = 2L
+)
+
 RUN_CACHE_KEY <- substr(.hash_object(RUN_PROVENANCE), 1L, 12L)
 DSSAT_RUN_DIR <- paste0(DSSAT_RUN_DIR, "_", RUN_CACHE_KEY)
 
@@ -2468,6 +2519,7 @@ create_folders_and_files <- function(i) {
     # header, so a global replace would corrupt it. Anything unexpected (bad
     # coord, width overflow) leaves the placeholder untouched: never fatal.
     content <- tryCatch({
+      # Accept either placeholder order; XCRD must be longitude in templates.
       fld_idx <- which(grepl("LATITUDE", content, fixed = TRUE) &
                        grepl("LONGITUDE", content, fixed = TRUE))
       if (length(fld_idx) >= 1) {

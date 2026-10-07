@@ -6,21 +6,24 @@ import re
 import csv
 import shutil
 import argparse
+import math
 
 # --- GLOBAL CONFIGURATION ---
 OUTPUT_FIELDNAMES = [
-    'point_id', 'treatment', 'crop_code', 'latitude', 'longitude',
+    'point_id', 'run_number', 'treatment', 'crop_code', 'latitude', 'longitude',
     'weather_station_id', 'soil_profile_id', 'dssat_file_id', 'dssat_description',
-    'planting_date', 'emergence_date', 'harvest_date', 'year_planting', 'year_harvest',
-    'top_weight_kg_ha', 'final_grain_kg_ha', 'removed_residue_kg_ha',
-    'carbon_soil_organic_matter_start_kg_ha', 'carbon_soil_organic_matter_end_kg_ha',
-    'carbon_soil_organic_matter_delta_kg_ha', 'final_irrigation_applications_count',
-    'final_irrigation_amount_mm', 'inorganic_n_applied_count', 'inorganic_n_applied_kg_ha',
+    'planting_date', 'emergence_date', 'anthesis_date', 'maturity_date', 'harvest_date',
+    'year_planting', 'year_harvest',
+    'top_weight_kg_ha', 'final_grain_kg_ha', 'pod_weight_kg_ha', 'seed_weight_kg',
+    'harvest_index', 'maximum_lai', 'removed_residue_kg_ha',
+    'soil_organic_carbon_start_kg_C_ha', 'soil_organic_carbon_end_kg_C_ha',
+    'soil_organic_carbon_delta_kg_C_ha',
+    'final_irrigation_applications_count', 'final_irrigation_amount_mm',
+    'inorganic_n_applied_count', 'inorganic_n_applied_kg_ha',
     'nitrate_leaching_kg_ha', 'cumulative_net_co2_emissions_kg_CO2_ha',
-    'cumulative_n2o_emissions_kg_N_ha',
-    # Seasonal-average stress indicators from PlantGro.OUT
-    'water_stress_photosynthesis_avg',
-    'water_stress_development_avg',
+    'dssat_co2em_kg_C_ha', 'output_metric_schema', 'flux_period_basis',
+    'soc_delta_period_basis', 'cumulative_n2o_emissions_kg_N_ha',
+    'water_stress_photosynthesis_avg', 'water_stress_development_avg',
     'nitrogen_stress_avg'
 ]
 
@@ -86,45 +89,12 @@ def get_args():
 
     return parser.parse_args()
 
-args = get_args()
 
-# Parse --help before requiring the cluster MPI runtime. This lets users and CI
-# validate the command line on ordinary workstations where mpi4py is omitted by
-# design. A real run still fails immediately with an actionable message.
-try:
-    from mpi4py import MPI
-except ImportError as exc:
-    raise SystemExit(
-        "mpi4py is required to run the DSSAT MPI worker. Load the cluster MPI "
-        "module, then install mpi4py against that MPI implementation."
-    ) from exc
+# Default module-level state (safe for import in tests/utilities)
+comm = None
+rank = 0
+size = 1
 
-# Map arguments (normalize paths early to avoid surprises with trailing slashes / relative paths)
-dssat_simulation_output_base = os.path.abspath(os.path.normpath(args.base_dir))
-dssat_simulation_folder = os.path.basename(dssat_simulation_output_base)
-dssat_simulation_summary_folder = os.path.abspath(os.path.normpath(args.summary_dir))
-
-executable_path = args.exe_path
-dssat_model_code = args.model_code
-run_mode = args.run_mode
-treatment_start = args.trt_start
-treatment_end = args.trt_end
-sequence_start = args.seq_start
-sequence_end = args.seq_end
-cleanup_mode = args.cleanup_mode
-archive_outputs = bool(args.archive_outputs)
-scratch_dir = args.scratch_dir.strip() if args.scratch_dir else ''
-merge_mode = args.merge_mode
-control_file_name = 'DSSBatch.V48'
-
-# Temp rank-part files will be written under: <summary_dir>/<project_name>/
-# (prevents clutter and avoids collisions if multiple projects share the same summary_dir)
-project_temp_results_dir = os.path.join(dssat_simulation_summary_folder, dssat_simulation_folder)
-
-# --- Initialize MPI ---
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
 
 # --- Helper Functions ---
 def read_csv_to_dict_list(file_path):
@@ -451,6 +421,15 @@ def write_dssbatch_file(folder_path, sqx_file_name, config, treatment):
         print(f"Error writing {config['control_file_name']} in {folder_path}: {e}")
         return False
 
+def dssat_number(value):
+    """One numeric missing-value contract for all MPI output metrics."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and not math.isclose(number, -99.0, rel_tol=0, abs_tol=1e-6) else None
+
+
 def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
     processed_rows_list = []
     try:
@@ -477,14 +456,10 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
             som_start, som_end, som_delta = None, None, None
             
             if run_val and run_val in soil_org_grouped and soil_org_grouped[run_val]:
-                try:
-                    start_val = soil_org_grouped[run_val][0].get('SOMCT')
-                    end_val = soil_org_grouped[run_val][-1].get('SOMCT')
-                    if start_val and end_val:
-                        som_start = float(start_val)
-                        som_end = float(end_val)
-                        som_delta = som_end - som_start
-                except ValueError: pass
+                som_start = dssat_number(soil_org_grouped[run_val][0].get('SOMCT'))
+                som_end = dssat_number(soil_org_grouped[run_val][-1].get('SOMCT'))
+                if som_start is not None and som_end is not None:
+                    som_delta = som_end - som_start
 
             napc, nlcc, ni_m = None, None, None
             if run_val and run_val in soil_ni_grouped and soil_ni_grouped[run_val]:
@@ -528,9 +503,13 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
                 wsgd_avg = stress_rec.get('wsgd')
                 nstd_avg = stress_rec.get('nstd')
 
+            raw_co2em = dssat_number(summary_row.get('CO2EM'))
+            co2_kg_ha = raw_co2em * (44.0 / 12.0) if raw_co2em is not None else None
+
             processed_row = {
                 'point_id': point_id,
-                'treatment': treatment,
+                'run_number': summary_row.get('RUNNO', ''),
+                'treatment': summary_row.get('TRNO', treatment),
                 'crop_code': summary_row.get('CR', ''),
                 'latitude': summary_row.get('LAT', ''),
                 'longitude': summary_row.get('LONG', ''),
@@ -540,26 +519,40 @@ def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
                 'dssat_description': summary_row.get('TNAM', ''),
                 'planting_date': summary_row.get('PDAT', ''),
                 'emergence_date': summary_row.get('EDAT', ''),
+                'anthesis_date': summary_row.get('ADAT', ''),
+                'maturity_date': summary_row.get('MDAT', ''),
                 'harvest_date': summary_row.get('HDAT', ''),
                 'year_planting': pyear,
                 'year_harvest': summary_row.get('HYEAR', '')[:4],
                 'top_weight_kg_ha': summary_row.get('CWAM', ''),
                 'final_grain_kg_ha': summary_row.get('HWAM', ''),
+                'pod_weight_kg_ha': summary_row.get('PWAM', ''),
+                'seed_weight_kg': summary_row.get('HWUM', ''),
+                'harvest_index': summary_row.get('HIAM', ''),
+                'maximum_lai': summary_row.get('LAIX', ''),
                 'removed_residue_kg_ha': summary_row.get('BWAH', ''),
-                'carbon_soil_organic_matter_start_kg_ha': som_start,
-                'carbon_soil_organic_matter_end_kg_ha': som_end,
-                'carbon_soil_organic_matter_delta_kg_ha': som_delta,
+                'soil_organic_carbon_start_kg_C_ha': som_start,
+                'soil_organic_carbon_end_kg_C_ha': som_end,
+                'soil_organic_carbon_delta_kg_C_ha': som_delta,
                 'final_irrigation_applications_count': ir_c,
                 'final_irrigation_amount_mm': irrc,
                 'inorganic_n_applied_count': ni_m,
                 'inorganic_n_applied_kg_ha': napc,
                 'nitrate_leaching_kg_ha': nlcc,
-                'cumulative_net_co2_emissions_kg_CO2_ha': summary_row.get('CO2EM', ''),
+                'cumulative_net_co2_emissions_kg_CO2_ha': co2_kg_ha,
+                'dssat_co2em_kg_C_ha': raw_co2em,
+                'output_metric_schema': 2,
+                'flux_period_basis': 'DSSAT_season_not_calendar_year',
+                'soc_delta_period_basis': 'first_to_last_recorded_soilorg_row',
                 'cumulative_n2o_emissions_kg_N_ha': summary_row.get('N2OEM', ''),
                 'water_stress_photosynthesis_avg': wspd_avg,
                 'water_stress_development_avg': wsgd_avg,
                 'nitrogen_stress_avg': nstd_avg
             }
+            text_fields = {'point_id', 'crop_code', 'weather_station_id', 'soil_profile_id',
+                           'dssat_file_id', 'dssat_description', 'flux_period_basis', 'soc_delta_period_basis'}
+            for key in processed_row.keys() - text_fields:
+                processed_row[key] = dssat_number(processed_row[key])
             processed_rows_list.append(processed_row)
         return processed_rows_list
     except Exception as e:
@@ -825,6 +818,39 @@ def _process_and_stream(info, config, writer, fh):
 
 # --- Main Execution ---
 if __name__ == "__main__":
+    args = get_args()
+
+    try:
+        from mpi4py import MPI
+    except ImportError as exc:
+        raise SystemExit(
+            "mpi4py is required to run the DSSAT MPI worker. Load the cluster MPI "
+            "module, then install mpi4py against that MPI implementation."
+        ) from exc
+
+    dssat_simulation_output_base = os.path.abspath(os.path.normpath(args.base_dir))
+    dssat_simulation_folder = os.path.basename(dssat_simulation_output_base)
+    dssat_simulation_summary_folder = os.path.abspath(os.path.normpath(args.summary_dir))
+
+    executable_path = args.exe_path
+    dssat_model_code = args.model_code
+    run_mode = args.run_mode
+    treatment_start = args.trt_start
+    treatment_end = args.trt_end
+    sequence_start = args.seq_start
+    sequence_end = args.seq_end
+    cleanup_mode = args.cleanup_mode
+    archive_outputs = bool(args.archive_outputs)
+    scratch_dir = args.scratch_dir.strip() if args.scratch_dir else ''
+    merge_mode = args.merge_mode
+    control_file_name = 'DSSBatch.V48'
+
+    project_temp_results_dir = os.path.join(dssat_simulation_summary_folder, dssat_simulation_folder)
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
     config_params = {
         'dssat_simulation_output_base': dssat_simulation_output_base,
         'dssat_simulation_folder': dssat_simulation_folder,
@@ -839,9 +865,6 @@ if __name__ == "__main__":
         'archive_outputs': archive_outputs,
     }
 
-    # Per-rank part files stream to node-local scratch when provided, then are
-    # staged to the shared summary dir at the end. This keeps the per-point
-    # output churn off the shared parallel filesystem (Lustre/GPFS metadata).
     if scratch_dir:
         local_part_dir = os.path.join(scratch_dir, dssat_simulation_folder, "parts")
     else:

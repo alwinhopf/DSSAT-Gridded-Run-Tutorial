@@ -54,11 +54,19 @@ result <- env$soil_input_issue("00000001")
 cat(if (is.null(result)) "OK" else result)
 '''
         def check():
-            proc = subprocess.run([rscript, "--vanilla", "-e", code, str(UTILS),
-                                   str(ROOT / "dssat_main_pipeline.R")], cwd=tmp_path,
-                                  capture_output=True, text=True, timeout=60)
-            assert proc.returncode == 0, proc.stderr
-            return proc.stdout.strip()
+            import tempfile
+            with tempfile.NamedTemporaryFile("w", suffix=".R", delete=False) as tf:
+                tf.write(code)
+                tf_path = tf.name
+            try:
+                proc = subprocess.run([rscript, "--vanilla", tf_path, str(UTILS),
+                                       str(ROOT / "dssat_main_pipeline.R")], cwd=tmp_path,
+                                      capture_output=True, text=True, timeout=60)
+                assert proc.returncode == 0, proc.stderr
+                return proc.stdout.strip()
+            finally:
+                if os.path.exists(tf_path):
+                    os.unlink(tf_path)
     assert check() == "OK"
     lines = soil.read_text().splitlines()
     h = next(i for i, row in enumerate(lines) if row.startswith("@  SLB"))
