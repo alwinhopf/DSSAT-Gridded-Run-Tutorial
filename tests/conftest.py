@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tests.helpers.packages import configure_workspace_packages
+configure_workspace_packages()
+
 from tests.helpers.discovery import find_rscript
 
 
@@ -19,3 +22,8 @@ def rscript() -> str:
     if not path:
         pytest.skip("Rscript executable is not installed or discoverable")
     return path
+
+
+def pytest_report_header(config):
+    import importlib
+    return [f"{name}: {importlib.import_module(name).__file__}" for name in ('cropmodel_data','cropmodel_runtime')]

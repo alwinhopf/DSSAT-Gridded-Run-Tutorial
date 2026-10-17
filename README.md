@@ -1,5 +1,53 @@
 # Spatial Gridded Crop Modeling with DSSAT
 
+Soil cache reuse always checks complete fixed-width layer fields and hydraulic
+limits, including when `check_soil_downloads` is false. Invalid derived profiles
+are removed and fetched again; valid profiles and raw source rasters are reused.
+SoilGrids retries validate each newly written profile before counting it as ready.
+
+## Shared support: cropmodel monorepo
+
+Weather/soil providers now use Python `cropmodel_data` and R `cropmodeldata`;
+model execution and parsing use Python `cropmodel_runtime` and R `cropmodelruntime`.
+Bioenergy's DayCent tools also use `cropmodel_calibration`. Install these packages
+from [cropmodel](https://github.com/alwinhopf/cropmodel), whose sources live under
+`packages/`; the retired DSSAT support repositories are no longer dependencies.
+The tutorial remains the study driver selected by Bioenergy's `engine_dir`, so
+existing study templates, input roots, caches and output folders retain their paths.
+`dssat_lca_tea` remains a separate Bioenergy LCA dependency.
+
+The supported standard-driver baseline is immutable commit
+`4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9`, which includes spatial fallback and
+input locking. CI, requirements and R setup use this same revision; nothing tracks
+`main`. Optional `sampling_strategy` modes require the newer development sampling
+and provenance APIs, which are not included in that revision. Leave this setting
+null for the pinned installation. To use these development modes, explicitly
+install the complete local monorepo sources below. A future immutable release must
+include those changes before sampling modes can be advertised as remotely reproducible.
+
+For this workspace, install the current combined sources from the consumer folder:
+
+```powershell
+python -m pip install ../cropmodel/packages/cropmodel_data ../cropmodel/packages/cropmodel_runtime
+Rscript --vanilla ../cropmodel/workflows/scripts/install_local.R ../cropmodel .download-runtime/library
+```
+
+Bioenergy's DayCent tools additionally need
+`python -m pip install ../cropmodel/packages/cropmodel_calibration`.
+The conda lock now covers third-party scientific/GIS packages only. After
+`conda-lock install -n dssat_grid conda_lock.yml` and activating that environment,
+run `python -m pip install -r requirements.txt` for the pinned monorepo support.
+The migration preserves all existing conda artifact checksums; a full re-solve
+was attempted but Windows micromamba crashed on the macOS solve. Regeneration uses
+`conda-lock -f environment.yml -p win-64 -p linux-64 -p osx-arm64 --virtual-package-spec virtual-packages.yml`.
+For reproducible remote Python installs, use `python -m pip install -r requirements.txt`;
+R's `setup_renv.R` and `renv.lock` identify the two native package subdirectories.
+Set `CROPMODEL_ROOT` and `USE_LOCAL_SHARED_PACKAGES=1` for explicit local R development.
+Restart R after package replacement. Consumer code requires the new package names;
+there is no fallback to old DSSAT support packages.
+
+
+
 > **AI agents & maintainers:** read [`../AGENTS.md`](../AGENTS.md) before editing this repo.
 
 This repository provides an end-to-end, beginner-friendly workflow for **spatial (gridded / point-based) crop modeling in DSSAT**. The pipeline downloads weather and soil data for a set of geographic points, builds a DSSAT-ready input folder for every point, runs the simulations locally or prepares them for HPC, and maps the results.
@@ -77,7 +125,7 @@ The MPI runner (`hpc/dssat_mpi_runner.py`) was built to scale to large grids:
 
 - **Dynamic work-stealing:** a manager hands points to workers on demand (not static `folders[rank::size]` slicing), so slow points don't stall a rank.
 - **Streaming per-point writes:** each rank streams results straight to its part file instead of accumulating them in memory.
-- **Node-local scratch staging** (`--scratch_dir`, defaults to `$TMPDIR`): each rank stages its small files on fast local disk to avoid a metadata storm on Lustre/GPFS, then copies results back.
+- **Node-local scratch staging** (`--scratch_dir`, defaults to `$TMPDIR`): each rank writes its result part on fast local disk, then stages that part back. DSSAT point folders remain at `base_dir`.
 - **Optional merge skip** (`--merge_mode none`): skip the rank-0 serial merge on very large grids and merge the per-rank parts later.
 - **Tiny run folders:** with `DSSATPRO.V48` next to the executable, genotype/support files are resolved from the install instead of copied per point (see [Performance tips](#performance-tips)) — far fewer files for the filesystem to track.
 
@@ -85,6 +133,31 @@ Scenario maps reload the configured, filtered boundary when a derived grid is
 reused. Both R and Python also render point maps without a boundary when it is
 absent or unreadable; boundary loading does not require rebuilding the grid or
 rerunning DSSAT. Existing-point runs use point-only maps when no boundary was loaded.
+
+### Execution and analysis contracts
+
+- Experiment orchestration always enters the driver's provenance-aware resume path.
+  `reuse_existing` enables that resume; an existing CSV alone is not accepted.
+  Only complete results reported by the current driver invocation are aggregated.
+  Output roots and sampling suffixes are resolved by the driver, not guessed by the sweep.
+- HPC uses cropmodel runtime's core result parser and a tutorial-specific PlantGro
+  stress supplement. It retains its MPI scheduler and batch execution wrapper.
+  Prepared bundles contain `hpc_manifest.json` with treatments, sequence settings,
+  point attributes and preparation provenance. Explicit runner arguments override
+  these settings. `--treatment_list 1 3` selects noncontiguous treatments.
+- Each HPC invocation has a separate part directory. The result `.status.json`
+  records expected/completed/failed points and the exact part inventory; incomplete
+  runs exit nonzero. With `--merge_mode none`, the parts are the deliverable, not a
+  combined CSV. Parts are retained for diagnosis; old parts are never merged into a
+  new invocation. A cluster deployment must make point inputs and DSSAT support
+  paths valid on its compute nodes.
+- `run_experiment.R` and `analyze_experiment.R` are exploratory R-only analysis
+  utilities. Their ordinary point summaries and sequential additive ANOVA do not
+  estimate area-weighted regional effects or account for repeated sites. ANOVA
+  shares depend on factor order when data are unbalanced. Stratified sampling
+  needs a separate area-weighted analysis using `weight_ha`; do not interpret these
+  exploratory percentages as causal input contributions. Outputs carry this method
+  qualification and a warning is emitted when sampling weights are present.
 
 ### Known limitations
 
@@ -149,12 +222,12 @@ If you have a SLURM-managed HPC cluster, you can run the MPI runner with `sbatch
 
 End-to-end setup on a clean Windows machine. The R environment is pinned with
 [`renv`](https://rstudio.github.io/renv/), so `renv::restore()` reproduces the
-exact package versions — including the shared `dssatengine` / `dssatutils`
-packages, which install straight from GitHub (no side-by-side clones needed).
+exact package versions — including the shared `cropmodelruntime` / `cropmodeldata`
+R packages, which install straight from GitHub (no side-by-side clones needed).
 
 ### 1 — Install the non-R prerequisites
 
-1. **R** — install the version recorded in `renv.lock` (currently R 4.6.x) from
+1. **R** — install the version recorded in `renv.lock` (currently R 4.5.3; CI separately checks R 4.3 compatibility) from
    [CRAN](https://cran.r-project.org/bin/windows/base/).
 2. **RStudio** — [Posit Desktop](https://posit.co/download/rstudio-desktop/);
    the pipeline uses `rstudioapi` to locate itself.
@@ -162,7 +235,7 @@ packages, which install straight from GitHub (no side-by-side clones needed).
    Most packages install as binaries, but Rtools is a safe fallback for any
    source build.
 4. **Git** — [git-scm.com](https://git-scm.com/download/win). The shared
-   packages `dssatutils` and `dssatengine` install from GitHub. If Git prompts
+   packages `cropmodel_data` and `cropmodel_runtime` install from GitHub. If Git prompts
    for authentication (for private repos, rate limits, or account-specific access),
    authenticate once with your GitHub account:
    * **For R / `renv`:**
@@ -170,11 +243,11 @@ packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
+     `pip install "git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data"`
      PAT fallback:
-     `pip install "git+https://<PAT>@github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
+     Use Git Credential Manager or your configured Git credentials with `python -m pip install -r requirements.txt`.
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c"`
+     `pip install "cropmodel_data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on
@@ -189,25 +262,25 @@ cd DSSAT_Gridded_Run_Tutorial
 
 Open the folder in RStudio (the project's `.Rprofile` auto-bootstraps `renv`),
 then install every pinned package — CRAN dependencies **and** the
-`dssatengine` / `dssatutils` packages from GitHub — in one step:
+`cropmodel_runtime` / `cropmodel_data` packages from GitHub — in one step:
 
 ```r
 renv::restore()
 ```
 
-Optional for Copernicus CDS weather sources (`AGERA5`, `ERA5_LAND`, and E-OBS
-CDS mode): with `dssatutils` v0.4.0 or newer, configure the CDS Personal Access
+Optional for tutorial Copernicus CDS weather sources (`AGERA5` and E-OBS
+CDS mode; ERA5-Land is currently a package API rather than a tutorial dispatch option): with the installed `cropmodel_data` / `cropmodeldata` packages, configure the CDS Personal Access
 Token once after restore:
 
 ```r
-library(dssatutils)
+library(cropmodeldata)
 setup_cds_credentials()
 ```
 
 Python users can run the same setup helper:
 
 ```python
-from dssatutils import setup_cds_credentials
+from cropmodel_data import setup_cds_credentials
 setup_cds_credentials()
 ```
 
@@ -221,7 +294,7 @@ This replaces the old manual `install.packages(..., type = "binary")` /
 anything, so every package — including transitive system-library dependencies
 like `openssl`, `curl`, `sf`, and `terra` — is pulled as a prebuilt binary and
 never compiled from source. (Source builds of those packages are the usual cause
-of a cascade failure such as `openssl → httr → daymetr → dssatutils` on a clean
+of a cascade failure such as `openssl → httr → daymetr → cropmodel_data` on a clean
 laptop, because they need system dev headers that a fresh machine lacks.)
 
 > **If `renv::restore()` still tries to build something from source** (rare —
@@ -233,7 +306,7 @@ laptop, because they need system dev headers that a fresh machine lacks.)
 > ```
 
 > **Generating the lock (one-time, maintainers only):** if `renv.lock` does not
-> yet pin `dssatengine` / `dssatutils`, run `Rscript setup_renv.R` once on a
+> yet pin `cropmodel_runtime` / `cropmodel_data`, run `Rscript setup_renv.R` once on a
 > machine where those repos are committed and pushed, then commit the
 > regenerated `renv.lock`.
 
@@ -723,7 +796,7 @@ soilgrids_mode: "VRT"    # GDAL virtual rasters
 
 Both modes project points to SoilGrids' native Interrupted Goode's Homolosine CRS, compute DSSAT physics with Saxton & Rawls (2006), and write identical `.SOL` output (the file header records which mode produced it). Points that fall on a SoilGrids no-data cell (e.g. over water) are masked and skipped with a warning rather than producing invalid soil. For grids beyond a handful of points, prefer `VRT`: it reads 36 rasters (6 properties × 6 depths) total regardless of point count, whereas `REST` makes one rate-limited request per point.
 
-Direct package calls use the merged `dssatutils` `config.yml` default
+Direct package calls use the merged `cropmodel_data` `config.yml` default
 (`soil.soilgrids_online.use_rest_api`; `false` = VRT, `true` = REST). The
 pipeline-level `soilgrids_mode` key remains the recommended control for normal
 tutorial runs.
@@ -769,10 +842,10 @@ Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give
 **three** one-time steps:
 
 1. **Register** at https://cds.climate.copernicus.eu/ and copy your *Personal Access Token* from your profile.
-2. **Run the dssatutils setup helper**, or set `CDSAPI_KEY` / `CDSAPI_URL`
+2. **Run the cropmodel_data setup helper**, or set `CDSAPI_KEY` / `CDSAPI_URL`
    yourself:
    ```r
-   library(dssatutils)
+   library(cropmodeldata)
    setup_cds_credentials()
    ```
    The helper writes `~/.cdsapirc` (Linux/macOS) or `%USERPROFILE%\.cdsapirc`
@@ -783,7 +856,7 @@ Between them, `NASA_POWER`, `OPEN_METEO`, `NASA_POWER_CHIRPS`, and `AGERA5` give
    https://cds.climate.copernicus.eu/datasets/sis-agrometeorological-indicators-timeseries?tab=download
    and accept its licence.
 
-Then install the CDS client dependency (`pip install "dssatutils[cds] ..."` for
+Then install the CDS client dependency (`pip install "cropmodel_data[cds] ..."` for
 Python, `install.packages("ecmwfr")` for R) and set the desired weather source.
 Requests are queued server-side, so the first run for a new area/period can take
 minutes; downloads are cached under the source cache directory.
@@ -801,7 +874,7 @@ agera5_max_concurrent_requests: 4
 chunk groups neighboring cells into fixed globally aligned tiles, reducing the
 number of CDS requests while downloading more cells. Both the R and Python
 pipelines feed jobs through the bounded queue (`agera5_max_concurrent_requests`,
-hard cap of 4 in `dssatutils`), keep time-series chunks within the CDS 5 x 5
+hard cap of 4 in `cropmodel_data`), keep time-series chunks within the CDS 5 x 5
 degree area limit, and use the shared cache at `agera5_netcdf_cache/` under the engine input
 root.
 
@@ -1325,11 +1398,11 @@ configuration plumbing and derived values; all user-facing knobs belong in
 
 ### R/Python parity note
 
-Both drivers now delegate soil preflight to `dssatutils::soil_file_issue()` /
-`dssatutils.soil_file_issue()`, which checks DSSAT's actual fixed columns. A
-corrected local `dssatutils` installation is required before using these driver
+Both drivers now delegate soil preflight to `cropmodeldata::soil_file_issue()` /
+`cropmodel_data.soil_file_issue()`, which checks DSSAT's actual fixed columns. A
+corrected local `cropmodel_data` installation is required before using these driver
 changes; the pinned remote revision does not contain uncommitted fixes. See
-the shared package's [input-cache recovery notes](../dssatutils/README.md#input-cache-integrity-fixes-2026-08-31).
+the shared package's [input-cache recovery notes](../cropmodel_data/README.md#input-cache-integrity-fixes-2026-08-31).
 Installing new code does not invalidate existing `.WTH`, `.SOL`, point CSVs or
 completed sweep manifests automatically. Rebuild affected derived inputs and
 rerun their dependent results explicitly, preserving original caches.
@@ -1446,7 +1519,7 @@ Run it explicitly when you want real downloads (several minutes and potentially
 large cached NetCDFs). It requires every expected output and retries only
 recognised transient HTTP/transport failures. Set
 `DSSAT_USE_WORKSPACE_SIBLINGS=1` only when intentionally testing un-released
-sibling `dssatutils` source instead of the installed pinned package:
+sibling `cropmodel_data` source instead of the installed pinned package:
 
 ```bash
 python -m pytest tests/test_e2e_comprehensive.py -m integration -v -s
@@ -1470,7 +1543,7 @@ Windows. This catches platform-specific path/config regressions on every push
 and pull request. The workflow installs the R `yaml` dependency with
 `Rscript --vanilla`, matching the cross-language parity subprocess rather than
 the repository's `renv`-activated interactive environment. The R preflight and
-weather-recovery checks use `pkgload::load_all()` on the pinned `.ci-deps/dssatutils`
+weather-recovery checks use `pkgload::load_all()` on the pinned `.ci-deps/cropmodel_data`
 checkout; CI installs its required R dependencies before running these checks.
 Local runs likewise need `pkgload` and the shared package dependencies.
 
@@ -1701,7 +1774,7 @@ The runner also supports optional output cleanup (`--cleanup_mode never/success/
 | `mpi4py` import error on HPC | Built against wrong MPI library | Rebuild: `pip install --no-cache-dir --no-binary :all: mpi4py` after loading the correct MPI module |
 | Results CSV is empty after run | Parsing failed; DSSAT wrote `.OUT` only | Check per-point `LUN.LST`; enable CSV output in the `*OUTPUTS` section of your template |
 | Custom DSSAT installation not found | Default assumptions (e.g. `C:/DSSAT48`) do not match your setup | For the gridded pipeline, specify `DSSAT_EXE` and `standard_dssat_dir` in `config.yml` / `config.yaml` or set the `DSSAT_EXE` environment variable |
-| Shared package clone failures | Authentication mismatch on `dssatutils` / `dssatengine`, missing access, or GitHub rate limits | Verify that Git Credential Manager, a GitHub Personal Access Token (PAT) via `gitcreds` / `GITHUB_PAT`, or SSH keys are configured for the install path you are using |
+| Shared package clone failures | Authentication mismatch on `cropmodel_data` / `cropmodel_runtime`, missing access, or GitHub rate limits | Verify that Git Credential Manager, a GitHub Personal Access Token (PAT) via `gitcreds` / `GITHUB_PAT`, or SSH keys are configured for the install path you are using |
 
 ---
 
@@ -2097,5 +2170,155 @@ rewritten by these changes.
 Live-provider end-to-end checks run on schedule or manual dispatch; offline tests
 remain the pull-request gate. To test current sibling working copies independently
 of the tutorial's study pins, use the workspace's
-`cropmodel_workflows/scripts/validate_workspace.py --output /tmp/cropmodel-validation`
+`cropmodel/workflows/scripts/validate_workspace.py --output /tmp/cropmodel-validation`
 after installing those sources. This does not change the recorded study revisions.
+
+### Private cropmodel access in CI
+
+GitHub Actions requires a repository secret named `CROPMODEL_READ_TOKEN`, with Contents: read access to `alwinhopf/cropmodel`. The workflows use it for the pinned monorepo checkout and dependency installation. Fork pull requests do not receive this secret and require a trusted run after review. Local installs use your existing Git credentials.
+
+
+Download recovery: transient provider requests use five bounded attempts with
+5/10/20/40-second default waits (configurable helper cap: 60 seconds). The R and
+Python weather drivers catch exhausted connectivity errors, recheck completed
+files, and retry only missing or invalid points within the configured batch
+budget. Non-transient configuration errors remain fatal. Exhausted weather
+points stay retryable; download-only runs report partial coverage with exit 2.
+SoilGrids batch retries preserve existing profiles and do not treat historical
+SKIPPED log entries as permanent geographic exclusions. Required raster layers
+must succeed before any new profiles are published. The Bioenergy scheduler
+continues independent source/resolution tasks after a child failure and reports
+all failures in its final summary.
+
+Single-point runs skip yield-map generation in both R and Python; results CSVs are still written.
+
+AgERA5 time-series caches allow fully masked cells alongside complete cells in a coastal tile. Partial missing data and incomplete calendars still fail validation; each site keeps its nearest cell and requires complete forcing.
+
+
+## Optional bounded land sampling
+
+When disabled, extraction uses the configured point. Both R and Python can
+optionally retry a missing soil or weather input at land-mask pixel centres,
+ordered by geodesic distance. Every accepted candidate must produce one complete,
+validated soil profile or the entire requested weather period at the same location.
+The model point and ID remain unchanged. Values from different locations are never
+mixed. Transport, authentication and corrupt-raster errors remain retryable errors;
+they do not justify a geographic substitution.
+
+```yaml
+input_fallback_enabled: false
+input_fallback_land_mask: ""
+input_fallback_land_values: []
+input_fallback_max_distance_m: 500
+input_fallback_max_candidates: 10000
+input_fallback_within_cell: true
+input_fallback_cell_crs: "EPSG:5070"
+```
+
+To enable land mode, provide a readable categorical raster and its explicit valid land
+classes. For example, NLCD class 82 means cultivated crops; codes from another
+land-cover product must be chosen from that product's legend. The search is
+bounded by distance, candidate count and, by default, the original square study
+cell. A count limit can stop the search before the full radius is exhausted.
+Candidates are centres of the supplied mask, rather than necessarily centres of
+the source raster. Station and prebuilt-profile sources retain their native
+matching rules. This feature therefore finds the nearest *tested mask location*
+that returns a valid input; it does not establish equivalent soil or climate.
+
+The policy creates distinct input-cache directories. Shifts and failures are
+written to run logs; no soil/weather provenance sidecars are added. Changing the
+contents of a mask at the same path requires clearing the affected input cache.
+NoData alone does not establish that the original point is water or a quarry.
+A cropland centroid can also fall outside cultivated land.
+
+SOILGRIDS_ONLINE samples the native product. SOILGRIDS_10K selects prebuilt source
+profiles; it does not calculate an area-weighted mean over the current study grid
+cell. Optional relocation preserves these source-specific extraction rules.
+
+
+## Sampling mode selection (11 October 2026)
+
+`input_fallback_enabled: false` disables geographic fallback. When enabled,
+`input_fallback_mode` selects one of:
+
+- `nearest_valid`: no land mask required. Test locations on a local metric lattice
+  (`input_fallback_search_step_m: 50`) in increasing distance order, bounded by
+  radius, candidate cap and study cell. This finds the nearest valid *tested
+  location*, not necessarily the exact nearest source pixel. It does not establish
+  that the replacement is land or cropland.
+- `nearest_valid_land`: require `input_fallback_land_mask` and explicit
+  `input_fallback_land_values`; test eligible mask pixel centres as previously.
+
+Both modes require complete validated inputs at one replacement location and
+retain the same network/error safeguards. The Bioenergy study configuration now
+activates `nearest_valid` with a 500 m radius and 50 m step. Change the mode to
+`nearest_valid_land` and supply mask/classes to enable filtering; set enabled to
+false to disable. Policy keys separate caches for the modes and search spacing.
+Existing files remain untouched; running processes need a relaunch to adopt it.
+
+
+Completion accounting now loads stored soil/weather exclusions even when their
+processing steps are disabled. Cached-input runs publish complete or partial
+status without depending on variables created by a download step. Missing inputs
+without a verified permanent exclusion remain failed points. Successful point
+results remain available for resume.
+
+
+Converted soil/weather inputs no longer require conversion-provenance sidecars.
+Existing markers are ignored and retained; file-content validation still applies.
+The shared R fallback wrapper binds each provider when registered, so regional
+and point-validation loops retain the correct provider signature.
+
+
+Soil provider selection is independent of point-based SOL naming. SoilGrids
+Online, SoilGrids 10K and POLARIS use their own extraction branches in both R and
+Python, even when their profiles are named by point ID. LUCAS is selected only
+when the configured soil source is LUCAS.
+
+
+### Input recovery and independent relocation switches
+
+Regional input preparation and sweeps use the top-level `input_fallback_enabled`
+setting. Set it to `false` to download at the configured original grid points
+without searching nearby coordinates. Point validation independently uses
+`validation_pipeline.input_fallback_enabled`; set that to `false` for direct
+site/selected-point downloads or `true` for the configured nearest-valid mode.
+An explicit `INPUT_FALLBACK_ENABLED` environment override takes precedence.
+Disabling relocation does not request entire provider raster archives: the
+configured sources, points, years and provider cache mechanisms still apply.
+Relocated and direct-point inputs use separate cache identities.
+
+Configured weather repairs are applied before deciding to search for another
+coordinate. DAYMET multi-year HTTP 5xx failures are retried as individual years
+at the same coordinate. POLARIS no-data and Alderman query failures retain
+distinct missing-data versus retryable outcomes. The Alderman field-capacity
+fallback is unchanged. R and Python use a shared operating-system file lock
+per input directory while preparing inputs; it is released when the process
+exits. All concurrent processes must use the updated package and drivers.
+
+With `check_provenance: false`, both sweep languages skip post-run input manifests, and the engine skips soil/weather content fingerprints (including per-point resume fingerprints). Model/grid identities and completion records remain active. Changing input contents will not invalidate saved results in this mode; remove obsolete results explicitly when needed. The study forwards this setting to regional and point-validation engines; `CHECK_PROVENANCE` overrides the configuration.
+
+
+## Shared SoilGrids raster cache
+
+The R/Python soil stages accept `soilgrids_cache_dir`, `soilgrids_cache_download`,
+`soilgrids_cache_scope` (region/world), `soilgrids_cache_bbox`, and
+`soilgrids_cache_buffer_degrees`. Blank directory keeps remote access; a relative
+directory resolves under `provider_cache_root` (default `input_root_dir`). The
+Bioenergy downloader enables `soilgrids_raster_cache` here, beside the weather
+caches. Region acquisition uses the full prepared grid's WGS84 bounds with a
+configurable margin; world acquisition is explicitly opt-in. Both use the shared
+`cropmodel_data` tile downloader; R acquisition uses its Python bridge, while
+R/Python extraction stays native. Failed acquisition is an explicit resumable
+soil-task error. Local tile reads never silently fall back to the network.
+The updated shared packages must be installed; historical remote pins do not yet
+include this unreleased feature. Existing caches and generated profiles are preserved.
+
+
+Resolution-relative fallback: `input_fallback_resolution_fraction: 0.10` sets the maximum distance to 10% of the grid width (300 km → 30 km; 200 → 20; 100 → 10; 50 → 5; 25 → 2.5; 10 → 1; 5 → 0.5 km). Zero retains `input_fallback_max_distance_m`. `input_fallback_enabled` independently enables relocation. Exact-site validation uses the fixed metre limit; regional validation supplies its actual resolution through `input_fallback_resolution_m` and preserves the original grid-cell centre. Keep `input_fallback_within_cell: true` to constrain candidates to that cell.
+
+Relative nearest-valid searches retain the configured fine spacing in the first 20 steps and double the spacing in successive outward bands, keeping large searches bounded. Candidates are globally ordered by distance and limited by `input_fallback_max_candidates`; the first valid tested coordinate wins. This does not guarantee the nearest valid native source pixel. Network/server failures remain retryable and do not trigger relocation. The radius policy and resolution are part of the fallback cache key.
+
+## Explicit sampling strategies
+
+The local drivers support `grid_anchor`, `nearest_cropland`, `cropland_centroid_snap`, and `cropland_stratified` through shared cropmodel runtime helpers. Null preserves legacy behavior. See [the study sampling guide](../Bioenergy_Model_Input_Comparison/SAMPLING_EXPERIMENT.md) for settings, weights, pilot commands and the pending immutable release pin.

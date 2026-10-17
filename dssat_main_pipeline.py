@@ -222,6 +222,22 @@ REUSE_CROPLAND_GRID   = bool(cfg_get("reuse_cropland_grid", True))
 CROPLAND_FILTER_BASIS = str(cfg_get("cropland_filter_basis", "cell_fraction")).strip().lower()
 CROPLAND_CLIP_TO_BOUNDARY = bool(cfg_get("cropland_clip_to_boundary", True))
 CROPLAND_RELOCATE_ANCHOR = bool(cfg_get("cropland_relocate_anchor", False))
+SAMPLING_STRATEGY = cfg_get("sampling_strategy", None)
+SAMPLING_STRATA = float(cfg_get("sampling_strata", 5))
+if not SAMPLING_STRATA.is_integer() or not 1 <= SAMPLING_STRATA <= 32:
+    raise ValueError("sampling_strata must be an integer from 1 to 32")
+SAMPLING_STRATA = int(SAMPLING_STRATA)
+SAMPLING_CELL_CRS = str(cfg_get("sampling_cell_crs", MASTER_GRID_CRS))
+if SAMPLING_STRATEGY:
+    try:
+        from cropmodel_runtime.sampling import sampling_strategy
+        from cropmodel_data.sampling_records import sampling_provenance
+    except ImportError as exc:
+        raise RuntimeError("sampling_strategy requires the development cropmodel sampling APIs. "
+                           "Install the documented local monorepo packages, or leave sampling_strategy null.") from exc
+    SAMPLING_STRATEGY = sampling_strategy(SAMPLING_STRATEGY)
+    if not USE_CROPLAND_MASK or cfg_get("cropland_filter_basis", "cell_fraction") != "cell_fraction":
+        raise ValueError("Explicit sampling requires cropland masking with cell_fraction support")
 if CROPLAND_FILTER_BASIS not in {"cell_fraction", "point"}:
     raise ValueError("cropland_filter_basis must be 'cell_fraction' or 'point'.")
 
@@ -263,6 +279,8 @@ EXTERNAL_SOIL_FILE = cfg_get("external_soil_file",
 # SOILGRIDS_ONLINE only: "REST" (JSON API, rate-limited, no extra deps) or
 # "VRT" (GDAL virtual rasters via rasterio; batch-friendly, better coverage).
 SOILGRIDS_MODE     = str(cfg_get("soilgrids_mode", "REST")).upper()
+SOIL_DOWNLOAD_RETRIES = max(1, int(cfg_get("soil_download_retries", 3)))
+CHECK_SOIL_DOWNLOADS = bool(cfg_get("check_soil_downloads", False))
 # POLARIS only (CONUS 30 m): which statistic layer to build the profile from.
 # "p50" (median) is the deterministic drop-in; p5/p95 are reserved for a future
 # soil-uncertainty ensemble. Optional polaris_cache_dir caches the GeoTIFF tiles.
@@ -292,6 +310,7 @@ PRISM_BACKEND      = cfg_get("prism_backend", "acis")
 MSWX_NC_DIR        = cfg_get("mswx_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswx_netcdf"))
 MSWEP_NC_DIR       = cfg_get("mswep_nc_dir", os.path.join(INPUT_ROOT_DIR, "mswep_netcdf"))
 CRUJRA_NC_DIR      = cfg_get("crujra_nc_dir", os.path.join(INPUT_ROOT_DIR, "crujra_netcdf"))
+SILO_NC_DIR        = cfg_get("silo_nc_dir", os.path.join(INPUT_ROOT_DIR, "silo_netcdf"))
 TERRACLIMATE_NC_DIR = cfg_get("terraclimate_nc_dir", os.path.join(INPUT_ROOT_DIR, "terraclimate_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
 LUCAS_CSV          = cfg_get("lucas_csv", os.path.join(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
@@ -302,8 +321,18 @@ WISE30SEC_RASTER_DIR   = cfg_get("wise30sec_raster_dir", os.path.join(INPUT_ROOT
 WOSIS_PROFILE_CSV      = cfg_get("wosis_profile_csv", os.path.join(INPUT_ROOT_DIR, "WoSIS", "wosis_processed_profiles.csv"))
 
 # Constructed names
+if SAMPLING_STRATEGY:
+    from cropmodel_runtime.sampling import sampling_grid_identity
+    from config_loader import _CONFIG
+    SAMPLING_GRID_KEY = sampling_grid_identity(_CONFIG, CODE_ROOT_DIR)
 _CACHE_IDENTITY = re.sub(r"[^A-Za-z0-9_-]", "_", str(cfg_get("cache_identity", "")).strip())
-_CACHE_SUFFIX = f"_{_CACHE_IDENTITY[:16]}" if _CACHE_IDENTITY else ""
+if SAMPLING_STRATEGY and not _CACHE_IDENTITY:
+    _CACHE_IDENTITY = "sg" + SAMPLING_GRID_KEY[:15]
+_CACHE_SUFFIX = f"_{_CACHE_IDENTITY[:48]}" if _CACHE_IDENTITY else ""
+from cropmodel_data.spatial_fallback import fallback_policy_key
+_sampling_key = fallback_policy_key({'input_fallback_resolution_fraction':cfg_get('input_fallback_resolution_fraction',0),'input_fallback_resolution_m':cfg_get('input_fallback_resolution_m',GRID_SPACING_METERS),'input_fallback_mode':cfg_get('input_fallback_mode','nearest_valid_land'),'input_fallback_search_step_m':cfg_get('input_fallback_search_step_m',50),'input_fallback_enabled': cfg_get('input_fallback_enabled', False), 'input_fallback_land_mask': cfg_get('input_fallback_land_mask', ''), 'input_fallback_land_values': cfg_get('input_fallback_land_values', []), 'input_fallback_max_distance_m': cfg_get('input_fallback_max_distance_m', 500), 'input_fallback_max_candidates': cfg_get('input_fallback_max_candidates', 10000), 'input_fallback_within_cell': cfg_get('input_fallback_within_cell', True), 'input_fallback_cell_crs': cfg_get('input_fallback_cell_crs', 'EPSG:5070')})
+if _sampling_key and not _CACHE_IDENTITY.endswith(_sampling_key):
+    _CACHE_SUFFIX += "_" + _sampling_key
 SOIL_BASENAME    = f"{GRID_BASE_NAME}_{SOIL_SOURCE}{_CACHE_SUFFIX}"
 WEATHER_DIR_NAME = f"{GRID_BASE_NAME}_{WEATHER_SOURCE}{_CACHE_SUFFIX}"
 SCENARIO_ID      = f"{GRID_BASE_NAME}_{WEATHER_SOURCE}_{SOIL_SOURCE}"
@@ -318,11 +347,20 @@ elif RUN_TAG:
 else:
     DSSAT_RUN_NAME = SCENARIO_ID
 
+if SAMPLING_STRATEGY and not RUN_NAME_OVERRIDE:
+    DSSAT_RUN_NAME += "_sampling_" + _CACHE_IDENTITY
 DSSAT_RUN_NAME = re.sub(r"[^A-Za-z0-9_\-]", "_", DSSAT_RUN_NAME)
 
 # --- 0.6 Dynamic paths ------------------------------------------------------
 # Raw provider products are shared across study and validation output roots.
 PROVIDER_CACHE_ROOT = resolve_config_path(cfg_get("provider_cache_root", ""), INPUT_ROOT_DIR) or INPUT_ROOT_DIR
+SOILGRIDS_CACHE_DIR = resolve_config_path(os.environ.get("SOILGRIDS_CACHE_DIR") or cfg_get("soilgrids_cache_dir", ""), PROVIDER_CACHE_ROOT)
+SOILGRIDS_CACHE_DOWNLOAD = bool(cfg_get("soilgrids_cache_download", False))
+SOILGRIDS_CACHE_SCOPE = str(cfg_get("soilgrids_cache_scope", "region")).lower()
+SOILGRIDS_CACHE_BBOX = cfg_get("soilgrids_cache_bbox", [])
+SOILGRIDS_CACHE_BUFFER_DEGREES = float(cfg_get("soilgrids_cache_buffer_degrees", 0.02))
+if SOILGRIDS_CACHE_DIR:
+    os.environ["SOILGRIDS_CACHE_DIR"] = SOILGRIDS_CACHE_DIR
 GRIDMET_CACHE_DIR     = os.path.join(PROVIDER_CACHE_ROOT, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR      = os.path.join(PROVIDER_CACHE_ROOT, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR   = os.path.join(PROVIDER_CACHE_ROOT, "chirps_v3_netcdf_cache")
@@ -351,6 +389,8 @@ if USE_CROPLAND_MASK:
         f"_clip{int(CROPLAND_CLIP_TO_BOUNDARY)}"
         f"_move{int(CROPLAND_RELOCATE_ANCHOR)}",
     )
+if SAMPLING_STRATEGY:
+    CROPLAND_GRID_TAG += "_sampling-" + SAMPLING_GRID_KEY[:12]
 POINT_SHAPEFILE_NAME  = f"{GRID_BASE_NAME}{CROPLAND_GRID_TAG}.shp"
 ALL_LAND_POINT_SHAPEFILE_PATH = os.path.join(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
 POINT_SHAPEFILE_PATH  = os.path.join(GRIDPOINTS_OUTPUT_DIR, POINT_SHAPEFILE_NAME)
@@ -453,6 +493,7 @@ ZIP_FOR_HPC         = bool(cfg_get("zip_for_hpc", False))
 RUN_STEP_1_SOILS    = bool(cfg_get("run_step_1_soils", True))
 RUN_STEP_2_WEATHER  = bool(cfg_get("run_step_2_weather", True))
 DOWNLOAD_ONLY       = bool(cfg_get("download_only", False))
+CHECK_PROVENANCE = bool(cfg_get("check_provenance", True))
 RUN_DSSAT_EXECUTION = bool(cfg_get("run_dssat_execution", True))
 CLEANUP_RUN_FOLDERS = bool(cfg_get("cleanup_run_folders", False))
 ARCHIVE_FAILED_RUN_FOLDERS = bool(cfg_get("archive_failed_run_folders", False))
@@ -582,11 +623,12 @@ RUN_PROVENANCE = {
                  "classes": CROPLAND_CLASSES, "min_fraction": CROPLAND_MIN_FRACTION,
                  "filter_basis": CROPLAND_FILTER_BASIS,
                  "clip_to_boundary": CROPLAND_CLIP_TO_BOUNDARY,
-                 "relocate_anchor": CROPLAND_RELOCATE_ANCHOR},
+                 "relocate_anchor": CROPLAND_RELOCATE_ANCHOR,
+                 "sampling_key": SAMPLING_GRID_KEY if SAMPLING_STRATEGY else None},
     "weather": {"source": WEATHER_SOURCE, "years": [WEATHER_START_YEAR, WEATHER_END_YEAR],
                 "chirps": [CHIRPS_RESOLUTION, CHIRPS_V3_PRODUCT, CHIRPS_V3_STREAM,
                             CHIRPS_V3_FETCH_MODE, CHIRPS_V3_RESOLUTION, CHIRPS_V3_MONTHS]},
-    "soil": {"source": SOIL_SOURCE, "external_sha256": _sha256_file(EXTERNAL_SOIL_FILE),
+    "soil": {"source": SOIL_SOURCE, "external_sha256": (_sha256_file(EXTERNAL_SOIL_FILE) if CHECK_PROVENANCE else None),
              "soilgrids_mode": SOILGRIDS_MODE, "polaris_stat": POLARIS_STAT},
     "model": {"template": TEMPLATE_FILE_NAME, "template_sha256": _sha256_file(TEMPLATE_FILE_PATH),
               "crop": CROP_EXTENSION, "mode": RUN_MODE,
@@ -822,58 +864,60 @@ print(f"Parallelism: soil={SOIL_CORES}  weather={WEATHER_CORES}  dssat={DSSAT_CO
 # =============================================================================
 sys.path.insert(0, PY_SCRIPTS_DIR)
 
-# Try to resolve local dssatutils and dssatengine package paths if not already installed in the environment
-try:
-    import dssatutils
-except ImportError:
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dssatutils_path = os.path.join(parent_dir, "dssatutils", "python")
-    if os.path.isdir(dssatutils_path):
-        sys.path.insert(0, dssatutils_path)
+# Shared support is installed from the cropmodel monorepo.
+import cropmodel_data
+import cropmodel_runtime
 
 try:
-    import dssatengine
-except ImportError:
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dssatengine_path = os.path.join(parent_dir, "dssatengine", "python")
-    if os.path.isdir(dssatengine_path):
-        sys.path.insert(0, dssatengine_path)
-
-try:
-    from dssatutils import soil_file_issue
+    from cropmodel_data import soil_file_issue
 except ImportError as exc:
     raise ImportError(
-        "This driver requires the fixed-column soil preflight in the updated dssatutils package. "
+        "This driver requires the fixed-column soil preflight in the updated cropmodel_data package. "
         "Install the corrected local checkout before running; preserve existing caches."
     ) from exc
 
-from dssatutils.weather_daymet        import process_weather_daymet
-from dssatutils.weather_nasapower     import process_weather_nasapower
-from dssatutils.weather_gridmet       import process_weather_gridmet
-from dssatutils.weather_openmeteo     import process_weather_openmeteo
-from dssatutils.weather_nasapower_chirps import process_weather_nasapower_chirps
-from dssatutils.weather_chirps_v3     import process_weather_nasapower_chirps_v3
-from dssatutils.weather_agera5        import process_weather_agera5
-from dssatutils.weather_validation    import is_wth_valid
+
+def clean_invalid_soils(directory, ids):
+    """Discard only unusable derived profiles so resume can fetch them again.
+
+    Required fixed-column/hydraulic checks apply even when optional download
+    checking is disabled. No source rasters or valid profiles are removed.
+    """
+    for soil_id in ids:
+        path = os.path.join(directory, str(soil_id) + ".SOL")
+        if os.path.isfile(path):
+            issue = soil_file_issue(path)
+            if issue:
+                print(f"Removing invalid derived soil profile {soil_id}: {issue}")
+                os.remove(path)
+
+from cropmodel_data.weather_daymet        import process_weather_daymet
+from cropmodel_data.weather_nasapower     import process_weather_nasapower
+from cropmodel_data.weather_gridmet       import process_weather_gridmet
+from cropmodel_data.weather_openmeteo     import process_weather_openmeteo
+from cropmodel_data.weather_nasapower_chirps import process_weather_nasapower_chirps
+from cropmodel_data.weather_chirps_v3     import process_weather_nasapower_chirps_v3
+from cropmodel_data.weather_agera5        import process_weather_agera5
+from cropmodel_data.weather_validation    import is_wth_valid
 from inspect import signature as _weather_signature
 if not {"start_date", "end_date"}.issubset(_weather_signature(is_wth_valid).parameters):
     raise ImportError(
-        "This driver requires the weather-recovery update in dssatutils. "
+        "This driver requires the weather-recovery update in cropmodel_data. "
         "After active input jobs finish, install the corrected local checkout and restart Python."
     )
-from dssatutils.weather_dwd           import process_weather_dwd
-from dssatutils.weather_eobs          import process_weather_eobs
-from dssatutils.weather_xavier        import process_weather_xavier
-from dssatutils.weather_cmfd          import process_weather_cmfd
-from dssatutils.weather_chelsa_w5e5   import process_weather_chelsa_w5e5
-from dssatutils.weather_agmip         import process_weather_agmerra, process_weather_agcfsr
-from dssatutils.weather_silo          import process_weather_silo
-from dssatutils.weather_prism         import process_weather_prism
-from dssatutils.weather_mswx          import process_weather_mswx
-from dssatutils.weather_mswep         import process_weather_mswep
-from dssatutils.weather_crujra        import process_weather_crujra
-from dssatutils.weather_terraclimate  import process_weather_terraclimate
-from dssatutils.weather_repair        import (
+from cropmodel_data.weather_dwd           import process_weather_dwd
+from cropmodel_data.weather_eobs          import process_weather_eobs
+from cropmodel_data.weather_xavier        import process_weather_xavier
+from cropmodel_data.weather_cmfd          import process_weather_cmfd
+from cropmodel_data.weather_chelsa_w5e5   import process_weather_chelsa_w5e5
+from cropmodel_data.weather_agmip         import process_weather_agmerra, process_weather_agcfsr
+from cropmodel_data.weather_silo          import process_weather_silo
+from cropmodel_data.weather_prism         import process_weather_prism
+from cropmodel_data.weather_mswx          import process_weather_mswx
+from cropmodel_data.weather_mswep         import process_weather_mswep
+from cropmodel_data.weather_crujra        import process_weather_crujra
+from cropmodel_data.weather_terraclimate  import process_weather_terraclimate
+from cropmodel_data.weather_repair        import (
     audit_weather_quality,
     repair_weather_date_gaps,
     repair_weather_missing_values,
@@ -916,25 +960,55 @@ def weather_file_is_valid(path, start_yr=None):
     return cache[key]
 
 # Soil sources that write one .SOL per grid point named by the point ID (so
-# SOIL_ID == point ID and the per-point combine logic below applies). The other
-# sources (SoilGrids / HWSD) map points to shared profile IDs instead.
-_PER_POINT_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")
+# SOIL_ID == point ID and the per-point combine logic below applies).
+_PER_POINT_SOIL = (
+    "SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN",
+    "POLARIS", "SOILGRIDS_ONLINE", "SOILGRIDS_10K",
+)
 # Soil sources that need no pre-downloaded external file (queried online).
 _KEYLESS_ONLINE_SOIL = ("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS", "SSURGO_ALDERMAN")
-from dssatutils.soil_ssurgo           import process_soils_ssurgo
-from dssatutils.soil_ssurgo_alderman  import process_soils_ssurgo_alderman
-from dssatutils.soil_gnatsgo          import process_soils_gnatsgo
-from dssatutils.soil_isdasoil         import process_soils_isdasoil
-from dssatutils.soil_lucas            import process_soils_lucas
-from dssatutils.soil_agmip            import process_soils_agmip
-from dssatutils.soil_soilgrids        import process_soils_soilgrids
-from dssatutils.soil_soilgrids_online import process_soils_soilgrids_online
-from dssatutils.soil_polaris          import process_soils_polaris
-from dssatutils.soil_hwsd             import process_soils_hwsd
-from dssatutils.soil_hihydrosoil      import process_soils_hihydrosoil
-from dssatutils.soil_slga             import process_soils_slga
-from dssatutils.soil_wise30sec        import process_soils_wise30sec
-from dssatutils.soil_wosis            import process_soils_wosis
+from cropmodel_data.soil_ssurgo           import process_soils_ssurgo
+from cropmodel_data.soil_ssurgo_alderman  import process_soils_ssurgo_alderman
+from cropmodel_data.soil_gnatsgo          import process_soils_gnatsgo
+from cropmodel_data.soil_isdasoil         import process_soils_isdasoil
+from cropmodel_data.soil_lucas            import process_soils_lucas
+from cropmodel_data.soil_agmip            import process_soils_agmip
+from cropmodel_data.soil_soilgrids        import process_soils_soilgrids
+from cropmodel_data.soil_soilgrids_online import process_soils_soilgrids_online
+from cropmodel_data.soil_polaris          import process_soils_polaris
+from cropmodel_data.soil_hwsd             import process_soils_hwsd
+from cropmodel_data.soil_hihydrosoil      import process_soils_hihydrosoil
+from cropmodel_data.soil_slga             import process_soils_slga
+from cropmodel_data.soil_wise30sec        import process_soils_wise30sec
+from cropmodel_data.soil_wosis            import process_soils_wosis
+
+
+# Optional land-mask-constrained nearest-valid sampling. Model coordinates stay fixed.
+from cropmodel_data.spatial_fallback import spatial_fallback_provider, repair_fallback_weather
+from cropmodel_data.input_lock import acquire_input_lock, release_input_lock
+_fallback_repair_config = {k: cfg_get(k, None) for k in ("repair_weather_missing_values","repair_weather_date_gaps","repair_weather_temperature_inversions","weather_repair_max_gap_days","weather_repair_window_days","weather_repair_variables","weather_repair_inversion_method","weather_repair_max_inversion_c") if cfg_get(k, None) is not None}
+_fallback_options = dict(
+    record_provenance=bool(SAMPLING_STRATEGY),
+    cell_file=str(Path(POINT_SHAPEFILE_PATH).with_suffix('.cells.gpkg')) if SAMPLING_STRATEGY else None,
+    eligibility_mask=_resolve_optional_path(CROPLAND_RASTER_FILE) if SAMPLING_STRATEGY and SAMPLING_STRATEGY != 'grid_anchor' else None,
+    eligibility_values=CROPLAND_CLASSES,
+    repair=lambda directory, ids: repair_fallback_weather(directory, ids, _fallback_repair_config),
+    enabled=bool(cfg_get("input_fallback_enabled", False)),
+    mode=str(cfg_get("input_fallback_mode", "nearest_valid_land")),
+    search_step_m=float(cfg_get("input_fallback_search_step_m", 50)),
+    land_mask=resolve_config_path(str(cfg_get("input_fallback_land_mask", "")), CODE_ROOT_DIR),
+    land_values=list(cfg_get("input_fallback_land_values", [])),
+    resolution_fraction=float(cfg_get("input_fallback_resolution_fraction",0)),
+    resolution_m=float(cfg_get("input_fallback_resolution_m",GRID_SPACING_METERS)),
+    max_distance_m=float(cfg_get("input_fallback_max_distance_m", 500)),
+    max_candidates=int(cfg_get("input_fallback_max_candidates", 10000)),
+    cell_size_m=(float(cfg_get("input_fallback_resolution_m",GRID_SPACING_METERS)) or None) if bool(cfg_get("input_fallback_within_cell", True)) else None,
+    cell_crs=str(cfg_get("input_fallback_cell_crs", "EPSG:5070")),
+    log_file=os.path.join(RESULTS_ROOT_DIR, "sampling_fallback.log"),
+)
+for _provider_name, _provider in list(globals().items()):
+    if _provider_name.startswith(("process_weather_", "process_soils_")) and callable(_provider):
+        globals()[_provider_name] = spatial_fallback_provider(_provider, _fallback_options)
 
 print(f"Sourcing helper modules from: {PY_SCRIPTS_DIR}")
 
@@ -979,7 +1053,7 @@ print("All checks passed. Starting pipeline...")
 # SECTION 2 - HELPER FUNCTIONS
 # =============================================================================
 
-from dssatengine import (
+from cropmodel_runtime import (
     create_grid_points,
     create_master_grid_points,
     derive_nested_grid_points,
@@ -1019,7 +1093,9 @@ if __name__ == '__main__':
             and ((USE_CROPLAND_MASK and REUSE_CROPLAND_GRID)
                  or (USE_MASTER_GRID and REUSE_MASTER_GRID))
             and os.path.exists(POINT_SHAPEFILE_PATH)
-            and recorded_grid_provenance == grid_identity):
+            and recorded_grid_provenance == grid_identity
+            and (not SAMPLING_STRATEGY or all(Path(POINT_SHAPEFILE_PATH).with_suffix(ext).exists()
+                 for ext in (".cells.gpkg", ".sampling.json")))):
         print(f"Reusing existing derived grid: {POINT_SHAPEFILE_PATH}")
         gridfile = gpd.read_file(POINT_SHAPEFILE_PATH)
     elif USE_EXISTING_POINT_SHAPEFILE:
@@ -1075,6 +1151,14 @@ if __name__ == '__main__':
             print(f"Generating independent grid at {GRID_SPACING_METERS} m from: {BOUNDARY_SHAPEFILE_NAME}")
             gridfile = create_grid_points(boundary_sf, GRID_SPACING_METERS, raw_grid_path)
 
+    if USE_CROPLAND_MASK and "crop_pct" not in gridfile.columns and SAMPLING_STRATEGY:
+        from cropmodel_runtime.sampling import build_sampling_grid
+        gridfile, _ = build_sampling_grid(
+            gridfile, _resolve_optional_path(CROPLAND_RASTER_FILE), GRID_SPACING_METERS,
+            CROPLAND_CLASSES, strategy=SAMPLING_STRATEGY, strata=SAMPLING_STRATA,
+            min_fraction=CROPLAND_MIN_FRACTION, boundary=boundary_sf,
+            clip_to_boundary=CROPLAND_CLIP_TO_BOUNDARY, cell_crs=SAMPLING_CELL_CRS,
+            id_col=POINT_ID_COLUMN, output_path=POINT_SHAPEFILE_PATH,mask_year=cfg_get('sampling_mask_year',None))
     if USE_CROPLAND_MASK and "crop_pct" not in gridfile.columns:
         gridfile = apply_cropland_mask(
             gridfile,
@@ -1170,7 +1254,7 @@ if __name__ == '__main__':
                     if reasons is not None and len(reasons) > i and str(reasons[i]).strip()
                     else "unresolvable_or_out_of_bounds"
                 )
-                status = "permanent" if rsn.startswith(("no-soil:", "no-layers:", "no-coverage:", "no-tabular:")) else "retryable"
+                status = "permanent" if rsn.startswith(("no-soil:", "no-layers:", "no-coverage:", "no-tabular:", "outside_coverage")) else "retryable"
                 existing[pid] = {"reason": rsn, "status": status, "updated_at": tstr}
             with open(cache_path, "w", encoding="utf-8") as fh:
                 json.dump(existing, fh, indent=2)
@@ -1202,8 +1286,12 @@ if __name__ == '__main__':
     # =============================================================================
     print("=" * 60)
     print("STEP 1: PROCESSING SOIL DATA")
+    input_soil_lock = acquire_input_lock(os.path.join(SOIL_ROOT_DIR, SOIL_BASENAME + "_individual_SOL"))
     print("=" * 60)
 
+    # Completion exclusions exist even when providers are disabled and inputs are reused.
+    soil_unresolvable_file = os.path.join(SOIL_ROOT_DIR,f"{SOIL_BASENAME}_unresolvable.json")
+    unresolvable_soil_ids = load_soil_exclusions(soil_unresolvable_file)
     if RUN_STEP_1_SOILS:
         os.makedirs(SOIL_ROOT_DIR, exist_ok=True)
         soilfile_prefix    = os.path.join(SOIL_ROOT_DIR, SOIL_BASENAME)
@@ -1213,6 +1301,7 @@ if __name__ == '__main__':
         os.makedirs(individual_sol_dir, exist_ok=True)
         soil_unresolvable_file = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_unresolvable.json")
         unresolvable_soil_ids = load_soil_exclusions(soil_unresolvable_file)
+        clean_invalid_soils(individual_sol_dir, gridfile[POINT_ID_COLUMN].astype(str))
 
         # Harvest provider failure CSV if present
         soil_fail_csv = os.path.join(SOIL_ROOT_DIR, f"{SOIL_BASENAME}_download_failures.csv")
@@ -1230,11 +1319,13 @@ if __name__ == '__main__':
             except Exception:
                 pass
 
-        if SOIL_SOURCE in _PER_POINT_SOIL:
+        # File naming and provider dispatch are separate contracts.
+        if SOIL_SOURCE in ("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN"):
             # These sources all write one Saxton-&-Rawls .SOL per point named by
             # the point ID, so the combine step below is shared. gNATSGO fills
             # SSURGO's US gaps; iSDAsoil = Africa 30 m; LUCAS = EU topsoil.
             all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            clean_invalid_soils(individual_sol_dir, all_ids)
             existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
             accounted_sol = existing_sol | unresolvable_soil_ids
             missing_sol = all_ids - accounted_sol
@@ -1263,7 +1354,7 @@ if __name__ == '__main__':
                     process_soils_gnatsgo(**_soil_kwargs)
                 elif SOIL_SOURCE == "ISDASOIL":
                     process_soils_isdasoil(**_soil_kwargs)
-                else:  # LUCAS
+                elif SOIL_SOURCE == "LUCAS":
                     process_soils_lucas(**_soil_kwargs, lucas_csv=LUCAS_CSV)
 
                 # Re-harvest failure CSV after download attempt
@@ -1278,6 +1369,7 @@ if __name__ == '__main__':
                     except Exception:
                         pass
 
+                clean_invalid_soils(individual_sol_dir, all_ids)
                 existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
                 missing_after = all_ids - (existing_sol | unresolvable_soil_ids)
                 if missing_after:
@@ -1310,11 +1402,18 @@ if __name__ == '__main__':
             )
 
         elif SOIL_SOURCE == "SOILGRIDS_ONLINE":
+            if SOILGRIDS_CACHE_DIR:
+                from cropmodel_data import prepare_soilgrids_cache
+                prepare_soilgrids_cache(gridfile, SOILGRIDS_CACHE_DIR,
+                    download=SOILGRIDS_CACHE_DOWNLOAD, scope=SOILGRIDS_CACHE_SCOPE,
+                    bbox=SOILGRIDS_CACHE_BBOX, buffer_degrees=SOILGRIDS_CACHE_BUFFER_DEGREES)
+
             # Choose REST (one HTTP request per point, rate-limited) or VRT (GDAL
             # virtual rasters streamed from ISRIC; reads each global raster once and
             # samples all points, so it scales better and avoids rate limits, but
             # needs rasterio). Set via config key `soilgrids_mode`.
             all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            clean_invalid_soils(individual_sol_dir, all_ids)
             existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
             accounted_sol = existing_sol | unresolvable_soil_ids
             missing_sol = all_ids - accounted_sol
@@ -1326,43 +1425,34 @@ if __name__ == '__main__':
                     "Skipping SoilGrids processing."
                 )
             else:
-                import dssatutils.soil_soilgrids_online as _sg_mod
+                import cropmodel_data.soil_soilgrids_online as _sg_mod
                 _sg_mod.USE_REST_API = (SOILGRIDS_MODE != "VRT")
                 print(f"SoilGrids online mode: {'VRT' if SOILGRIDS_MODE == 'VRT' else 'REST API'}")
-                try:
+                last_error = None
+                new_existing = existing_sol
+                for soil_attempt in range(max(1, SOIL_DOWNLOAD_RETRIES)):
+                    if not missing_sol:
+                        break
                     points_to_fetch = gridfile.loc[gridfile[POINT_ID_COLUMN].astype(str).isin(missing_sol)].reset_index(drop=True)
-                    process_soils_soilgrids_online(
-                        gridfile=points_to_fetch if not points_to_fetch.empty else gridfile,
-                        soilfile_csv_path=soilfile_CSV,
-                        output_sol_dir=individual_sol_dir,
-                        id_col=POINT_ID_COLUMN,
-                    )
-                except Exception as exc:
-                    valid_ids = {
-                        os.path.splitext(f)[0]
-                        for f in os.listdir(individual_sol_dir)
-                        if f.upper().endswith(".SOL")
-                    }
-                    valid_ids &= {str(x) for x in gridfile[POINT_ID_COLUMN].tolist()}
-                    if not valid_ids:
-                        raise
-                    print(
-                        "WARNING: SoilGrids online extraction failed, but "
-                        f"{len(valid_ids)}/{len(gridfile)} existing valid profile(s) "
-                        f"are available; missing IDs will be skipped. Cause: {exc}"
-                    )
-                    if not os.path.exists(soilfile_CSV):
-                        pd.DataFrame({
-                            POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
-                            "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
-                        }).to_csv(soilfile_CSV, index=False)
-
-                # Record any remaining missing IDs
-                new_existing = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
-                missing_after = all_ids - (new_existing | unresolvable_soil_ids)
-                if missing_after:
-                    save_unresolvable_point_ids(soil_unresolvable_file, list(missing_after), "soilgrids_online_missing_layers")
-                    unresolvable_soil_ids |= missing_after
+                    try:
+                        process_soils_soilgrids_online(
+                            gridfile=points_to_fetch, soilfile_csv_path=soilfile_CSV,
+                            output_sol_dir=individual_sol_dir, id_col=POINT_ID_COLUMN)
+                    except Exception as exc:
+                        last_error = exc
+                        print(f"SoilGrids online attempt {soil_attempt + 1}/{max(1, SOIL_DOWNLOAD_RETRIES)} failed: {exc}")
+                    clean_invalid_soils(individual_sol_dir, list(missing_sol))
+                    new_existing = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
+                    remove_unresolvable_point_ids(soil_unresolvable_file, list(new_existing & all_ids))
+                    missing_sol = all_ids - (new_existing | unresolvable_soil_ids)
+                if missing_sol:
+                    save_unresolvable_point_ids(soil_unresolvable_file, sorted(missing_sol),
+                                               f"failed_after_{max(1, SOIL_DOWNLOAD_RETRIES)}_retries")
+                if not (new_existing & all_ids):
+                    raise RuntimeError("SOILGRIDS_ONLINE produced no valid .SOL files after bounded retries") from last_error
+                # Rebuild the complete point mapping after subset retries.
+                pd.DataFrame({POINT_ID_COLUMN: gridfile[POINT_ID_COLUMN].astype(str),
+                              "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str)}).to_csv(soilfile_CSV, index=False)
 
         elif SOIL_SOURCE == "POLARIS":
             # POLARIS = 30 m probabilistic disaggregation of SSURGO (CONUS).
@@ -1370,6 +1460,7 @@ if __name__ == '__main__':
             # by point ID + a CSV, streamed via GDAL /vsicurl. Water limits come
             # from POLARIS's van Genuchten curve (stat=p50 deterministic).
             all_ids = set(gridfile[POINT_ID_COLUMN].astype(str))
+            clean_invalid_soils(individual_sol_dir, all_ids)
             existing_sol = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
             accounted_sol = existing_sol | unresolvable_soil_ids
             missing_sol = all_ids - accounted_sol
@@ -1392,6 +1483,7 @@ if __name__ == '__main__':
                         cache_dir=POLARIS_CACHE_DIR,
                     )
                 except Exception as exc:
+                    clean_invalid_soils(individual_sol_dir, all_ids)
                     valid_ids = {
                         os.path.splitext(f)[0]
                         for f in os.listdir(individual_sol_dir)
@@ -1411,11 +1503,13 @@ if __name__ == '__main__':
                             "SOIL_ID": gridfile[POINT_ID_COLUMN].astype(str),
                         }).to_csv(soilfile_CSV, index=False)
 
+                clean_invalid_soils(individual_sol_dir, all_ids)
                 new_existing = {os.path.splitext(f)[0] for f in os.listdir(individual_sol_dir) if f.endswith(".SOL")}
                 missing_after = all_ids - (new_existing | unresolvable_soil_ids)
                 if missing_after:
-                    save_unresolvable_point_ids(soil_unresolvable_file, list(missing_after), "polaris_raster_read_failed")
-                    unresolvable_soil_ids |= missing_after
+                    # Missing POLARIS reads are retryable, never permanent coverage.
+                    remove_unresolvable_point_ids(soil_unresolvable_file, list(missing_after))
+                    print(f"POLARIS retryable missing profiles: {len(missing_after)}")
 
         elif SOIL_SOURCE == "HWSD":
             process_soils_hwsd(
@@ -1476,10 +1570,12 @@ if __name__ == '__main__':
     # STEP 2 - WEATHER DATA
     # =============================================================================
     print("=" * 60)
+    release_input_lock(input_soil_lock)
     print("STEP 2: DOWNLOADING WEATHER DATA")
     print("=" * 60)
 
     weather_dir = os.path.join(WEATHER_ROOT_DIR, WEATHER_DIR_NAME)
+    input_weather_lock = acquire_input_lock(weather_dir)
     def apply_weather_repairs(target_ids=None):
         if not os.path.isdir(weather_dir):
             return
@@ -1543,6 +1639,10 @@ if __name__ == '__main__':
         apply_weather_repairs(weather_ids.tolist())
 
 
+    # Completion exclusions exist even when weather download is disabled.
+    weather_unresolvable_file = os.path.join(weather_dir,"unresolvable_points.json")
+    weather_retryable_file = os.path.join(weather_dir,"retryable_weather_points.json")
+    unresolvable_weather_ids = load_weather_exclusions(weather_unresolvable_file)
     if RUN_STEP_2_WEATHER:
         os.makedirs(WEATHER_ROOT_DIR, exist_ok=True)
         os.makedirs(weather_dir, exist_ok=True)
@@ -1603,7 +1703,7 @@ if __name__ == '__main__':
             elif WEATHER_SOURCE == "OPEN_METEO":
                 process_weather_openmeteo(**common_args)
             elif WEATHER_SOURCE == "NASA_POWER_CHIRPS":
-                import dssatutils.weather_nasapower_chirps as _wc
+                import cropmodel_data.weather_nasapower_chirps as _wc
                 _wc.CHIRPS_RESOLUTION = CHIRPS_RESOLUTION
                 process_weather_nasapower_chirps(
                     **common_args, chirps_cache_dir=CHIRPS_CACHE_DIR)
@@ -1686,8 +1786,29 @@ if __name__ == '__main__':
                     )
                 else:
                     print(f"Processing {len(points_to_process)} weather points...")
-                process_weather_points(points_to_process)
+                try:
+                    process_weather_points(points_to_process)
+                except Exception as exc:
+                    from cropmodel_data.provider_retry import ProviderConnectivityError, provider_transient
+                    if not isinstance(exc, ProviderConnectivityError) and not provider_transient(exc):
+                        raise
+                    msg = (f"Weather provider {WEATHER_SOURCE} attempt {attempt + 1}/"
+                           f"{WEATHER_DOWNLOAD_RETRIES} interrupted: {exc}. "
+                           "Rechecking completed files before retry.")
+                    print(msg)
+                    with open(os.path.join(weather_dir, "download_errors.log"), "a", encoding="utf-8") as log:
+                        log.write(msg + "\n")
                 attempt += 1
+
+                from cropmodel_data.spatial_fallback import provider_outcomes
+                _outcomes = provider_outcomes(weather_dir)
+                _outside = [str(pid) for pid in points_to_process[POINT_ID_COLUMN]
+                            if _outcomes.get(str(pid), {}).get("status") == "outside_coverage"]
+                if _outside:
+                    save_unresolvable_point_ids(weather_unresolvable_file, _outside, "outside_coverage")
+                    remove_unresolvable_point_ids(weather_retryable_file, _outside)
+                    unresolvable_weather_ids.update(_outside)
+                    points_to_process = points_to_process.loc[~points_to_process[POINT_ID_COLUMN].astype(str).isin(_outside)].reset_index(drop=True)
 
                 # Apply repairs to newly downloaded/extracted points before validation
                 apply_weather_repairs(points_to_process[POINT_ID_COLUMN].astype(str).tolist())
@@ -1787,6 +1908,7 @@ if __name__ == '__main__':
                 f"does not exist: {weather_dir}"
             )
 
+    release_input_lock(input_weather_lock)
     if DOWNLOAD_ONLY:
         coverage = {}
         point_ids = list(gridfile[POINT_ID_COLUMN].astype(str))
@@ -1846,21 +1968,21 @@ if __name__ == '__main__':
                     if p.is_file() and p.suffix.upper() in _support_exts
                 )
     try:
-        import dssatengine
-        _engine_ver = getattr(dssatengine, "__version__", "unknown")
+        import cropmodel_runtime
+        _engine_ver = getattr(cropmodel_runtime, "__version__", "unknown")
     except Exception:
         _engine_ver = "unknown"
 
     RUN_PROVENANCE["implementation"] = {
         "engine_version": _engine_ver,
-        "engine_source_sha256": _sha256_file_collection(Path(dssatengine.__file__).parent.rglob("*.py")),
+        "engine_source_sha256": _sha256_file_collection(Path(cropmodel_runtime.__file__).parent.rglob("*.py")),
         "driver_sha256": _sha256_file(__file__),
         "output_metric_schema": 2,
     }
     RUN_PROVENANCE["resolved_inputs"] = {
-        "weather_wth_sha256": _sha256_file_collection(_weather_repo.glob("*.WTH")),
-        "soil_sol_sha256": _sha256_file_collection(_soil_folder.glob("*.SOL")),
-        "soil_mapping_sha256": _sha256_file(str(_soil_mapping)),
+        "weather_wth_sha256": (_sha256_file_collection(_weather_repo.glob("*.WTH")) if CHECK_PROVENANCE else None),
+        "soil_sol_sha256": (_sha256_file_collection(_soil_folder.glob("*.SOL")) if CHECK_PROVENANCE else None),
+        "soil_mapping_sha256": (_sha256_file(str(_soil_mapping)) if CHECK_PROVENANCE else None),
         "dssat_executable_sha256": _sha256_file(DSSAT_EXE_PATH),
         "dssatpro_sha256": _sha256_file(
             os.path.join(os.path.dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")
@@ -2106,6 +2228,15 @@ if __name__ == '__main__':
             for d in existing_dirs:
                 shutil.rmtree(os.path.join(DSSAT_RUN_DIR, d), ignore_errors=True)
 
+    from python_scripts.scenario_completion import restore_aggregate_points, publish_completion, validate_cached_point_results, point_input_signatures, start_completion, atomic_json
+    _expected_treatments = list(TREATMENT_LIST) if TREATMENT_LIST else list(range(TREATMENT_START, TREATMENT_END + 1))
+    _point_signatures = point_input_signatures(gridfile, POINT_ID_COLUMN, _soil_folder, _weather_repo) if CHECK_PROVENANCE else {}
+    if RESUME_DSSAT_RUNS:
+        restore_aggregate_points(FINAL_RESULTS_PATH, DSSAT_RUN_DIR, RUN_PROVENANCE,
+                                 _expected_treatments, points[POINT_ID_COLUMN].astype(str), _point_signatures)
+    validate_cached_point_results(DSSAT_RUN_DIR, points[POINT_ID_COLUMN].astype(str), _expected_treatments)
+    if RUN_DSSAT_EXECUTION:
+        start_completion(FINAL_RESULTS_PATH)
     print("Building DSSAT run folders...")
     for i in range(len(points)):
         _create_folders_and_files(i)
@@ -2301,12 +2432,15 @@ if __name__ == '__main__':
                 "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
                 "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha", "full_ha",
                 "orig_lat", "orig_lon", "anchor_mv", "anchor_km",
+                "cell_id", "samp_meth", "samp_ver", "stratum", "sample_n",
+                "weight_ha", "cell_crop", "known_frac",
             ] if c in gridfile.columns]
             if point_cols and POINT_ID_COLUMN in gridfile.columns:
                 point_attrs = gridfile[[POINT_ID_COLUMN] + point_cols].copy()
                 point_attrs = point_attrs.rename(columns={POINT_ID_COLUMN: "point_id"})
                 point_attrs["point_id"] = point_attrs["point_id"].astype(str)
                 final_data["point_id"] = final_data["point_id"].astype(str)
+                final_data = final_data.drop(columns=[c for c in point_cols if c in final_data], errors="ignore")
                 final_data = final_data.merge(point_attrs, on="point_id", how="left")
                 if "cell_ha" in final_data.columns:
                     final_data["gridcell_area_ha"] = final_data["cell_ha"]
@@ -2320,11 +2454,25 @@ if __name__ == '__main__':
                     final_data["top_weight_production_kg"] = (
                         final_data["top_weight_kg_ha"] * final_data["cropland_ha"]
                     )
-            final_data.to_csv(FINAL_RESULTS_PATH, index=False, na_rep="")
-            Path(FINAL_RESULTS_PATH + ".manifest.json").write_text(
-                json.dumps(RUN_PROVENANCE, indent=2, sort_keys=True, default=str) + "\n",
-                encoding="utf-8",
-            )
+            if "samp_meth" in final_data:
+                final_data["sampling_method"] = final_data["samp_meth"]
+                final_data["sampling_version"] = final_data["samp_ver"]
+                from cropmodel_data.sampling_records import sampling_provenance
+                for layer, directory in [('soil',Path(SOIL_ROOT_DIR)/(SOIL_BASENAME+'_individual_SOL')),
+                                         ('weather',Path(WEATHER_ROOT_DIR)/WEATHER_DIR_NAME)]:
+                    records = sampling_provenance(directory,final_data.point_id.unique(),layer)
+                    final_data = final_data.drop(columns=[c for c in records if c != 'point_id' and c in final_data])
+                    final_data = final_data.merge(records,on='point_id',how='left',validate='many_to_one')
+            _result_stage = FINAL_RESULTS_PATH + f".{os.getpid()}.tmp"
+            final_data.to_csv(_result_stage, index=False, na_rep="")
+            os.replace(_result_stage, FINAL_RESULTS_PATH)
+            publish_completion(FINAL_RESULTS_PATH, final_data, gridfile[POINT_ID_COLUMN].astype(str), _expected_treatments,
+                               unresolvable_soil_ids | unresolvable_weather_ids, RUN_PROVENANCE, _point_signatures)
+            atomic_json(RUN_PROVENANCE, FINAL_RESULTS_PATH + ".manifest.json")
+            receipt = os.environ.get('DSSAT_RESULT_RECEIPT', '')
+            if receipt:
+                atomic_json({'schema': 1, 'result_path': str(Path(FINAL_RESULTS_PATH).resolve()),
+                             'status_path': str(Path(FINAL_RESULTS_PATH + '.status.json').resolve())}, receipt)
             print(f"Results combined -> {FINAL_RESULTS_PATH}")
         else:
             diagnostic_location = (
@@ -2391,6 +2539,13 @@ if __name__ == '__main__':
             fh.write(f"Soil Map CSV:    {soil_mapping_file}\n")
         print(f"Metadata written -> {metadata_path}")
 
+        _attributes = gridfile.drop(columns=gridfile.geometry.name).copy()
+        _attributes[POINT_ID_COLUMN] = _attributes[POINT_ID_COLUMN].astype(str)
+        _metadata = json.loads(_attributes.set_index(POINT_ID_COLUMN).to_json(orient='index'))
+        atomic_json({'schema': 1, 'treatments': _expected_treatments,
+                     'run_mode': RUN_MODE, 'sequence_start': SEQUENCE_START, 'sequence_end': SEQUENCE_END,
+                     'provenance': RUN_PROVENANCE, 'point_metadata': _metadata},
+                    os.path.join(DSSAT_RUN_DIR, 'hpc_manifest.json'))
         if ZIP_FOR_HPC:
             print(f"Zipping run directory: {DSSAT_RUN_NAME}")
             zip_path = DSSAT_RUN_DIR + ".zip"
@@ -2413,7 +2568,8 @@ if __name__ == '__main__':
     # =============================================================================
     # STEP 4 - VISUALIZE RESULTS
     # =============================================================================
-    if RUN_DSSAT_EXECUTION and os.path.exists(FINAL_RESULTS_PATH):
+    # Single-point validation runs do not need a spatial yield map.
+    if RUN_DSSAT_EXECUTION and len(gridfile) > 1 and os.path.exists(FINAL_RESULTS_PATH):
         print("=" * 60)
         print("STEP 4: VISUALIZING RESULTS")
         print("=" * 60)

@@ -1,6 +1,21 @@
 # Weather and Soil Data Sources Reference
 
-This document outlines all weather and soil data sources available in `dssatutils`, their coverage, requirements, and limitations.
+Provider implementations are installed from `cropmodel/packages/cropmodel_data`
+(Python `cropmodel_data`, R `cropmodeldata`). Existing provider caches stay in
+the configured input roots; migration does not move or regenerate them.
+
+This document outlines all weather and soil data sources available in `cropmodel_data`, their coverage, requirements, and limitations.
+
+## Package APIs versus tutorial configuration
+
+This catalog describes the shared package, not a promise that every API is a
+`weather_source` or `soil_source` value in the tutorial. The tutorial currently
+routes weather sources DAYMET, NASA_POWER, GRIDMET, OPEN_METEO, NASA_POWER_CHIRPS,
+NASA_POWER_CHIRPS_V3, AGERA5, DWD, EOBS, XAVIER, CMFD, CHELSA_W5E5, AGMERRA,
+AGCFSR, SILO, PRISM, MSWX, MSWEP, CRUJRA and TERRACLIMATE. `gridpoints_weather`
+uses existing files. ERA5-Land and the additional package sources listed below
+must be called through their package APIs until both tutorial dispatchers support
+them. See config.yml for source-specific options and required local datasets.
 
 ## Weather Data Sources
 
@@ -71,12 +86,12 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Spatial Resolution**: 0.1° (~11 km)
 - **Temporal Resolution**: Daily (1979–present, 10-day lag)
 - **API Key Required**: Yes (Copernicus Data Store CDS account)
-- **Optional Dependencies**: Python `cdsapi` via `dssatutils[cds]`; R `ecmwfr`
+- **Optional Dependencies**: Python `cdsapi` via `cropmodel_data[cds]`; R `ecmwfr`
 - **Status**: ⚠️ Requires CDS API credentials
 - **Implementation**: CDS API requests
 - **Notes**:
   - Requires free CDS account setup: https://cds.climate.copernicus.eu/
-  - Run `dssatutils::setup_cds_credentials()` in R or `dssatutils.setup_cds_credentials()` in Python, or create `~/.cdsapirc`
+  - Run `cropmodeldata::setup_cds_credentials()` in R or `cropmodel_data.setup_cds_credentials()` in Python, or create `~/.cdsapirc`
   - Accept the AgERA5 dataset licence once in the CDS web UI
   - High-quality fusion of ERA5 + station data
   - Daily agrometeorological indicators downloaded once per variable-year and cached
@@ -118,7 +133,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Status**: ✅ Implemented; REST is slow/rate-limited, VRT is preferred for batch runs
 - **Implementation**: ISRIC SoilGrids REST API or GDAL VRT raster sampling
 - **Notes**:
-  - Select via `soilgrids_mode` in the tutorial `config.yml`; direct package calls use merged `dssatutils` `config.yml` (`soil.soilgrids_online.use_rest_api`)
+  - Select via `soilgrids_mode` in the tutorial `config.yml`; direct package calls use merged `cropmodel_data` `config.yml` (`soil.soilgrids_online.use_rest_api`)
   - REST mode makes one HTTP request per point
   - VRT mode streams global SoilGrids rasters and samples all points locally
   - Coverage gaps over water, deserts, some urban areas
@@ -146,7 +161,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Data Type**: Detailed soil properties (USDA Soil Taxonomy)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra` (R); `geopandas`, `shapely` (Python)
-- **Status**: ✅ Implemented through the shared `dssatutils` adapter
+- **Status**: ✅ Implemented through the shared `cropmodel_data` adapter
 - **Implementation**: USDA SDA spatial/tabular queries, cached layer mapping CSVs
   and derived per-point DSSAT `.SOL` files. gNATSGO uses a WCS map-unit lookup
   followed by SDA tabular queries; Alderman uses the full-profile conversion.
@@ -155,7 +170,7 @@ This document outlines all weather and soil data sources available in `dssatutil
   - Can have coverage gaps in mountainous/remote areas
   - Historical SSURGO/gNATSGO and Alderman layer-width errors require rebuilding
     derived `.SOL` files, not deleting the raw data. See
-    [offline recovery](../dssatutils/README.md#input-cache-integrity-fixes-2026-08-31).
+    [offline recovery](../cropmodel_data/README.md#input-cache-integrity-fixes-2026-08-31).
   - R GRIDMET's historical invalid-cell row shift likewise requires re-extracting
     affected `.WTH` files from the existing native NetCDF cache. Valid-looking
     weather dates/values alone cannot detect weather assigned to the wrong ID.
@@ -166,7 +181,7 @@ This document outlines all weather and soil data sources available in `dssatutil
 - **Data Type**: Coarser soil properties (FAO Harmonized World Soil Database)
 - **API Key Required**: No
 - **Optional Dependencies**: `sf`, `terra`/`raster` (R); `geopandas`, `rasterio` (Python)
-- **Status**: ✅ Implemented in `dssatutils` for local HWSD raster + database inputs
+- **Status**: ✅ Implemented in `cropmodel_data` for local HWSD raster + database inputs
 - **Implementation**: Local SQLite database
 - **Notes**:
   - Coarser than SoilGrids (1 km) and SSURGO (30 m) but global coverage
@@ -207,7 +222,7 @@ The following sources were reviewed online in June 2026 and have now been implem
 | 9 | **TerraClimate** | Weather/climatology, global monthly | `TERRACLIMATE` / local NetCDF reader; each month is disaggregated to continuous daily records (constant T/SRAD/wind, monthly precip spread evenly) so the `.WTH` is runnable. | Carries **no day-to-day variability** (rain intensity, dry spells, heat-stress days) — screening/climatology only, not production. |
 | 10 | **WoSIS** | Soil point profiles | `WOSIS` / processed layer CSV nearest-profile ingestion. | Raw WoSIS exports must be harmonized before use; best for calibration/validation. |
 
-### Regional-coverage fill (dssatutils v0.4.0)
+### Regional coverage retained in cropmodel_data / cropmodeldata
 
 Targeted at regions previously served only by coarse global reanalysis. Two are
 **live downloads** (no local data); the rest read local NetCDF / rasters.
@@ -306,14 +321,14 @@ install.packages("httr")  # For HTTP GET requests
 # 1. Create free CDS account at https://cds.climate.copernicus.eu/
 # 2. Copy your Personal Access Token from your CDS profile.
 # 3. Configure credentials for R and Python clients:
-library(dssatutils)
+library(cropmodeldata)
 setup_cds_credentials()
 ```
 
 For Python-only environments, install the CDS extra and run:
 
 ```python
-from dssatutils import setup_cds_credentials
+from cropmodel_data import setup_cds_credentials
 setup_cds_credentials()
 ```
 
@@ -323,14 +338,14 @@ Accept the AgERA5 dataset licence in the CDS web UI before the first run.
 ```bash
 # Download SoilGrids GeoTIFF files (~30 GB)
 # Create .vrt file for efficient access
-# Configure dssatutils to use local path
+# Configure cropmodel_data to use local path
 ```
 
 ### **SSURGO (US Only)**
 ```bash
 # 1. Visit https://websoilsurvey.nrcs.usda.gov/
 # 2. Download SSURGO database for your region
-# 3. Configure dssatutils SSURGO path
+# 3. Configure cropmodel_data SSURGO path
 ```
 
 ---
@@ -386,7 +401,7 @@ require the explicitly configured shared repair policy.
 
 Generic daily NetCDF sources now require explicit physical units and geographic coordinates.
 Supply wind `height_m` metadata; ambiguous units, projected coordinates, subdaily or duplicate dates,
-and outside-domain points must be resolved before acquisition. See dssatutils README for the contract.
+and outside-domain points must be resolved before acquisition. See cropmodel_data README for the contract.
 
 ### Wind serialization for the active Carinata comparison adapters
 
@@ -410,3 +425,146 @@ AgERA5 writes two temperature decimals for pairs within 0.05°C of zero so
 rounding does not unnecessarily create a DSSAT-rejected zero pair. True source
 zeros remain zero. Existing affected caches need repair from the raw provider
 values, not an arbitrary temperature offset.
+
+
+Download recovery: transient provider requests use five bounded attempts with
+5/10/20/40-second default waits (configurable helper cap: 60 seconds). The R and
+Python weather drivers catch exhausted connectivity errors, recheck completed
+files, and retry only missing or invalid points within the configured batch
+budget. Non-transient configuration errors remain fatal. Exhausted weather
+points stay retryable; download-only runs report partial coverage with exit 2.
+SoilGrids batch retries preserve existing profiles and do not treat historical
+SKIPPED log entries as permanent geographic exclusions. Required raster layers
+must succeed before any new profiles are published. The Bioenergy scheduler
+continues independent source/resolution tasks after a child failure and reports
+all failures in its final summary.
+
+AgERA5 time-series caches allow fully masked cells alongside complete cells in a coastal tile. Partial missing data and incomplete calendars still fail validation; each site keeps its nearest cell and requires complete forcing.
+# Soil cache recovery
+
+Existing derived SOL profiles must pass the shared fixed-column and hydraulic
+validator before reuse. Missing optional SoilGrids silt/coarse fragments are
+serialized as DSSAT `-99`; missing required physical properties remain failures.
+POLARIS uses consistent integer tile ownership and a 1e-9-degree numerical
+tolerance for raster-edge roundoff, without relocating interior sampling points.
+
+
+
+## Optional bounded land sampling
+
+When disabled, extraction uses the configured point. Both R and Python can
+optionally retry a missing soil or weather input at land-mask pixel centres,
+ordered by geodesic distance. Every accepted candidate must produce one complete,
+validated soil profile or the entire requested weather period at the same location.
+The model point and ID remain unchanged. Values from different locations are never
+mixed. Transport, authentication and corrupt-raster errors remain retryable errors;
+they do not justify a geographic substitution.
+
+```yaml
+input_fallback_enabled: false
+input_fallback_land_mask: ""
+input_fallback_land_values: []
+input_fallback_max_distance_m: 500
+input_fallback_max_candidates: 10000
+input_fallback_within_cell: true
+input_fallback_cell_crs: "EPSG:5070"
+```
+
+To enable land mode, provide a readable categorical raster and its explicit valid land
+classes. For example, NLCD class 82 means cultivated crops; codes from another
+land-cover product must be chosen from that product's legend. The search is
+bounded by distance, candidate count and, by default, the original square study
+cell. A count limit can stop the search before the full radius is exhausted.
+Candidates are centres of the supplied mask, rather than necessarily centres of
+the source raster. Station and prebuilt-profile sources retain their native
+matching rules. This feature therefore finds the nearest *tested mask location*
+that returns a valid input; it does not establish equivalent soil or climate.
+
+The policy creates distinct input-cache directories. Shifts and failures are
+written to run logs; no soil/weather provenance sidecars are added. Changing the
+contents of a mask at the same path requires clearing the affected input cache.
+NoData alone does not establish that the original point is water or a quarry.
+A cropland centroid can also fall outside cultivated land.
+
+SOILGRIDS_ONLINE samples the native product. SOILGRIDS_10K selects prebuilt source
+profiles; it does not calculate an area-weighted mean over the current study grid
+cell. Optional relocation preserves these source-specific extraction rules.
+
+
+## Sampling mode selection (11 October 2026)
+
+`input_fallback_enabled: false` disables geographic fallback. When enabled,
+`input_fallback_mode` selects one of:
+
+- `nearest_valid`: no land mask required. Test locations on a local metric lattice
+  (`input_fallback_search_step_m: 50`) in increasing distance order, bounded by
+  radius, candidate cap and study cell. This finds the nearest valid *tested
+  location*, not necessarily the exact nearest source pixel. It does not establish
+  that the replacement is land or cropland.
+- `nearest_valid_land`: require `input_fallback_land_mask` and explicit
+  `input_fallback_land_values`; test eligible mask pixel centres as previously.
+
+Both modes require complete validated inputs at one replacement location and
+retain the same network/error safeguards. The Bioenergy study configuration now
+activates `nearest_valid` with a 500 m radius and 50 m step. Change the mode to
+`nearest_valid_land` and supply mask/classes to enable filtering; set enabled to
+false to disable. Policy keys separate caches for the modes and search spacing.
+Existing files remain untouched; running processes need a relaunch to adopt it.
+
+
+Converted soil/weather inputs no longer require conversion-provenance sidecars.
+Existing markers are ignored and retained; file-content validation still applies.
+The shared R fallback wrapper binds each provider when registered, so regional
+and point-validation loops retain the correct provider signature.
+
+
+Fallback recovery treats explicit per-point NoData/outside-coverage outcomes
+independently of connection failures reported for other points in the same batch.
+Unknown failures remain retryable. The exact SoilGrids all-null response permits
+spatial fallback; it does not establish permanent geographic exclusion.
+
+
+### Input recovery and independent relocation switches
+
+Regional input preparation and sweeps use the top-level `input_fallback_enabled`
+setting. Set it to `false` to download at the configured original grid points
+without searching nearby coordinates. Point validation independently uses
+`validation_pipeline.input_fallback_enabled`; set that to `false` for direct
+site/selected-point downloads or `true` for the configured nearest-valid mode.
+An explicit `INPUT_FALLBACK_ENABLED` environment override takes precedence.
+Disabling relocation does not request entire provider raster archives: the
+configured sources, points, years and provider cache mechanisms still apply.
+Relocated and direct-point inputs use separate cache identities.
+
+Configured weather repairs are applied before deciding to search for another
+coordinate. DAYMET multi-year HTTP 5xx failures are retried as individual years
+at the same coordinate. POLARIS no-data and Alderman query failures retain
+distinct missing-data versus retryable outcomes. The Alderman field-capacity
+fallback is unchanged. R and Python use a shared operating-system file lock
+per input directory while preparing inputs; it is released when the process
+exits. All concurrent processes must use the updated package and drivers.
+
+
+## Shared SoilGrids raster cache
+
+The R/Python soil stages accept `soilgrids_cache_dir`, `soilgrids_cache_download`,
+`soilgrids_cache_scope` (region/world), `soilgrids_cache_bbox`, and
+`soilgrids_cache_buffer_degrees`. Blank directory keeps remote access; a relative
+directory resolves under `provider_cache_root` (default `input_root_dir`). The
+Bioenergy downloader enables `soilgrids_raster_cache` here, beside the weather
+caches. Region acquisition uses the full prepared grid's WGS84 bounds with a
+configurable margin; world acquisition is explicitly opt-in. Both use the shared
+`cropmodel_data` tile downloader; R acquisition uses its Python bridge, while
+R/Python extraction stays native. Failed acquisition is an explicit resumable
+soil-task error. Local tile reads never silently fall back to the network.
+The updated shared packages must be installed; historical remote pins do not yet
+include this unreleased feature. Existing caches and generated profiles are preserved.
+
+
+Resolution-relative fallback: `input_fallback_resolution_fraction: 0.10` sets the maximum distance to 10% of the grid width (300 km → 30 km; 200 → 20; 100 → 10; 50 → 5; 25 → 2.5; 10 → 1; 5 → 0.5 km). Zero retains `input_fallback_max_distance_m`. `input_fallback_enabled` independently enables relocation. Exact-site validation uses the fixed metre limit; regional validation supplies its actual resolution through `input_fallback_resolution_m` and preserves the original grid-cell centre. Keep `input_fallback_within_cell: true` to constrain candidates to that cell.
+
+Relative nearest-valid searches retain the configured fine spacing in the first 20 steps and double the spacing in successive outward bands, keeping large searches bounded. Candidates are globally ordered by distance and limited by `input_fallback_max_candidates`; the first valid tested coordinate wins. This does not guarantee the nearest valid native source pixel. Network/server failures remain retryable and do not trigger relocation. The radius policy and resolution are part of the fallback cache key.
+
+## Sampling provenance
+
+Explicit sampling uses the declared crop mask, independent of the compared soil product. Provider recovery records per-layer requested and recovered coordinates and input hashes. Legacy caches without records are unknown. Cell/stratum supports and crop eligibility constrain recovery. A request coordinate is not a guarantee of native raster-pixel location. See the sibling study SAMPLING_EXPERIMENT.md.

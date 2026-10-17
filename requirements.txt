@@ -1,13 +1,5 @@
-# Deprecated: Python dependencies are managed by environment.yml + conda-lock.
-#
-# Do not install this project with:
-#   pip install -r requirements.txt
-#
-# Use:
-#   conda install -c conda-forge conda-lock
-#   conda-lock -f environment.yml -p win-64 -p linux-64 -p osx-arm64
-#   conda-lock install -n dssat_grid conda_lock.yml
-#
-# For HPC systems where mpi4py must be built against the cluster MPI, create the
-# conda-lock environment first, then install mpi4py after loading the MPI module:
-#   pip install --no-cache-dir --no-binary :all: mpi4py==3.1.6
+# Python shared support from the cropmodel monorepo.
+# Conda supplies GIS/scientific dependencies; see environment.yml.
+cropmodel-data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data
+cropmodel-runtime @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_runtime
+pytest>=8

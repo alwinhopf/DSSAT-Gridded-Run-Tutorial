@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
-# End-to-end smoke test (R) — minimal spatial demo using dssatutils
+# End-to-end smoke test (R) — minimal spatial demo using cropmodeldata
 # - Creates 3 sample points
-# - Runs weather (Open-Meteo) + soil (SoilGrids) download via dssatutils
+# - Runs weather (Open-Meteo) + soil (SoilGrids) download via cropmodeldata
 # - Validates that .WTH/.SOL files are written and well-formed
 
 if (Sys.getenv("DSSAT_RUN_LIVE_E2E", "") != "1") {
@@ -10,8 +10,8 @@ if (Sys.getenv("DSSAT_RUN_LIVE_E2E", "") != "1") {
 
 suppressPackageStartupMessages({
   opts <- options(stringsAsFactors = FALSE)
-  library(parallel)    # Required by dssatutils weather/soil functions for parallelization
-  library(doParallel)  # Required for registerDoParallel in dssatutils
+  library(parallel)    # Required by cropmodeldata weather/soil functions for parallelization
+  library(doParallel)  # Required for registerDoParallel in cropmodeldata
 })
 
 check <- function(cond, msg) {
@@ -24,12 +24,9 @@ check <- function(cond, msg) {
   }
 }
 
-utils_repo <- normalizePath(file.path(getwd(), "..", "dssatutils"), mustWork = FALSE)
-if (dir.exists(utils_repo) && requireNamespace("pkgload", quietly = TRUE)) {
-  pkgload::load_all(utils_repo, quiet = TRUE)
-}
-if (!requireNamespace("dssatutils", quietly = TRUE)) {
-  message("dssatutils not installed; skipping E2E test. Install dssatutils and rerun.")
+source("tests/helpers/packages.R")
+if (!requireNamespace("cropmodeldata", quietly = TRUE)) {
+  message("cropmodeldata not installed; skipping E2E test. Install cropmodeldata and rerun.")
   quit(status = 0)
 }
 
@@ -37,7 +34,7 @@ if (!requireNamespace("dssatutils", quietly = TRUE)) {
 have_sf <- requireNamespace("sf", quietly = TRUE)
 have_dplyr <- requireNamespace("dplyr", quietly = TRUE)
 have_httr <- requireNamespace("httr", quietly = TRUE)
-if (have_sf) message("sf available; will pass sf object to dssatutils if required.")
+if (have_sf) message("sf available; will pass sf object to cropmodeldata if required.")
 if (have_dplyr) message("dplyr available; will attach for SoilGrids processing.")
 if (have_httr) message("httr available; will attach for SoilGrids REST API requests.")
 
@@ -73,9 +70,9 @@ if (have_httr) {
 
 # Run Open-Meteo (may hit network). The function name and signature mirror the
 # pipeline conventions; if it errors due to missing optional deps, we fail early.
-message("Running dssatutils::process_weather_openmeteo() ...")
+message("Running cropmodeldata::process_weather_openmeteo() ...")
 tryCatch({
-  dssatutils::process_weather_openmeteo(
+  cropmodeldata::process_weather_openmeteo(
     shapefile = shapefile_arg,
     start_year = 2010,
     end_year = 2011,
@@ -107,11 +104,11 @@ for (pid in POINTS$ID) {
 
 # Attempt SoilGrids .SOL generation (optional, REST API is slow)
 # Skip if it takes too long; weather validation is more critical for smoke tests
-if (requireNamespace("dssatutils", quietly = TRUE)) {
-  if (exists("process_soils_soilgrids_online", where = asNamespace("dssatutils"), inherits = FALSE)) {
-    message("Running dssatutils::process_soils_soilgrids_online() ... (REST API may be slow)")
+if (requireNamespace("cropmodeldata", quietly = TRUE)) {
+  if (exists("process_soils_soilgrids_online", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
+    message("Running cropmodeldata::process_soils_soilgrids_online() ... (REST API may be slow)")
     tryCatch({
-      dssatutils::process_soils_soilgrids_online(
+      cropmodeldata::process_soils_soilgrids_online(
         gridfile = soil_shapefile_arg,
         soilfile_csv_path = file.path(sol_dir, "soil_map.csv"),
         output_sol_dir = sol_dir,
@@ -133,7 +130,7 @@ if (requireNamespace("dssatutils", quietly = TRUE)) {
       message("No .SOL files produced; SoilGrids REST API skipped or has coverage gaps.")
     }
   } else {
-    message("dssatutils does not expose process_soils_soilgrids_online; skipping soils step.")
+    message("cropmodeldata does not expose process_soils_soilgrids_online; skipping soils step.")
   }
 }
 

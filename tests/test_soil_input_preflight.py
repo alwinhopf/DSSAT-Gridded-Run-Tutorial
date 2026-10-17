@@ -12,18 +12,16 @@ import pytest
 from tests.helpers.discovery import find_rscript
 
 ROOT = Path(__file__).resolve().parents[1]
-UTILS = ROOT.parent / "dssatutils"
-if not UTILS.is_dir():
-    UTILS = ROOT / ".ci-deps" / "dssatutils"
+from tests.helpers.packages import package_source
+UTILS = package_source('cropmodel_data')
 
 
 @pytest.mark.parametrize("language", ["python", "r"])
 def test_driver_rejects_shifted_soil_cache(tmp_path, language):
     fixture_file = UTILS / "tests/fixtures/soil_mapping_rebuild.csv"
-    if not (UTILS / "python" / "dssatutils" / "soil_validation.py").is_file() or not fixture_file.is_file():
-        pytest.skip("updated shared dssatutils source checkout needed")
-    sys.path.insert(0, str(UTILS / "python"))
-    from dssatutils import rebuild_soil_files_from_mapping, soil_file_issue
+    if not (UTILS / "python" / "cropmodel_data" / "soil_validation.py").is_file() or not fixture_file.is_file():
+        pytest.skip("updated shared cropmodel_data source checkout needed")
+    from cropmodel_data import rebuild_soil_files_from_mapping, soil_file_issue
     records = rebuild_soil_files_from_mapping(
         fixture_file, tmp_path / "soil", "SSURGO")
     point = tmp_path / "00000001"
@@ -59,7 +57,7 @@ cat(if (is.null(result)) "OK" else result)
                 tf.write(code)
                 tf_path = tf.name
             try:
-                proc = subprocess.run([rscript, "--vanilla", tf_path, str(UTILS),
+                proc = subprocess.run([rscript, "--vanilla", tf_path, str(UTILS / "R/cropmodeldata"),
                                        str(ROOT / "dssat_main_pipeline.R")], cwd=tmp_path,
                                       capture_output=True, text=True, timeout=60)
                 assert proc.returncode == 0, proc.stderr

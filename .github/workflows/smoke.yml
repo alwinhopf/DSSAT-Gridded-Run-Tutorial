@@ -2,10 +2,12 @@ name: smoke
 
 # Multi-lane CI architecture: isolated fast unit tests, behavioral parity contracts, and platform compatibility.
 env:
+  CROPMODEL_READ_TOKEN: ${{ secrets.CROPMODEL_READ_TOKEN }}
+  RENV_CONFIG_AUTOLOADER_ENABLED: "false"
+  PYTHONUTF8: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Sibling repository pinned revisions
-  DSSATUTILS_REF: 'f728cd810923465360e4730d8893bb566dc0773c'
-  DSSATENGINE_REF: '14871db233af97a378fd42fb0c9749b5ff9b9453'
+  CROPMODEL_REF: '4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9'
 
 on:
   push:
@@ -34,7 +36,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pandas pyyaml pytest
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${{ env.DSSATUTILS_REF }}"
+          python scripts/install_ci_dependencies.py
 
       - name: Install minimal R dependencies
         run: >-
@@ -68,15 +70,10 @@ jobs:
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          repository: alwinhopf/dssatutils
-          ref: ${{ env.DSSATUTILS_REF }}
-          path: .ci-deps/dssatutils
-
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: alwinhopf/dssatengine
-          ref: ${{ env.DSSATENGINE_REF }}
-          path: .ci-deps/dssatengine
+          repository: alwinhopf/cropmodel
+          token: ${{ secrets.CROPMODEL_READ_TOKEN }}
+          ref: ${{ env.CROPMODEL_REF }}
+          path: .ci-deps/cropmodel
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -90,10 +87,15 @@ jobs:
       - name: Install shared R package dependencies
         uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
-          working-directory: .ci-deps/dssatutils
+          working-directory: .ci-deps/cropmodel/packages/cropmodel_data/R/cropmodeldata
           dependencies: '"hard"'
-          extra-packages: any::pkgload, any::yaml, any::jsonlite, any::sf, any::terra
+          extra-packages: any::pkgload, any::yaml, any::jsonlite, any::sf, any::terra, any::DSSAT, any::foreach, any::doParallel, any::pbapply, any::tidyr, any::stringr, any::lubridate, any::readr, any::dplyr
           install-pandoc: false
+
+      - name: Install exact pinned native R packages
+        run: |
+          R CMD INSTALL .ci-deps/cropmodel/packages/cropmodel_data/R/cropmodeldata
+          R CMD INSTALL .ci-deps/cropmodel/packages/cropmodel_runtime/R/cropmodelruntime
 
       - name: Install R parity dependencies
         run: >-
@@ -106,17 +108,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pandas pyyaml pytest geopandas shapely rasterio matplotlib
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${{ env.DSSATUTILS_REF }}"
-          pip install "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@${{ env.DSSATENGINE_REF }}"
+          python scripts/install_ci_dependencies.py
 
       - name: Run cross-language parity & behavioral contract tests
         run: >-
-          pytest tests/test_cross_language_parity.py
-          tests/test_cropland_mask_geometry.py
-          tests/test_plotting_reused_grid.py
-          tests/test_weather_recovery.py
-          tests/test_soil_input_preflight.py
-          tests/test_hpc_missing_metrics.py
+          python -m pytest tests -m "not integration and not slow"
           -v --tb=short --junit-xml=parity-test-results.xml
 
       - name: Upload parity test results and logs
@@ -153,7 +149,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pandas pyyaml pytest
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${{ env.DSSATUTILS_REF }}"
+          python scripts/install_ci_dependencies.py
 
       - name: Install minimal R dependencies
         run: >-
@@ -165,6 +161,7 @@ jobs:
       - name: Run fast offline unit tests
         run: >-
           pytest tests/test_smoke.py tests/test_agera5_config.py tests/test_failed_run_archive.py tests/test_provider_cache_and_fields.py
+          tests/test_hpc_run_integrity.py tests/test_experiment_contract.py tests/test_scenario_completion.py
           -v --tb=short --junit-xml=platform-test-results.xml
 
       - name: Validate central config and R syntax

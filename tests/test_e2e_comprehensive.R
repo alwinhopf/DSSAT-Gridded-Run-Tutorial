@@ -41,12 +41,9 @@ log_test <- function(status, name, msg = "") {
   }
 }
 
-utils_repo <- normalizePath(file.path(getwd(), "..", "dssatutils"), mustWork = FALSE)
-if (dir.exists(utils_repo) && requireNamespace("pkgload", quietly = TRUE)) {
-  pkgload::load_all(utils_repo, quiet = TRUE)
-}
-if (!requireNamespace("dssatutils", quietly = TRUE)) {
-  message("dssatutils not installed; skipping comprehensive E2E.")
+source("tests/helpers/packages.R")
+if (!requireNamespace("cropmodeldata", quietly = TRUE)) {
+  message("cropmodeldata not installed; skipping comprehensive E2E.")
   quit(status = 0)
 }
 
@@ -143,7 +140,7 @@ test_name <- "OPEN-METEO"
 wth_dir <- file.path(work, "weather_openmeteo")
 dir.create(wth_dir, recursive = TRUE)
 tryCatch({
-  dssatutils::process_weather_openmeteo(
+  cropmodeldata::process_weather_openmeteo(
     shapefile = global_df,
     start_year = 2010,
     end_year = 2011,
@@ -168,15 +165,15 @@ test_name <- "DAYMET"
 wth_dir <- file.path(work, "weather_daymet")
 dir.create(wth_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_weather_daymet", where = asNamespace("dssatutils"), inherits = FALSE)) {
-    log_test("skip", test_name, "Function not available in dssatutils")
+  if (!exists("process_weather_daymet", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
+    log_test("skip", test_name, "Function not available in cropmodeldata")
   } else {
     daymet_log <- file.path(work, "daymet.log")
     expected_files <- file.path(wth_dir, paste0(US_POINTS$ID, ".WTH"))
     last_error <- ""
     for (attempt in seq_len(provider_retries)) {
       last_error <- tryCatch({
-        dssatutils::process_weather_daymet(
+        cropmodeldata::process_weather_daymet(
           shapefile = us_df,
           start_year = 2010,
           end_year = 2011,
@@ -230,10 +227,10 @@ test_name <- "NASA-POWER"
 wth_dir <- file.path(work, "weather_nasapower")
 dir.create(wth_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_weather_nasapower", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_weather_nasapower", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
-    dssatutils::process_weather_nasapower(
+    cropmodeldata::process_weather_nasapower(
       shapefile = global_df,
       start_year = 2010,
       end_year = 2011,
@@ -259,7 +256,7 @@ test_name <- "GRIDMET"
 wth_dir <- file.path(work, "weather_gridmet")
 dir.create(wth_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_weather_gridmet", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_weather_gridmet", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
     gridmet_log <- file.path(work, "gridmet.log")
@@ -271,7 +268,7 @@ tryCatch({
       attempt_output <- character()
       last_error <- tryCatch({
         withCallingHandlers(
-          dssatutils::process_weather_gridmet(
+          cropmodeldata::process_weather_gridmet(
             shapefile = us_df,
             start_year = 2010,
             end_year = 2010,
@@ -340,10 +337,10 @@ if (has_cds_key) {
   wth_dir <- file.path(work, "weather_agera5")
   dir.create(wth_dir, recursive = TRUE)
   tryCatch({
-    if (!exists("process_weather_agera5", where = asNamespace("dssatutils"), inherits = FALSE)) {
+    if (!exists("process_weather_agera5", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
       log_test("skip", test_name, "Function not available")
     } else {
-      dssatutils::process_weather_agera5(
+      cropmodeldata::process_weather_agera5(
         shapefile = global_df,
         start_year = 2010,
         end_year = 2011,
@@ -373,10 +370,10 @@ test_name <- "NASA-POWER CHIRPS"
 wth_dir <- file.path(work, "weather_nasapower_chirps")
 dir.create(wth_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_weather_nasapower_chirps", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_weather_nasapower_chirps", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
-    dssatutils::process_weather_nasapower_chirps(
+    cropmodeldata::process_weather_nasapower_chirps(
       shapefile = global_df,
       start_year = 2010,
       end_year = 2011,
@@ -408,11 +405,11 @@ test_name <- "SoilGrids Online"
 sol_dir <- file.path(work, "soil_soilgrids_online")
 dir.create(sol_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_soils_soilgrids_online", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_soils_soilgrids_online", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
     message(sprintf("[%s] Fetching from SoilGrids REST API (slow, ~1-2 min)...", test_name))
-    dssatutils::process_soils_soilgrids_online(
+    cropmodeldata::process_soils_soilgrids_online(
       gridfile = global_sf,
       soilfile_csv_path = file.path(sol_dir, "soil_map.csv"),
       output_sol_dir = sol_dir,
@@ -434,7 +431,7 @@ test_name <- "SoilGrids"
 sol_dir <- file.path(work, "soil_soilgrids")
 dir.create(sol_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_soils_soilgrids", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_soils_soilgrids", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
     # Create a dummy master .SOL file
@@ -451,7 +448,7 @@ tryCatch({
       "    15   -99 0.100 0.200 0.300  0.80  10.0  1.40  0.80  20.0  40.0   0.0   -99   -99   -99   -99   -99"
     ), dummy_sol_file)
     
-    dssatutils::process_soils_soilgrids(
+    cropmodeldata::process_soils_soilgrids(
       grid_points = global_sf,
       source_sol_file = dummy_sol_file,
       output_csv_path = file.path(sol_dir, "soil_map.csv"),
@@ -474,14 +471,14 @@ test_name <- "SSURGO"
 sol_dir <- file.path(work, "soil_ssurgo")
 dir.create(sol_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_soils_ssurgo", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_soils_ssurgo", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
     format_SQL_in_statement <- function(x) {
       if (length(x) == 0) return("()")
       paste0("('", paste(x, collapse = "','"), "')")
     }
-    dssatutils::process_soils_ssurgo(
+    cropmodeldata::process_soils_ssurgo(
       grid_points = us_sf,
       output_dir_csv = file.path(sol_dir, "soil_map.csv"),
       output_dir_individual = sol_dir,
@@ -507,7 +504,7 @@ test_name <- "HWSD"
 sol_dir <- file.path(work, "soil_hwsd")
 dir.create(sol_dir, recursive = TRUE)
 tryCatch({
-  if (!exists("process_soils_hwsd", where = asNamespace("dssatutils"), inherits = FALSE)) {
+  if (!exists("process_soils_hwsd", where = asNamespace("cropmodeldata"), inherits = FALSE)) {
     log_test("skip", test_name, "Function not available")
   } else {
     # Create dummy raster and sqlite db
@@ -534,7 +531,7 @@ tryCatch({
     DBI::dbWriteTable(con, "HWSD2_LAYERS", layers_df)
     DBI::dbDisconnect(con)
     
-    dssatutils::process_soils_hwsd(
+    cropmodeldata::process_soils_hwsd(
       grid_points = global_sf,
       hwsd_raster_file = dummy_raster_file,
       hwsd_db_file = dummy_db_file,

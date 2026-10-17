@@ -55,11 +55,11 @@ local({
   if (!requireNamespace("yaml", quietly = TRUE)) {
     stop("Package 'yaml' is required to load the central config.yml.")
   }
-  cfg <- yaml::read_yaml(base_path)
+  cfg <- yaml::yaml.load(paste(readLines(base_path, encoding = "UTF-8", warn = FALSE), collapse = "\n"))
   if (!is.list(cfg)) stop("Top level must be a YAML mapping: ", base_path)
   loaded <- base_path
   if (nzchar(env_path) && normalizePath(env_path) != normalizePath(base_path)) {
-    override <- yaml::read_yaml(env_path)
+    override <- yaml::yaml.load(paste(readLines(env_path, encoding = "UTF-8", warn = FALSE), collapse = "\n"))
     if (!is.list(override)) stop("Top level must be a YAML mapping: ", env_path)
     validate_overlay(cfg, override)
     cfg <- deep_merge(cfg, override)

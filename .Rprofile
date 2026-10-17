@@ -6,7 +6,7 @@ source("renv/activate.R")
 # headers / build toolchain). renv::restore() and renv::install() both honour
 # getOption("pkgType"), so forcing "binary" here makes the FRESH-INSTALL path
 # and the pipeline's ensure_packages() pull binaries. This is what prevents the
-# openssl -> httr -> daymetr -> dssatutils source-build cascade on a new laptop.
+# openssl -> httr -> daymetr -> cropmodeldata source-build cascade on a new laptop.
 local({
   if (.Platform$OS.type == "windows" || Sys.info()[["sysname"]] == "Darwin") {
     options(pkgType = "binary", install.packages.check.source = "no")

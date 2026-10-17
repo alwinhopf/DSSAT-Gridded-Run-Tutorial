@@ -57,6 +57,12 @@ load_boundary <- function(df) {
 d <- read.csv(CSV, stringsAsFactors = FALSE)
 need <- c("latitude","longitude","weather_source","soil_source", RV)
 if (!all(need %in% names(d))) stop("combined.csv missing columns: ", paste(setdiff(need, names(d)), collapse = ", "))
+ANALYSIS_METHOD <- "exploratory_unweighted_sequential_additive_ANOVA"
+ANALYSIS_LIMITS <- "Point summaries are unweighted; ANOVA is order-dependent for unbalanced data and does not model repeated sites."
+message(ANALYSIS_LIMITS)
+if ("weight_ha" %in% names(d))
+  warning("Sampling weights detected: use weight_ha in a separate area-weighted regional analysis; these summaries are exploratory.")
+
 d[[RV]] <- suppressWarnings(as.numeric(d[[RV]]))
 d <- d[is.finite(d[[RV]]), ]
 if (!is.null(TRT) && !is.na(TRT) && "treatment" %in% names(d)) d <- d[d$treatment == TRT, ]
@@ -126,7 +132,7 @@ if (length(terms) >= 1 && nrow(agg) > length(terms) + 1) {
   if (!is.null(fit)) {
     a <- summary(fit)[[1]]; ss <- a[["Sum Sq"]]
     vd <- data.frame(factor = sub("Residuals", "residual", trimws(rownames(a))),
-                     variance_pct = round(100 * ss / sum(ss), 2), stringsAsFactors = FALSE)
+                     variance_pct = round(100 * ss / sum(ss), 2), method=ANALYSIS_METHOD, limitations=ANALYSIS_LIMITS, stringsAsFactors = FALSE)
     write.csv(vd, file.path(OUT, "variance_decomposition.csv"), row.names = FALSE)
     cat("variance_decomposition.csv\n"); print(vd, row.names = FALSE)
   }

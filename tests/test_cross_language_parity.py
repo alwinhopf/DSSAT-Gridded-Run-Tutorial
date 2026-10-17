@@ -21,10 +21,13 @@ def _read(path: Path) -> str:
 
 def _dependency_path(repo: str, *parts: str) -> Path:
     """Resolve workspace siblings locally and exact-ref CI checkouts online."""
-    candidates = (
-        WORKSPACE / repo,
-        ROOT / ".ci-deps" / repo,
-    )
+    from tests.helpers.packages import package_source
+    candidates = (package_source(repo),)
+    r_names = {"cropmodel_data": "cropmodeldata", "cropmodel_runtime": "cropmodelruntime"}
+    if parts and parts[0] == "R":
+        parts = ("R", r_names[repo], "R", *parts[1:])
+    elif parts == ("DESCRIPTION",):
+        parts = ("R", r_names[repo], "DESCRIPTION")
     for candidate in candidates:
         path = candidate.joinpath(*parts)
         if path.exists():
@@ -42,13 +45,13 @@ def _require_sources(*paths: Path) -> None:
 
 def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
     """Verify SSURGO failure diagnostics contract across R and Python."""
-    r_path = _dependency_path("dssatutils", "R", "soil_ssurgo.R")
-    py_path = _dependency_path("dssatutils", "python", "dssatutils", "soil_ssurgo.py")
+    r_path = _dependency_path("cropmodel_data", "R", "soil_ssurgo.R")
+    py_path = _dependency_path("cropmodel_data", "python", "cropmodel_data", "soil_ssurgo.py")
     if not (r_path.exists() and py_path.exists()):
         try:
-            import dssatutils.soil_ssurgo
+            import cropmodel_data.soil_ssurgo
         except (ImportError, Exception):
-            pytest.skip("dssatutils sibling sources/package not available")
+            pytest.skip("cropmodel_data sibling sources/package not available")
         return
 
     r_src = _read(r_path)
@@ -60,13 +63,13 @@ def test_ssurgo_failure_diagnostics_are_present_in_r_and_python():
 
 def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
     """Verify engine missing summary failure logging contract."""
-    r_path = _dependency_path("dssatengine", "R", "engine.R")
-    py_path = _dependency_path("dssatengine", "python", "dssatengine", "engine.py")
+    r_path = _dependency_path("cropmodel_runtime", "R", "engine.R")
+    py_path = _dependency_path("cropmodel_runtime", "python", "cropmodel_runtime", "engine.py")
     if not (r_path.exists() and py_path.exists()):
         try:
-            import dssatengine.engine
+            import cropmodel_runtime.engine
         except (ImportError, Exception):
-            pytest.skip("dssatengine sibling sources/package not available")
+            pytest.skip("cropmodel_runtime sibling sources/package not available")
         return
 
     r_src = _read(r_path)
@@ -81,15 +84,15 @@ def test_engine_missing_summary_failure_logging_is_present_in_r_and_python():
 def test_gridmet_netcdf_validation_is_thread_safe_in_pinned_source():
     """Prevent concurrent netCDF4/HDF5 reads from returning to CI."""
     path = _dependency_path(
-        "dssatutils", "python", "dssatutils", "weather_gridmet.py"
+        "cropmodel_data", "python", "cropmodel_data", "weather_gridmet.py"
     )
     if not path.exists():
         try:
-            import dssatutils.weather_gridmet as wg
+            import cropmodel_data.weather_gridmet as wg
             assert hasattr(wg, "_GRIDMET_NETCDF_LOCK")
             return
         except (ImportError, Exception):
-            pytest.skip("dssatutils.weather_gridmet source/package not available")
+            pytest.skip("cropmodel_data.weather_gridmet source/package not available")
     source = _read(path)
     assert "_GRIDMET_NETCDF_LOCK = threading.RLock()" in source
     assert "with _GRIDMET_NETCDF_LOCK:" in source
@@ -194,8 +197,8 @@ def test_optional_master_grid_mode_is_aligned():
     r_src = _read(ROOT / "dssat_main_pipeline.R")
     py_src = _read(ROOT / "dssat_main_pipeline.py")
     cfg = _read(ROOT / "config.yml")
-    engine_r = _dependency_path("dssatengine", "R", "engine.R")
-    engine_py = _dependency_path("dssatengine", "python", "dssatengine", "engine.py")
+    engine_r = _dependency_path("cropmodel_runtime", "R", "engine.R")
+    engine_py = _dependency_path("cropmodel_runtime", "python", "cropmodel_runtime", "engine.py")
     _require_sources(engine_r, engine_py)
 
     settings = (
@@ -257,49 +260,37 @@ def test_conda_lock_covers_supported_desktop_platforms():
 
 
 def test_shared_package_pins_are_consistent_across_install_paths():
-    """Keep CI, conda, renv, and documented fresh installs on one revision."""
-    expected = {
-        "dssatutils": "f728cd810923465360e4730d8893bb566dc0773c",
-        "dssatengine": "14871db233af97a378fd42fb0c9749b5ff9b9453",
-    }
-    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
-    smoke = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "smoke.yml"))
-    renv = yaml.safe_load(_read(ROOT / "renv.lock"))
-    for package, revision in expected.items():
-        env_key = f"{package.upper()}_REF"
-        assert e2e["env"][env_key] == revision
-        assert smoke["env"][env_key] == revision
-        assert renv["Packages"][package]["RemoteSha"] == revision
-        for path in ("environment.yml", "conda_lock.yml", "setup_renv.R"):
-            assert revision in _read(ROOT / path), f"stale {package} pin in {path}"
-    assert expected["dssatutils"] in _read(ROOT / "README.md")
+    """All shared namespaces come from the same immutable monorepo baseline."""
+    revision = "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+    for name in ("e2e.yml", "smoke.yml"):
+        workflow = yaml.safe_load(_read(ROOT / ".github/workflows" / name))
+        assert workflow["env"]["CROPMODEL_REF"] == revision
+    lock = yaml.safe_load(_read(ROOT / "renv.lock"))
+    for package, folder in (("cropmodeldata", "cropmodel_data"), ("cropmodelruntime", "cropmodel_runtime")):
+        record = lock["Packages"][package]
+        assert record["RemoteRepo"] == "cropmodel"
+        assert record["RemoteSha"] == revision
+        assert record["RemoteSubdir"] == f"packages/{folder}/R/{package}"
+    assert not {"dssatutils", "dssatengine"} & lock["Packages"].keys()
+    for name in ("requirements.txt", "environment.yml", "setup_renv.R", "README.md"):
+        assert revision in _read(ROOT / name)
 
 
-def test_pinned_engine_r_remote_matches_pinned_utils():
-    """Require the engine dependency to remain an immutable revision."""
-    engine_description = _dependency_path("dssatengine", "DESCRIPTION")
-    _require_sources(engine_description)
-    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
-    expected_utils = e2e["env"]["DSSATUTILS_REF"]
-    match = re.search(
-        r"alwinhopf/dssatutils@([0-9a-f]{40})", _read(engine_description)
-    )
-    assert match, "pinned dssatengine must use an immutable dssatutils Remote"
-    assert len(match.group(1)) == 40
+def test_pinned_engine_r_dependency_is_from_the_monorepo():
+    description = _dependency_path("cropmodel_runtime", "DESCRIPTION")
+    _require_sources(description)
+    assert "cropmodeldata" in _read(description)
+    assert "Remotes:" not in _read(description)
 
 
 def test_e2e_r_git_installs_use_workflow_auth_without_reinstalling_dependencies():
-    """Keep R GitHub installs independent of remotes' bundled CI token."""
-    e2e = yaml.safe_load(_read(ROOT / ".github" / "workflows" / "e2e.yml"))
+    e2e = yaml.safe_load(_read(ROOT / ".github/workflows/e2e.yml"))
     steps = e2e["jobs"]["comprehensive-tests"]["steps"]
     install = next(step for step in steps if step.get("name") == "Install R dependencies")
-
-    assert install["env"]["GITHUB_PAT"] == "${{ github.token }}"
-    engine_command = next(
-        line for line in install["run"].splitlines() if "dssatengine.git" in line
-    )
-    assert "dependencies=FALSE" in engine_command
-    assert "upgrade='never'" in engine_command
+    assert install["env"]["GITHUB_PAT"] == "${{ secrets.CROPMODEL_READ_TOKEN }}"
+    command = next(line for line in install["run"].splitlines() if "cropmodel_runtime/R/cropmodelruntime" in line)
+    assert "dependencies=FALSE" in command
+    assert "upgrade='never'" in command
 
 
 def test_resume_provenance_hashes_resolved_model_inputs_in_both_languages():

@@ -43,6 +43,12 @@ __pycache__/
 fast-tests.log
 r-syntax.log
 
+# Locally installed cropmodel packages; source remains in the monorepo.
+.download-runtime/
+
 fast-tests.log
 r-tests.log
 test-results.xml
+/prism_cache
+
+/soilgrids_raster_cache/

@@ -27,11 +27,10 @@ _REPO = os.path.dirname(_HERE)
 _WORKSPACE = os.path.dirname(_REPO)
 sys.path.insert(0, _REPO)
 sys.path.insert(0, os.path.join(_REPO, "python_scripts"))
-if os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1":
-    for _sibling in ("dssatutils", "dssatengine"):
-        _pkg_path = os.path.join(_WORKSPACE, _sibling, "python")
-        if os.path.isdir(_pkg_path):
-            sys.path.insert(0, _pkg_path)
+sys.path.insert(0, str(_REPO))
+from tests.helpers.packages import configure_workspace_packages
+configure_workspace_packages()
+
 
 
 # ---------------------------------------------------------------------------
@@ -66,14 +65,14 @@ def test_agera5_compact_cache_defaults_and_engine_plumbing():
 
 def test_module_imports():
     # These may pull optional heavy deps at import time; skip if absent.
-    optional_modules = {"dssatutils.weather_gridmet",          # xarray
-                        "dssatutils.weather_nasapower_chirps",  # imports weather_nasapower; xarray lazy
-                        "dssatutils.weather_chirps_v3",         # imports weather_nasapower; xarray lazy
-                        "dssatutils.weather_agera5",            # numpy/pandas; cdsapi+xarray lazy
-                        "dssatutils.soil_hwsd"}                 # imports soil_soilgrids_online
-    for mod in ["dssatutils.weather_daymet", "dssatutils.weather_nasapower", "dssatutils.weather_gridmet",
-                "dssatutils.weather_openmeteo", "dssatutils.weather_nasapower_chirps",
-                "dssatutils.weather_chirps_v3", "dssatutils.weather_agera5", "dssatutils.soil_hwsd"]:
+    optional_modules = {"cropmodel_data.weather_gridmet",          # xarray
+                        "cropmodel_data.weather_nasapower_chirps",  # imports weather_nasapower; xarray lazy
+                        "cropmodel_data.weather_chirps_v3",         # imports weather_nasapower; xarray lazy
+                        "cropmodel_data.weather_agera5",            # numpy/pandas; cdsapi+xarray lazy
+                        "cropmodel_data.soil_hwsd"}                 # imports soil_soilgrids_online
+    for mod in ["cropmodel_data.weather_daymet", "cropmodel_data.weather_nasapower", "cropmodel_data.weather_gridmet",
+                "cropmodel_data.weather_openmeteo", "cropmodel_data.weather_nasapower_chirps",
+                "cropmodel_data.weather_chirps_v3", "cropmodel_data.weather_agera5", "cropmodel_data.soil_hwsd"]:
         try:
             __import__(mod)
         except ModuleNotFoundError:
@@ -190,7 +189,7 @@ def _make_fake_fetch():
 
 
 def test_wth_writer_synthetic():
-    import dssatutils.weather_openmeteo as om
+    import cropmodel_data.weather_openmeteo as om
     om._fetch_open_meteo = _make_fake_fetch()
 
     with tempfile.TemporaryDirectory() as work:
@@ -248,7 +247,7 @@ def _run_standalone():
             check(False, f"import {mod}: {exc}")
 
     print("\n[3/3] Open-Meteo .WTH writer (synthetic, no network)...")
-    import dssatutils.weather_openmeteo as om
+    import cropmodel_data.weather_openmeteo as om
     om._fetch_open_meteo = _make_fake_fetch()
 
     with tempfile.TemporaryDirectory() as work:

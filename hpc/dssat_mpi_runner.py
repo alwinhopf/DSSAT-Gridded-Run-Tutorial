@@ -7,6 +7,10 @@ import csv
 import shutil
 import argparse
 import math
+import json
+import uuid
+from contextlib import nullcontext
+from pathlib import Path
 
 # --- GLOBAL CONFIGURATION ---
 OUTPUT_FIELDNAMES = [
@@ -44,11 +48,11 @@ def get_args():
     parser.add_argument('--summary_dir', type=str, required=True, help='Directory for summary output')
     parser.add_argument('--exe_path', type=str, default=os.environ.get('DSSAT_EXE', 'dscsm048'), help='Path to DSSAT executable (or set env DSSAT_EXE)')
     parser.add_argument('--model_code', type=str, default='CRGRO048', help='DSSAT model code')
-    parser.add_argument('--run_mode', type=str, default='sequence', choices=['sequence', 'experiment'], help='Run mode')
-    parser.add_argument('--trt_start', type=int, default=1, help='Treatment start')
-    parser.add_argument('--trt_end', type=int, default=1, help='Treatment end')
-    parser.add_argument('--seq_start', type=int, default=1, help='Sequence start')
-    parser.add_argument('--seq_end', type=int, default=1, help='Sequence end')
+    parser.add_argument('--run_mode', type=str, default=None, choices=['sequence', 'experiment'], help='Run mode')
+    parser.add_argument('--trt_start', type=int, default=None, help='Treatment start')
+    parser.add_argument('--trt_end', type=int, default=None, help='Treatment end')
+    parser.add_argument('--seq_start', type=int, default=None, help='Sequence start')
+    parser.add_argument('--seq_end', type=int, default=None, help='Sequence end')
     parser.add_argument(
         '--cleanup_mode',
         type=str,
@@ -87,6 +91,7 @@ def get_args():
               "avoid a rank-0 serial read of the entire dataset."),
     )
 
+    parser.add_argument('--treatment_list', type=int, nargs='+', help='Explicit treatment IDs; overrides the range')
     return parser.parse_args()
 
 
@@ -431,133 +436,31 @@ def dssat_number(value):
 
 
 def process_dssat_outputs_no_pandas(folder_path, point_id, treatment, config):
-    processed_rows_list = []
-    try:
-        summary_path = os.path.join(folder_path, 'summary.csv')
-        if not os.path.exists(summary_path): return None # Explicit check
-        
-        summary_data = read_csv_to_dict_list(summary_path)
-        if not summary_data: return None
-
-        soil_org_grouped = get_grouped_csv_data(os.path.join(folder_path, 'soilorg.csv'), 'RUN')
-        soil_ni_grouped = get_grouped_csv_data(os.path.join(folder_path, 'soilni.csv'), 'RUN')
-        soil_wat_grouped = get_grouped_csv_data(os.path.join(folder_path, 'soilwat.csv'), 'RUN')
-
-        stress_grouped = parse_plantgro_stress(folder_path)
-        stress_by_run = stress_grouped.get('by_run', {})
-        stress_by_trt = stress_grouped.get('by_trt', {})
-
-        for summary_row in summary_data:
-            run_val = summary_row.get('RUNNO')
-            if not run_val:
-                 run_val = str(summary_row.get('TRNO', '')).strip() + '_' + str(summary_row.get('SQ', '')).strip()
-
-            pyear = str(summary_row.get('PDAT', ''))[:4]
-            som_start, som_end, som_delta = None, None, None
-            
-            if run_val and run_val in soil_org_grouped and soil_org_grouped[run_val]:
-                som_start = dssat_number(soil_org_grouped[run_val][0].get('SOMCT'))
-                som_end = dssat_number(soil_org_grouped[run_val][-1].get('SOMCT'))
-                if som_start is not None and som_end is not None:
-                    som_delta = som_end - som_start
-
-            napc, nlcc, ni_m = None, None, None
-            if run_val and run_val in soil_ni_grouped and soil_ni_grouped[run_val]:
-                last_ni_row = soil_ni_grouped[run_val][-1]
-                napc = last_ni_row.get('NAPC')
-                nlcc = last_ni_row.get('NLCC')
-                ni_m = last_ni_row.get('NI#M')
-
-            ir_c, irrc = None, None
-            if run_val and run_val in soil_wat_grouped and soil_wat_grouped[run_val]:
-                last_wat_row = soil_wat_grouped[run_val][-1]
-                ir_c = last_wat_row.get('IR#C')
-                irrc = last_wat_row.get('IRRC')
-
-
-            # Seasonal-average stress indicators from PlantGro.OUT (mean across daily rows)
-            wspd_avg = None
-            wsgd_avg = None
-            nstd_avg = None
-            stress_rec = None
-
-            # Prefer matching by DSSAT run number when available; fall back to treatment number
-            run_no_int = None
-            try:
-                run_no_int = int(str(run_val).strip())
-            except Exception:
-                run_no_int = None
-
-            if run_no_int is not None and run_no_int in stress_by_run:
-                stress_rec = stress_by_run.get(run_no_int)
-            else:
-                try:
-                    trt_int = int(treatment)
-                except Exception:
-                    trt_int = None
-                if trt_int is not None and trt_int in stress_by_trt:
-                    stress_rec = stress_by_trt.get(trt_int)
-
-            if isinstance(stress_rec, dict):
-                wspd_avg = stress_rec.get('wspd')
-                wsgd_avg = stress_rec.get('wsgd')
-                nstd_avg = stress_rec.get('nstd')
-
-            raw_co2em = dssat_number(summary_row.get('CO2EM'))
-            co2_kg_ha = raw_co2em * (44.0 / 12.0) if raw_co2em is not None else None
-
-            processed_row = {
-                'point_id': point_id,
-                'run_number': summary_row.get('RUNNO', ''),
-                'treatment': summary_row.get('TRNO', treatment),
-                'crop_code': summary_row.get('CR', ''),
-                'latitude': summary_row.get('LAT', ''),
-                'longitude': summary_row.get('LONG', ''),
-                'weather_station_id': summary_row.get('WSTA', ''),
-                'soil_profile_id': summary_row.get('SOIL_ID', ''),
-                'dssat_file_id': summary_row.get('EXNAME', ''),
-                'dssat_description': summary_row.get('TNAM', ''),
-                'planting_date': summary_row.get('PDAT', ''),
-                'emergence_date': summary_row.get('EDAT', ''),
-                'anthesis_date': summary_row.get('ADAT', ''),
-                'maturity_date': summary_row.get('MDAT', ''),
-                'harvest_date': summary_row.get('HDAT', ''),
-                'year_planting': pyear,
-                'year_harvest': summary_row.get('HYEAR', '')[:4],
-                'top_weight_kg_ha': summary_row.get('CWAM', ''),
-                'final_grain_kg_ha': summary_row.get('HWAM', ''),
-                'pod_weight_kg_ha': summary_row.get('PWAM', ''),
-                'seed_weight_kg': summary_row.get('HWUM', ''),
-                'harvest_index': summary_row.get('HIAM', ''),
-                'maximum_lai': summary_row.get('LAIX', ''),
-                'removed_residue_kg_ha': summary_row.get('BWAH', ''),
-                'soil_organic_carbon_start_kg_C_ha': som_start,
-                'soil_organic_carbon_end_kg_C_ha': som_end,
-                'soil_organic_carbon_delta_kg_C_ha': som_delta,
-                'final_irrigation_applications_count': ir_c,
-                'final_irrigation_amount_mm': irrc,
-                'inorganic_n_applied_count': ni_m,
-                'inorganic_n_applied_kg_ha': napc,
-                'nitrate_leaching_kg_ha': nlcc,
-                'cumulative_net_co2_emissions_kg_CO2_ha': co2_kg_ha,
-                'dssat_co2em_kg_C_ha': raw_co2em,
-                'output_metric_schema': 2,
-                'flux_period_basis': 'DSSAT_season_not_calendar_year',
-                'soc_delta_period_basis': 'first_to_last_recorded_soilorg_row',
-                'cumulative_n2o_emissions_kg_N_ha': summary_row.get('N2OEM', ''),
-                'water_stress_photosynthesis_avg': wspd_avg,
-                'water_stress_development_avg': wsgd_avg,
-                'nitrogen_stress_avg': nstd_avg
-            }
-            text_fields = {'point_id', 'crop_code', 'weather_station_id', 'soil_profile_id',
-                           'dssat_file_id', 'dssat_description', 'flux_period_basis', 'soc_delta_period_basis'}
-            for key in processed_row.keys() - text_fields:
-                processed_row[key] = dssat_number(processed_row[key])
-            processed_rows_list.append(processed_row)
-        return processed_rows_list
-    except Exception as e:
-        print(f"Process {rank}: Error processing outputs in {folder_path}: {e}")
+    """Use the shared runtime metric contract; retain the historical entry point."""
+    import pandas as pd
+    from cropmodel_runtime.engine import _read_csv_safe, _merge_supplemental, _build_result_rows
+    summary = _read_csv_safe(os.path.join(folder_path, 'summary.csv'))
+    if summary is None or summary.empty:
         return None
+    if 'RUNNO' not in summary:
+        raise ValueError('summary.csv has no RUNNO column')
+    if 'PDAT' in summary:
+        summary['PYEAR'] = summary['PDAT'].astype(str).str[:4]
+    if config.get('run_mode') == 'sequence' and ('TRNO' not in summary or summary['TRNO'].isna().all()):
+        summary['TRNO'] = treatment
+    rows = _build_result_rows(point_id, summary,
+                             _merge_supplemental(folder_path, summary[['RUNNO']]),
+                             is_sequence=config.get('run_mode') == 'sequence')
+    stress = parse_plantgro_stress(folder_path)
+    records = rows.astype(object).where(pd.notna(rows), None).to_dict('records')
+    for row in records:
+        run = dssat_number(row.get('run_number'))
+        trt = dssat_number(row.get('treatment'))
+        values = stress['by_run'].get(run, stress['by_trt'].get(trt, {}))
+        for field, key in [('water_stress_photosynthesis_avg','wspd'),
+                           ('water_stress_development_avg','wsgd'), ('nitrogen_stress_avg','nstd')]:
+            row[field] = values.get(key)
+    return records
 
 
 def get_dssat_output_patterns(config):
@@ -703,13 +606,11 @@ def run_dssat_simulation_orchestrator(sim_folder_path, point_id, treatment, conf
             except: pass
 
         # Prevent stale outputs from being parsed if cleanup is disabled or a previous run left files behind
-        for stale_name in ('summary.csv', 'soilorg.csv', 'soilni.csv', 'soilwat.csv'):
-            stale_path = os.path.join(sim_folder_path, stale_name)
-            try:
-                if os.path.exists(stale_path):
+        # Every file consumed by any parser must belong to this invocation.
+        for pattern in DSSAT_OUTPUT_PATTERNS_BASE:
+            for stale_path in glob.glob(os.path.join(sim_folder_path, pattern)):
+                if os.path.isfile(stale_path):
                     os.remove(stale_path)
-            except Exception:
-                pass
 
         cmd = [config['executable_path'], mode_flag, config['control_file_name']]
         proc = subprocess.run(
@@ -769,7 +670,10 @@ def process_point_sequentially(sim_folder_path, point_id, config):
         print(f"Rank {rank}: Error - Directory {sim_folder_path} does not exist.")
         return []
 
-    for trt in range(config['treatment_start'], config['treatment_end'] + 1):
+    old_result = os.path.join(sim_folder_path, f'results_{point_id}.csv')
+    if os.path.exists(old_result):
+        os.remove(old_result)
+    for trt in config.get('treatment_list') or range(config['treatment_start'], config['treatment_end'] + 1):
         pid, trt, data, err = run_dssat_simulation_orchestrator(sim_folder_path, point_id, trt, config)
         if err:
             # FIX: Print error so user knows why it failed
@@ -777,6 +681,8 @@ def process_point_sequentially(sim_folder_path, point_id, config):
         if data: 
             point_data.extend(data)
            
+    for row in point_data:
+        row.update(config.get('point_metadata', {}).get(str(point_id), {}))
     if point_data:
         #local_csv_name = f"results_{point_id}.csv"
         local_csv_name = os.path.join(sim_folder_path, f"results_{point_id}.csv")
@@ -832,13 +738,25 @@ if __name__ == "__main__":
     dssat_simulation_folder = os.path.basename(dssat_simulation_output_base)
     dssat_simulation_summary_folder = os.path.abspath(os.path.normpath(args.summary_dir))
 
-    executable_path = args.exe_path
+    executable_path = shutil.which(args.exe_path) or str(Path(args.exe_path).expanduser().resolve())
+    if not os.path.isfile(executable_path):
+        raise SystemExit('DSSAT executable not found: ' + executable_path)
     dssat_model_code = args.model_code
-    run_mode = args.run_mode
-    treatment_start = args.trt_start
-    treatment_end = args.trt_end
-    sequence_start = args.seq_start
-    sequence_end = args.seq_end
+    manifest_path = Path(dssat_simulation_output_base) / 'hpc_manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {}
+    treatment_start = args.trt_start if args.trt_start is not None else 1
+    treatment_end = args.trt_end if args.trt_end is not None else treatment_start
+    treatments = args.treatment_list or (
+        manifest.get('treatments') if args.trt_start is None and args.trt_end is None else None
+    ) or list(range(treatment_start, treatment_end + 1))
+    treatments = list(dict.fromkeys(treatments))
+    if not treatments or any(t < 1 for t in treatments):
+        raise SystemExit('Specify positive treatments and a nonempty treatment range')
+    run_mode = args.run_mode or manifest.get('run_mode', 'sequence')
+    sequence_start = args.seq_start if args.seq_start is not None else manifest.get('sequence_start', 1)
+    sequence_end = args.seq_end if args.seq_end is not None else manifest.get('sequence_end', 1)
+    if sequence_start < 1 or sequence_end < sequence_start:
+        raise SystemExit('Specify a positive, nonempty sequence range')
     cleanup_mode = args.cleanup_mode
     archive_outputs = bool(args.archive_outputs)
     scratch_dir = args.scratch_dir.strip() if args.scratch_dir else ''
@@ -850,6 +768,8 @@ if __name__ == "__main__":
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+    invocation = comm.bcast(uuid.uuid4().hex if rank == 0 else None, root=0)
+    project_temp_results_dir = os.path.join(project_temp_results_dir, invocation)
 
     config_params = {
         'dssat_simulation_output_base': dssat_simulation_output_base,
@@ -861,12 +781,16 @@ if __name__ == "__main__":
         'run_mode': run_mode,
         'treatment_start': treatment_start, 'treatment_end': treatment_end,
         'sequence_start': sequence_start, 'sequence_end': sequence_end,
+        'treatment_list': treatments,
+        'point_metadata': manifest.get('point_metadata', {}),
         'cleanup_mode': cleanup_mode,
         'archive_outputs': archive_outputs,
     }
 
+    for attributes in config_params['point_metadata'].values():
+        OUTPUT_FIELDNAMES.extend(k for k in attributes if k not in OUTPUT_FIELDNAMES)
     if scratch_dir:
-        local_part_dir = os.path.join(scratch_dir, dssat_simulation_folder, "parts")
+        local_part_dir = os.path.join(scratch_dir, dssat_simulation_folder, invocation, "parts")
     else:
         local_part_dir = project_temp_results_dir
 
@@ -874,6 +798,11 @@ if __name__ == "__main__":
     if rank == 0:
         os.makedirs(dssat_simulation_summary_folder, exist_ok=True)
         os.makedirs(project_temp_results_dir, exist_ok=True)
+        running_path = os.path.join(dssat_simulation_summary_folder,
+                                    f'results_{dssat_simulation_folder}.csv.status.json')
+        with open(running_path + '.' + invocation + '.tmp', 'w', encoding='utf-8') as handle:
+            json.dump(dict(schema=1, status='running', invocation=invocation), handle)
+        os.replace(running_path + '.' + invocation + '.tmp', running_path)
     comm.Barrier()
 
     # 1. Discovery (rank 0) + broadcast of the full task list
@@ -949,45 +878,72 @@ if __name__ == "__main__":
     #    serial bottleneck.
     # ---------------------------------------------------------------------
     staged_part = os.path.join(project_temp_results_dir, f"temp_results_rank_{rank}.csv")
-    if scratch_dir and os.path.exists(part_file):
+    stage_error = None
+    is_worker = size == 1 or rank != 0
+    if is_worker:
         try:
-            os.makedirs(project_temp_results_dir, exist_ok=True)
-            shutil.move(part_file, staged_part)
-        except Exception as e:  # noqa: BLE001
-            print(f"Rank {rank}: Warning - could not stage part file: {e}", flush=True)
-
-    comm.Barrier()
-
-    # ---------------------------------------------------------------------
-    # 4. Final merge.
-    #    merge_mode='none' leaves per-rank parts as the deliverable (avoids a
-    #    rank-0 serial read of the full dataset on very large grids).
-    #    merge_mode='concat' streams parts into one results file.
-    # ---------------------------------------------------------------------
+            if scratch_dir:
+                shutil.move(part_file, staged_part)
+            if not os.path.isfile(staged_part):
+                raise FileNotFoundError(staged_part)
+        except Exception as exc:
+            stage_error = f"Rank {rank}: could not stage part file: {exc}"
+    stage_errors = comm.gather(stage_error, root=0)
+    exit_code = 0
     if rank == 0:
-        parts = sorted(glob.glob(os.path.join(project_temp_results_dir, "temp_results_rank_*.csv")))
-        if merge_mode == 'none':
-            print(f"\n--- merge_mode=none: leaving {len(parts)} per-rank part files in "
-                  f"{project_temp_results_dir} ---", flush=True)
-        else:
-            print("\n--- Merging Results (streaming concat) ---", flush=True)
+        try:
             final_file = os.path.join(dssat_simulation_summary_folder,
                                       f"results_{dssat_simulation_folder}.csv")
-            with open(final_file, 'w', newline='', encoding='utf-8') as f_out:
-                writer = csv.DictWriter(f_out, fieldnames=OUTPUT_FIELDNAMES, extrasaction='ignore')
-                writer.writeheader()
-                for p_file in parts:
-                    try:
-                        with open(p_file, 'r', encoding='utf-8') as f_in:
-                            reader = csv.DictReader(f_in)
-                            for row in reader:
-                                writer.writerow(row)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"Error reading {p_file}: {e}")
-                    try:
-                        os.remove(p_file)
-                    except Exception:
-                        pass
-            print(f"Saved: {final_file}", flush=True)
-
-    comm.Barrier()
+            status_path = final_file + '.status.json'
+            expected = {str(info['id']) for info in all_folders_info}
+            parts = [os.path.join(project_temp_results_dir, f'temp_results_rank_{r}.csv')
+                     for r in (range(size) if size == 1 else range(1, size))]
+            errors = [e for e in stage_errors if e]
+            observed = {}
+            stage = final_file + '.' + invocation + '.tmp'
+            try:
+                with (open(stage, 'w', newline='', encoding='utf-8') if merge_mode == 'concat' else nullcontext(None)) as f_out:
+                    writer = csv.DictWriter(f_out, fieldnames=OUTPUT_FIELDNAMES, extrasaction='ignore') if f_out else None
+                    if writer:
+                        writer.writeheader()
+                    for part in parts:
+                        with open(part, newline='', encoding='utf-8') as f_in:
+                            for row in csv.DictReader(f_in):
+                                pid = row.get('point_id')
+                                if pid not in expected:
+                                    raise ValueError(f'Unexpected point {pid} in {part}')
+                                value = dssat_number(row.get('treatment'))
+                                if value is not None and value == int(value):
+                                    observed.setdefault(pid, set()).add(int(value))
+                                if writer:
+                                    writer.writerow(row)
+                completed = sorted(pid for pid, got in observed.items() if set(treatments) <= got)
+                failed = sorted(expected - set(completed))
+                if not expected:
+                    errors.append('No simulation point folders found')
+                if merge_mode == 'concat':
+                    os.replace(stage, final_file)
+            except Exception as exc:
+                errors.append(str(exc))
+                completed, failed = [], sorted(expected)
+                if os.path.exists(stage):
+                    os.remove(stage)
+            exit_code = int(bool(errors or failed))
+            status = dict(schema=1, status='partial' if exit_code else 'complete',
+                          invocation=invocation, expected_ids=sorted(expected),
+                          completed_ids=completed, failed_ids=failed, excluded_ids=[],
+                          treatments=treatments, errors=errors, parts=parts,
+                          merge_mode=merge_mode)
+            with open(status_path + '.' + invocation + '.tmp', 'w', encoding='utf-8') as handle:
+                json.dump(status, handle, indent=2)
+            os.replace(status_path + '.' + invocation + '.tmp', status_path)
+            with open(final_file + '.manifest.json', 'w', encoding='utf-8') as handle:
+                json.dump(dict(invocation=invocation, prepared=manifest), handle, indent=2)
+            print(f"{status['status']}: {len(completed)}/{len(expected)} points; status: {status_path}", flush=True)
+            for error in errors:
+                print(error, flush=True)
+        except Exception as exc:
+            exit_code = 1
+            print(f'Could not publish HPC completion: {exc}', flush=True)
+    exit_code = comm.bcast(exit_code, root=0)
+    raise SystemExit(exit_code)

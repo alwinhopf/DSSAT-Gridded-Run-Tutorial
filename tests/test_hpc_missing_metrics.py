@@ -6,7 +6,7 @@ import pandas as pd
 def test_hpc_matches_engine_missing_stocks_and_fluxes(tmp_path):
     spec=importlib.util.spec_from_file_location('mpi_review',Path(__file__).parents[1]/'hpc/dssat_mpi_runner.py')
     h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
-    from dssatengine.engine import _read_csv_safe,_merge_supplemental,_build_result_rows
+    from cropmodel_runtime.engine import _read_csv_safe,_merge_supplemental,_build_result_rows
     pd.DataFrame([{'RUNNO':1,'TRNO':3,'PDAT':2020001,'HYEAR':2020,'HWAM':-99,'CO2EM':12}]).to_csv(tmp_path/'summary.csv',index=False)
     pd.DataFrame({'RUN':[1,1],'SOMCT':[-99,30]}).to_csv(tmp_path/'soilorg.csv',index=False)
     mpi=h.process_dssat_outputs_no_pandas(str(tmp_path),'p',3,{})[0]

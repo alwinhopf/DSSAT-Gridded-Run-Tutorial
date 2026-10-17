@@ -100,11 +100,11 @@ chirps_v3_fetch_mode: "monthly_netcdf" # NASA_POWER_CHIRPS_V3 only: monthly_netc
 chirps_v3_resolution: "p05"          # NASA_POWER_CHIRPS_V3 only: currently p05 daily rainfall
 chirps_v3_months:     []             # NASA_POWER_CHIRPS_V3 only: [] = all months; e.g. [10,11,12,1,2,3,4] to limit downloads
 chirps_gee_project:   ""             # GEE mode only: Google Earth Engine project ID
-chirps_download_timeout: null         # seconds; null = dssatutils package default
+chirps_download_timeout: null         # seconds; null = cropmodel_data package default
 agera5_backend: "timeseries"         # recommended: compact point/small-area time series | gridded: legacy daily-NetCDF ZIPs
 agera5_data_format: "csv"             # time-series backend currently supports csv
 agera5_timeseries_chunk_degrees: 0.1  # 0.1 = reusable AgERA5-cell cache; <=4.6 leaves room for padding under CDS 5deg limit
-agera5_max_concurrent_requests: 4    # AgERA5 only: bounded CDS queue (hard cap in dssatutils: 4)
+agera5_max_concurrent_requests: 4    # AgERA5 only: bounded CDS queue (hard cap in cropmodel_data: 4)
 eobs_nc_dir:          ""             # EOBS only: folder of pre-downloaded E-OBS NetCDFs (blank = eobs_netcdf/)
 eobs_use_cds:         false          # EOBS only: true = fetch via Copernicus CDS; run setup_cds_credentials() once
 xavier_nc_dir:        ""             # XAVIER only: folder of BR-DWGD NetCDFs Tmax/Tmin/pr/Rs/RH/u2 (blank = xavier_netcdf/)
@@ -130,6 +130,13 @@ standardize_layers:   true
 external_soil_file:   ""                # SOILGRIDS_10K only; blank = script default (SoilGrids/US.SOL)
 lucas_csv:            ""                # LUCAS only: downloaded ESDAC LUCAS topsoil table (blank = LUCAS/lucas_topsoil.csv)
 soilgrids_mode:       "REST"            # SOILGRIDS_ONLINE only: REST (keyless, rate-limited) | VRT (needs rasterio; batch-friendly, better coverage)
+# Blank disables local raster caching. Relative paths use provider_cache_root.
+soilgrids_cache_dir: ""
+soilgrids_cache_download: false
+soilgrids_cache_scope: "region"       # region | world (large explicit download)
+soilgrids_cache_bbox: []              # [] = actual grid bounds; or [west,south,east,north]
+soilgrids_cache_buffer_degrees: 0.02  # padding for grid-derived bounds only
+
 hwsd_raster_file:     ""                # HWSD only: FAO HWSD2 raster of mapping-unit IDs (blank = HWSD/HWSD2.bil)
 hwsd_db_file:         ""                # HWSD only: FAO HWSD2 attribute DB - the FAO MS Access .mdb directly OR a converted .sqlite (blank = HWSD/HWSD2.sqlite)
 polaris_stat:         "p50"
@@ -207,3 +214,28 @@ check_weather_downloads:  false  # set to true to validate weather file contents
 weather_download_retries: 3      # max retries for failed weather downloads
 check_soil_downloads:     false  # set to true to validate soil profile files (.SOL) and retry failures
 soil_download_retries:    3      # max retries for failed soil downloads
+
+# Optional bounded search of explicit land-mask pixel centres. Off by default.
+input_fallback_enabled: false
+input_fallback_mode: "nearest_valid_land"
+input_fallback_search_step_m: 50
+input_fallback_land_mask: ""
+input_fallback_land_values: []
+input_fallback_max_distance_m: 500
+input_fallback_max_candidates: 10000
+input_fallback_within_cell: true
+input_fallback_cell_crs: "EPSG:5070"
+
+# Hash soil/weather contents for result and per-point resume identity.
+check_provenance: true
+
+# Fraction of resolution for fallback radius; 0 retains fixed max_distance_m.
+input_fallback_resolution_fraction: 0
+# Optional resolution override for supplied validation points (meters).
+input_fallback_resolution_m: null
+
+# Explicit sampling experiment; null preserves the legacy grid/cache path.
+sampling_strategy: null # grid_anchor | nearest_cropland | cropland_centroid_snap | cropland_stratified
+sampling_strata: 5 # spatial strata, only used by cropland_stratified
+sampling_cell_crs: "EPSG:5070"
+sampling_mask_year: 2024

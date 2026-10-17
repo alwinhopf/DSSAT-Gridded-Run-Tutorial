@@ -47,6 +47,8 @@ get_script_dir <- function() {
     d <- tryCatch(dirname(this.path::this.path()), error = function(e) NA)
     if (!is.na(d)) return(d)
   }
+  file_arg <- grep("^--file=", commandArgs(FALSE), value=TRUE)
+  if (length(file_arg)) return(dirname(normalizePath(sub("^--file=", "", file_arg[[1]]))))
   getwd()
 }
 PROJECT_ROOT <- normalizePath(get_script_dir(), mustWork = FALSE)
@@ -66,8 +68,14 @@ if (file.exists(loader_path) &&
        "version does) before running parallel/period experiments.")
 }
 
-exp_cfg   <- yaml::read_yaml(EXPERIMENT_FILE)
-base_cfg  <- if (is.null(exp_cfg$base)) list() else exp_cfg$base
+read_config_yaml <- function(path) yaml::yaml.load(paste(readLines(path, encoding="UTF-8", warn=FALSE), collapse="\n"))
+exp_cfg <- read_config_yaml(EXPERIMENT_FILE)
+existing_cfg <- read_config_yaml(file.path(PROJECT_ROOT, "config.yml"))
+merge_over <- function(a, b) { for (k in names(b)) a[k] <- b[k]; a }
+base_cfg <- merge_over(existing_cfg, if (is.null(exp_cfg$base)) list() else exp_cfg$base)
+source(file.path(PROJECT_ROOT, "r_scripts", "scenario_completion.R"))
+source(file.path(PROJECT_ROOT, "r_scripts", "experiment_contract.R"))
+RSCRIPT <- normalizePath(file.path(R.home("bin"), if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript"), mustWork=TRUE)
 factors   <- exp_cfg$factors
 opts      <- if (is.null(exp_cfg$options)) list() else exp_cfg$options
 out_cfg   <- if (is.null(exp_cfg$output))  list() else exp_cfg$output
@@ -141,8 +149,8 @@ res_tag      <- if (grid_m < 1000) paste0(grid_m, "m") else paste0(grid_m / 1000
 combos <- data.frame(
   weather_source = grid$weather_source, soil_source = grid$soil_source,
   period_label = vapply(grid$period_idx, function(k) periods[[k]]$label, ""),
-  year_start   = vapply(grid$period_idx, function(k) periods[[k]]$start, 0L),
-  year_end     = vapply(grid$period_idx, function(k) periods[[k]]$end,   0L),
+  year_start   = vapply(grid$period_idx, function(k) as.integer(periods[[k]]$start), 0L),
+  year_end     = vapply(grid$period_idx, function(k) as.integer(periods[[k]]$end),   0L),
   stringsAsFactors = FALSE)
 
 # Per-combination project_name. ALWAYS namespace by the year window — the
@@ -155,7 +163,7 @@ combos$project_name <- sanitize(paste0(
   if (PARALLEL_ISO) paste0("_", combos$weather_source, "_", combos$soil_source) else ""))
 combos$scenario_id  <- sanitize(paste0(combos$project_name, "_", res_tag, "_",
                                        combos$weather_source, "_", combos$soil_source))
-combos$results_path <- file.path(PROJECT_ROOT, "results", paste0(combos$scenario_id, "_results.csv"))
+combos$results_path <- NA_character_  # Published by the driver in its receipt.
 
 # --- 3. Pre-flight validation (coverage guardrails) ------------------------
 combos$valid <- TRUE
@@ -166,9 +174,9 @@ if (VALIDATE) {
   needs_cds <- any(combos$weather_source == "AGERA5") ||
     (eobs_uses_cds && any(combos$weather_source == "EOBS"))
   cdsrc <- has_cds_credentials()
-  if (!cdsrc && needs_cds && requireNamespace("dssatutils", quietly = TRUE)) {
+  if (!cdsrc && needs_cds && requireNamespace("cropmodeldata", quietly = TRUE)) {
     cdsrc <- tryCatch({
-      dssatutils::setup_cds_credentials(prompt = interactive(), quiet = FALSE)
+      cropmodeldata::setup_cds_credentials(prompt = interactive(), quiet = FALSE)
       has_cds_credentials()
     }, error = function(e) {
       soft_warnings <<- c(
@@ -208,8 +216,7 @@ cat(sprintf("Region/base      : %s_%s  (%s)\n", base_project, res_tag,
             paste(unlist(base_cfg$state_name_filter), collapse = ", ")))
 cat(sprintf("Weather sources  : %s\n", paste(weather_list, collapse = ", ")))
 cat(sprintf("Soil sources     : %s\n", paste(soil_list, collapse = ", ")))
-if (PERIODS_SWEPT)
-  cat(sprintf("Periods          : %s\n", paste(vapply(periods, `[[`, "", "label"), collapse = ", ")))
+cat(sprintf("Periods          : %s\n", paste(vapply(periods, `[[`, "", "label"), collapse = ", ")))
 cat(sprintf("Combinations     : %d valid / %d total\n", sum(combos$valid), nrow(combos)))
 cat(sprintf("Response var(s)  : %s\n", paste(RESPONSE_VARS, collapse = ", ")))
 cat(sprintf("Parallelism      : max_parallel = %d%s\n", MAX_PARALLEL,
@@ -219,7 +226,7 @@ cat("\n")
 for (i in seq_len(nrow(combos))) {
   lab <- if (PERIODS_SWEPT) sprintf("%-12s x %-14s x %s", combos$weather_source[i], combos$soil_source[i], combos$period_label[i])
          else sprintf("%-12s x %-14s", combos$weather_source[i], combos$soil_source[i])
-  if (combos$valid[i]) cat(sprintf("  [%02d] %s -> %s\n", i, lab, basename(combos$results_path[i])))
+  if (combos$valid[i]) cat(sprintf("  [%02d] %s -> %s\n", i, lab, "driver-resolved output"))
   else                 cat(sprintf("  [--] %s -> SKIPPED: %s\n", lab, combos$skip_reason[i]))
 }
 
@@ -229,10 +236,10 @@ run_idx <- which(combos$valid)
 if (length(run_idx) == 0) { cat("\nNo valid combinations to run.\n"); quit(save = "no", status = 1) }
 
 # --- 5. Merge config + run a single combination ----------------------------
-existing_cfg <- if (file.exists("config.yml")) yaml::read_yaml("config.yml") else list()
-merge_over   <- function(a, b) { for (k in names(b)) a[[k]] <- b[[k]]; a }
 LOG_DIR      <- file.path(PROJECT_ROOT, "results", "experiment_logs")
-CFG_DIR      <- file.path(PROJECT_ROOT, ".experiment_configs")
+CONFIG_ROOT <- file.path(PROJECT_ROOT, ".experiment_configs")
+dir.create(CONFIG_ROOT, recursive=TRUE, showWarnings=FALSE)
+CFG_DIR <- tempfile("invocation-", tmpdir=CONFIG_ROOT)
 dir.create(LOG_DIR, recursive = TRUE, showWarnings = FALSE)
 dir.create(CFG_DIR, recursive = TRUE, showWarnings = FALSE)
 
@@ -242,9 +249,10 @@ run_one <- function(i) {
                  if (PERIODS_SWEPT) paste0(" x ", combos$period_label[i]) else "")
   log_file <- file.path(LOG_DIR, paste0(combos$scenario_id[i], ".log"))
 
-  if (REUSE_EXISTING && file.exists(combos$results_path[i])) {
-    cat(sprintf("%s  -> reusing existing results\n", tag)); return(TRUE)
-  }
+  # Always invoke the driver: it checks model/input provenance before resuming.
+  # A CSV alone is never proof of a complete or current scenario.
+  receipt <- file.path(CFG_DIR, paste0(combos$scenario_id[i], ".receipt.json"))
+  if (file.exists(receipt)) unlink(receipt)
 
   # Private, fully-merged config for this combination.
   cfg <- merge_over(existing_cfg, base_cfg)
@@ -255,18 +263,19 @@ run_one <- function(i) {
   cfg$weather_end_year   <- combos$year_end[i]
   cfg$run_tag            <- ""        # default run naming => DSSAT_RUN_NAME == scenario_id
   cfg$run_name_override  <- ""
+  cfg$resume_dssat_runs  <- REUSE_EXISTING
+  cfg$check_provenance   <- TRUE
   cfg$run_name_style     <- "grid"
   cfg_file <- file.path(CFG_DIR, paste0(combos$scenario_id[i], ".yml"))
   yaml::write_yaml(cfg, cfg_file)
 
   cat(sprintf("%s  -> running... (log: %s)\n", tag, basename(log_file)))
   t0 <- Sys.time()
-  status <- system2("Rscript", args = shQuote("dssat_main_pipeline.R"),
-                    env = paste0("DSSAT_CONFIG_FILE=", shQuote(cfg_file)),
-                    stdout = log_file, stderr = log_file)
+  status <- run_driver(RSCRIPT, file.path(PROJECT_ROOT,"dssat_main_pipeline.R"),
+                       cfg_file, receipt, log_file)
   dt <- round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1)
 
-  ok <- (status == 0) && file.exists(combos$results_path[i])
+  ok <- (status == 0) && !is.null(completed_receipt_path(receipt))
   if (ok) {
     cat(sprintf("%s  -> OK (%s min)\n", tag, dt))
   } else {
@@ -285,12 +294,14 @@ run_parallel <- function(indices, n_workers) {
   if (length(indices) == 0L) return(list())
   if (.Platform$OS.type == "windows") {
     cl <- parallel::makeCluster(n_workers)
+    parallel::clusterCall(cl, function(paths) .libPaths(paths), .libPaths())
     on.exit(parallel::stopCluster(cl), add = TRUE)
     # Export every object that run_one() closes over, including run_one itself.
     parallel::clusterExport(cl, varlist = c(
       "combos", "REUSE_EXISTING", "PERIODS_SWEPT",
       "STOP_ON_ERROR", "existing_cfg", "base_cfg",
-      "CFG_DIR", "LOG_DIR", "merge_over", "run_one"
+      "CFG_DIR", "LOG_DIR", "merge_over", "run_one", "RSCRIPT", "PROJECT_ROOT",
+      "completed_receipt_path", "scenario_is_complete", "complete_point_ids", "run_driver"
     ), envir = globalenv())
     parallel::clusterEvalQ(cl, {
       suppressWarnings(suppressMessages({
@@ -335,9 +346,9 @@ if (MAX_PARALLEL <= 1L) {
 
 # --- 7. Aggregate every combination's results into one tidy table ----------
 read_tagged <- function(i) {
-  p <- combos$results_path[i]
-  if (!file.exists(p)) return(NULL)
-  d <- tryCatch(read.csv(p, stringsAsFactors = FALSE), error = function(e) NULL)
+  p <- completed_receipt_path(file.path(CFG_DIR, paste0(combos$scenario_id[i], ".receipt.json")))
+  if (is.null(p)) return(NULL)
+  d <- tryCatch(read.csv(p, stringsAsFactors = FALSE, colClasses=c(point_id="character")), error = function(e) NULL)
   if (is.null(d) || nrow(d) == 0) return(NULL)
   d$weather_source <- combos$weather_source[i]
   d$soil_source    <- combos$soil_source[i]
@@ -355,6 +366,12 @@ if (length(all_list) == 0) {
 all_cols <- Reduce(union, lapply(all_list, names))
 all_list <- lapply(all_list, function(d) { d[setdiff(all_cols, names(d))] <- NA; d[all_cols] })
 combined <- do.call(rbind, all_list)
+
+ANALYSIS_METHOD <- "exploratory_unweighted_sequential_additive_ANOVA"
+ANALYSIS_LIMITS <- "Point summaries are unweighted; ANOVA is order-dependent for unbalanced data and does not model repeated sites."
+message(ANALYSIS_LIMITS)
+if ("weight_ha" %in% names(combined))
+  warning("Sampling weights detected: use weight_ha in a separate area-weighted regional analysis; these summaries are exploratory.")
 
 combined_csv <- if (is.null(out_cfg$combined_csv)) file.path("results", paste0("EXPERIMENT_", EXP_NAME, "_combined.csv")) else out_cfg$combined_csv
 dir.create(dirname(combined_csv), recursive = TRUE, showWarnings = FALSE)
@@ -415,7 +432,7 @@ for (RV in RESPONSE_VARS) {
       labs <- sub("Residuals", "residual", trimws(rownames(a)))
       vd <- data.frame(factor = labs, sum_sq = ss,
                        variance_pct = round(100 * ss / sum(ss), 2),
-                       response_var = RV, stringsAsFactors = FALSE)
+                       response_var = RV, method=ANALYSIS_METHOD, limitations=ANALYSIS_LIMITS, stringsAsFactors = FALSE)
       vp <- out_path("variance_csv", "variance.csv", RV)
       write.csv(vd, vp, row.names = FALSE)
       cat(sprintf("  variance -> %s\n", vp))

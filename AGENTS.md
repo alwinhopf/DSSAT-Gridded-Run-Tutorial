@@ -6,7 +6,7 @@
 ## 1. Role in the Workspace
 
 `DSSAT_Gridded_Run_Tutorial` is the **canonical gridded crop modeling engine driver**:
-- It consumes the shared foundation libraries **`dssatutils`** (weather and soil download) and **`dssatengine`** (grid generation, batch writing, DSSAT execution, output parsing).
+- It consumes the shared foundation libraries **`cropmodel_data`** (weather and soil download) and **`cropmodel_runtime`** (grid generation, batch writing, DSSAT execution, output parsing).
 - It provides the reference end-to-end gridded workflows (`dssat_main_pipeline.py` and `dssat_main_pipeline.R`).
 - Downstream study repositories (`Bioenergy_Model_Input_Comparison`, `DSSAT_SubField_MILP_Analysis`, etc.) drive this engine via `ENGINE_DIR` or sibling imports — they do **not** fork it.
 

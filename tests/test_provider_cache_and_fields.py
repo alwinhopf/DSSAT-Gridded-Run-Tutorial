@@ -49,7 +49,9 @@ for(e in parse("dssat_main_pipeline.R")) {
  if(exists("PROVIDER_CACHE_ROOT")&&!nzchar(PROVIDER_CACHE_ROOT)) PROVIDER_CACHE_ROOT<-INPUT_ROOT_DIR
 }
 cat(jsonlite::toJSON(mget(keys[-1]),auto_unbox=TRUE))'''
-    result = subprocess.run([rscript, '--vanilla', '-e', code, str(input_root), str(output_root), override],
+    r_code = tmp_path / 'contract.R'
+    r_code.write_text(code, encoding='utf-8')
+    result = subprocess.run([rscript, '--vanilla', str(r_code), str(input_root), str(output_root), override],
                             cwd=ROOT, capture_output=True, text=True, check=True)
     assert {k: Path(v).resolve() for k, v in json.loads(result.stdout).items()} == {k: Path(v).resolve() for k, v in expected.items()}
 

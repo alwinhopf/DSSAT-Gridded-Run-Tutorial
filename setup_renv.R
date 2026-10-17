@@ -47,38 +47,27 @@ pkgs <- c(
 
 renv::install(pkgs)
 
-# --- Shared Git packages: dssatutils + dssatengine -------------------------
-# These live in their own GitHub repos and are reused across projects. Fresh
-# installs use release tags or exact commits, not branch names, so the environment
-# is reproducible without relying on whatever happens to be on `main`.
-#
-# For active shared-package development only, set USE_LOCAL_SHARED_PACKAGES=1 to
-# install from sibling checkouts instead of the pinned refs below, then snapshot
-# the resulting lockfile deliberately.
-#
-# If the repos are private, set a PAT once first:
-#   usethis::create_github_token(); gitcreds::gitcreds_set()
+# --- Shared packages from the cropmodel monorepo ---
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
-shared_refs <- c(
-  # Immutable workspace baselines; update environment.yml and both lockfiles together.
-  dssatutils = "f728cd810923465360e4730d8893bb566dc0773c",
-  dssatengine = "14871db233af97a378fd42fb0c9749b5ff9b9453"
-)
+# Pending the first release tag: immutable migration baseline, never main.
+cropmodel_ref <- "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+cropmodel_root <- Sys.getenv("CROPMODEL_ROOT", file.path(workspace_root, "cropmodel"))
+shared_packages <- c(cropmodeldata = "cropmodel_data", cropmodelruntime = "cropmodel_runtime")
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")
-for (pkg in names(shared_refs)) {
-  local_dir <- file.path(workspace_root, pkg)
-  target <- if (use_local_shared && file.exists(file.path(local_dir, "DESCRIPTION"))) {
-    local_dir
-  } else {
-    paste0("alwinhopf/", pkg, "@", shared_refs[[pkg]])
+for (pkg in names(shared_packages)) {
+  subdir <- file.path("packages", shared_packages[[pkg]], "R", pkg)
+  local_dir <- file.path(cropmodel_root, subdir)
+  if (use_local_shared && !file.exists(file.path(local_dir, "DESCRIPTION"))) {
+    stop("Missing cropmodel R source: ", local_dir)
   }
+  target <- if (use_local_shared) local_dir else paste0("alwinhopf/cropmodel/", subdir, "@", cropmodel_ref)
   message(sprintf("Installing shared package '%s' from %s", pkg, target))
   renv::install(target, prompt = FALSE)
 }
 
 # Snapshot the FULL project library (CRAN packages + both Git packages) so
 # renv.lock records every dependency, including the Git RemoteSha values that
-# make dssatutils/dssatengine reproducible. COMMIT renv.lock after this runs.
+# make cropmodeldata/cropmodelruntime reproducible. COMMIT renv.lock after this runs.
 renv::snapshot(type = "all", prompt = FALSE)
 
 message("\nrenv.lock written. Commit it so a fresh machine can `renv::restore()`.")

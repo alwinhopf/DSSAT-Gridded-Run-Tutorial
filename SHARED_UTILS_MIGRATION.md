@@ -1,3 +1,5 @@
+> Historical record: these notes describe the former DSSAT support repositories. Current consumer setup uses the combined cropmodel monorepo; follow README.md for installation and dependency pins.
+
 # Shared Utilities Migration — Playbook & State
 
 **Goal:** Extract the duplicated weather + soil download functions out of

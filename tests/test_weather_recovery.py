@@ -12,15 +12,12 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-UTILS = ROOT.parent / 'dssatutils'
-if not UTILS.is_dir():
-    UTILS = ROOT / '.ci-deps' / 'dssatutils'
-if (UTILS / 'python').is_dir():
-    sys.path.insert(0, str(UTILS / 'python'))
+from tests.helpers.packages import package_source
+UTILS = package_source('cropmodel_data')
 from tests.helpers.discovery import find_rscript
 
 try:
-    from dssatutils.weather_validation import is_wth_valid
+    from cropmodel_data.weather_validation import is_wth_valid
 except (ImportError, Exception):
     is_wth_valid = None
 
@@ -37,7 +34,7 @@ def test_real_engine_keeps_exclusions_but_retries_old_failures(tmp_path,language
     (tmp_path/'00000002.WTH').write_text('invalid excluded evidence')
     if language=='python':
         if is_wth_valid is None:
-            pytest.skip("dssatutils.weather_validation is not available")
+            pytest.skip("cropmodel_data.weather_validation is not available")
         tree = ast.parse((ROOT/'dssat_main_pipeline.py').read_text())
         names = {'load_unresolvable_point_ids','load_weather_exclusions',
                  'remove_unresolvable_point_ids','save_unresolvable_point_ids','weather_file_is_valid'}
@@ -92,7 +89,7 @@ stopifnot(identical(selected,'00000003'))
             tf.write(code)
             tf_path = tf.name
         try:
-            proc = subprocess.run([rscript, '--vanilla', tf_path, str(UTILS), str(ROOT / 'dssat_main_pipeline.R'), str(tmp_path)], capture_output=True, text=True, timeout=60)
+            proc = subprocess.run([rscript, '--vanilla', tf_path, str(UTILS / "R/cropmodeldata"), str(ROOT / 'dssat_main_pipeline.R'), str(tmp_path)], capture_output=True, text=True, timeout=60)
             assert proc.returncode == 0, proc.stdout + proc.stderr
         finally:
             if os.path.exists(tf_path):

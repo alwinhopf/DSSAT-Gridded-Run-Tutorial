@@ -28,22 +28,21 @@ try:
 except ImportError:
     pytestmark = []
 
-# Make dssatutils package importable regardless of cwd.
+# Make cropmodel_data package importable regardless of cwd.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 _WORKSPACE = os.path.dirname(_REPO)
-_DSSATUTILS_PY = os.path.join(_WORKSPACE, "dssatutils", "python")
-if (os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1"
-        and os.path.isdir(_DSSATUTILS_PY)
-        and _DSSATUTILS_PY not in sys.path):
-    sys.path.insert(0, _DSSATUTILS_PY)
+sys.path.insert(0, str(_REPO))
+from tests.helpers.packages import configure_workspace_packages
+configure_workspace_packages()
 
-from dssatutils.weather_openmeteo import process_weather_openmeteo  # noqa: E402
+
+from cropmodel_data.weather_openmeteo import process_weather_openmeteo  # noqa: E402
 
 try:
     import geopandas as gpd                                          # noqa: E402
     from shapely.geometry import Point                               # noqa: E402
-    import dssatutils.soil_soilgrids_online as sg_online             # noqa: E402
+    import cropmodel_data.soil_soilgrids_online as sg_online             # noqa: E402
     _HAVE_SOIL = True
 except Exception as exc:  # noqa: BLE001
     print(f"[warn] SoilGrids/geopandas not importable ({exc}); skipping soil test.")

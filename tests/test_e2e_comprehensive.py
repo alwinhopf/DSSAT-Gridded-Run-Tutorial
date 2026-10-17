@@ -22,21 +22,21 @@ import pandas as pd
 import pytest
 
 # Use the installed, CI-pinned package by default. Workspace developers can
-# explicitly opt into a sibling checkout while changing dssatutils.
+# explicitly opt into a sibling checkout while changing cropmodel_data.
 _HERE = Path(__file__).parent
 _REPO = _HERE.parent
 _WORKSPACE = _REPO.parent
-if os.getenv("DSSAT_USE_WORKSPACE_SIBLINGS", "") == "1":
-    sys.path.insert(0, str(_WORKSPACE / "dssatutils" / "python"))
 sys.path.insert(0, str(_REPO))
-sys.path.insert(0, str(_REPO / "python_scripts"))
+from tests.helpers.packages import configure_workspace_packages
+configure_workspace_packages()
+
 
 pytestmark = pytest.mark.integration
 
 try:
-    import dssatutils
+    import cropmodel_data
 except ImportError:
-    pytest.skip("dssatutils not installed", allow_module_level=True)
+    pytest.skip("cropmodel_data not installed", allow_module_level=True)
 
 # Check optional dependencies
 HAS_SF = False
@@ -222,7 +222,7 @@ class TestWeatherSources:
         expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
         _run_weather_provider(
             "Open-Meteo",
-            lambda: dssatutils.process_weather_openmeteo(
+            lambda: cropmodel_data.process_weather_openmeteo(
                 shapefile=gdf,
                 start_year=2010,
                 end_year=2010,
@@ -237,7 +237,7 @@ class TestWeatherSources:
             log_file,
         )
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_daymet"), 
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_weather_daymet"),
                         reason="process_weather_daymet not available")
     def test_weather_daymet_us(self, work_dir):
         """Test Daymet (US only, free, no key)."""
@@ -251,7 +251,7 @@ class TestWeatherSources:
             expected = [wth_dir / f"{pid}.WTH" for pid in US_POINTS["ID"]]
             _run_weather_provider(
                 "Daymet",
-                lambda: dssatutils.process_weather_daymet(
+                lambda: cropmodel_data.process_weather_daymet(
                     shapefile=gdf,
                     start_year=2010,
                     end_year=2010,
@@ -268,7 +268,7 @@ class TestWeatherSources:
         except ImportError as e:
             pytest.skip(f"Daymet optional dep missing: {e}")
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_nasapower"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_weather_nasapower"),
                         reason="process_weather_nasapower not available")
     def test_weather_nasapower_global(self, work_dir):
         """Test NASA-POWER (global, free, no key)."""
@@ -281,7 +281,7 @@ class TestWeatherSources:
         expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
         _run_weather_provider(
             "NASA POWER",
-            lambda: dssatutils.process_weather_nasapower(
+            lambda: cropmodel_data.process_weather_nasapower(
                 shapefile=gdf,
                 start_year=2010,
                 end_year=2010,
@@ -296,7 +296,7 @@ class TestWeatherSources:
             log_file,
         )
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_gridmet"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_weather_gridmet"),
                         reason="process_weather_gridmet not available")
     def test_weather_gridmet_us(self, work_dir):
         """Test GridMET (US only, free, no key)."""
@@ -312,7 +312,7 @@ class TestWeatherSources:
             expected = [wth_dir / f"{pid}.WTH" for pid in US_POINTS["ID"]]
             _run_weather_provider(
                 "GridMET",
-                lambda: dssatutils.process_weather_gridmet(
+                lambda: cropmodel_data.process_weather_gridmet(
                     shapefile=gdf,
                     start_year=2010,
                     end_year=2010,
@@ -330,7 +330,7 @@ class TestWeatherSources:
         except ImportError as e:
             pytest.skip(f"GridMET optional dep missing: {e}")
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_agera5"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_weather_agera5"),
                         reason="process_weather_agera5 not available")
     def test_weather_agera5_global(self, work_dir):
         """Test AgERA5 (global, requires CDS key)."""
@@ -349,7 +349,7 @@ class TestWeatherSources:
             expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
             _run_weather_provider(
                 "AgERA5",
-                lambda: dssatutils.process_weather_agera5(
+                lambda: cropmodel_data.process_weather_agera5(
                     shapefile=gdf,
                     start_year=2010,
                     end_year=2010,
@@ -367,7 +367,7 @@ class TestWeatherSources:
         except ImportError as e:
             pytest.skip(f"AgERA5 optional dep missing: {e}")
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_weather_nasapower_chirps"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_weather_nasapower_chirps"),
                         reason="process_weather_nasapower_chirps not available")
     def test_weather_nasapower_chirps_global(self, work_dir):
         """Test NASA-POWER CHIRPS (global, combines NASA-POWER with CHIRPS rainfall)."""
@@ -383,7 +383,7 @@ class TestWeatherSources:
             expected = [wth_dir / f"{pid}.WTH" for pid in GLOBAL_POINTS["ID"]]
             _run_weather_provider(
                 "NASA POWER + CHIRPS",
-                lambda: dssatutils.process_weather_nasapower_chirps(
+                lambda: cropmodel_data.process_weather_nasapower_chirps(
                     shapefile=gdf,
                     start_year=2010,
                     end_year=2010,
@@ -406,7 +406,7 @@ class TestWeatherSources:
 class TestSoilSources:
     """Test all soil data sources."""
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_soilgrids_online"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_soils_soilgrids_online"),
                         reason="process_soils_soilgrids_online not available")
     def test_soil_soilgrids_online_global(self, work_dir):
         """Test SoilGrids Online (global, free, REST).
@@ -420,7 +420,7 @@ class TestSoilSources:
         csv_path = sol_dir / "soil_map.csv"
         
         try:
-            dssatutils.process_soils_soilgrids_online(
+            cropmodel_data.process_soils_soilgrids_online(
                 gridfile=gdf,
                 soilfile_csv_path=str(csv_path),
                 output_sol_dir=str(sol_dir),
@@ -438,7 +438,7 @@ class TestSoilSources:
                 pytest.skip(f"SoilGrids provider returned no data: {e}")
             raise
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_soilgrids"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_soils_soilgrids"),
                         reason="process_soils_soilgrids not available")
     def test_soil_soilgrids_global(self, work_dir):
         """Test SoilGrids (global, offline VRT or online)."""
@@ -461,7 +461,7 @@ class TestSoilSources:
             "    15   -99 0.100 0.200 0.300  0.80  10.0  1.40  0.80  20.0  40.0   0.0   -99   -99   -99   -99   -99\n",
             encoding="utf-8",
         )
-        dssatutils.process_soils_soilgrids(
+        cropmodel_data.process_soils_soilgrids(
             grid_points=gdf,
             source_sol_file=str(master),
             output_csv_path=str(csv_path),
@@ -474,7 +474,7 @@ class TestSoilSources:
         for sol_file in sols:
             _check_sol_file(sol_file)
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_ssurgo"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_soils_ssurgo"),
                         reason="process_soils_ssurgo not available")
     def test_soil_ssurgo_us(self, work_dir):
         """Test SSURGO (US only)."""
@@ -491,7 +491,7 @@ class TestSoilSources:
 
         for attempt in range(3):
             try:
-                dssatutils.process_soils_ssurgo(
+                cropmodel_data.process_soils_ssurgo(
                     grid_points=gdf,
                     output_dir_csv=str(csv_path),
                     output_dir_individual=str(sol_dir),
@@ -532,7 +532,7 @@ class TestSoilSources:
         for sol_file in sols:
             _check_sol_file(sol_file)
 
-    @pytest.mark.skipif(not hasattr(dssatutils, "process_soils_hwsd"),
+    @pytest.mark.skipif(not hasattr(cropmodel_data, "process_soils_hwsd"),
                         reason="process_soils_hwsd not available")
     def test_soil_hwsd_global(self, work_dir):
         """Test HWSD (global, SQLite-based)."""
@@ -562,7 +562,7 @@ class TestSoilSources:
             con.execute(
                 "INSERT INTO HWSD2_LAYERS VALUES (1,1,100,0,200,40,20,40,1.4,1.0,0)"
             )
-        dssatutils.process_soils_hwsd(
+        cropmodel_data.process_soils_hwsd(
             grid_points=gdf,
             hwsd_raster_file=str(raster),
             hwsd_db_file=str(database),
@@ -578,7 +578,7 @@ class TestSoilSources:
 # --- VALIDATION HELPERS ---
 
 def _read_ssurgo_failure_reasons(path):
-    """Return per-point SSURGO failure reasons written by dssatutils."""
+    """Return per-point SSURGO failure reasons written by cropmodel_data."""
     if not path.exists():
         return []
     try:

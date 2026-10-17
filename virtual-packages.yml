@@ -1,0 +1,15 @@
+# Minimum operating-system ABIs for the locked GIS stack.
+# Apple Silicon requires macOS 11 or later.
+subdirs:
+  linux-64:
+    packages:
+      __unix: "0"
+      __linux: "0"
+      __glibc: "2.17"
+  osx-arm64:
+    packages:
+      __unix: "0"
+      __osx: "11.0"
+  win-64:
+    packages:
+      __win: "0"

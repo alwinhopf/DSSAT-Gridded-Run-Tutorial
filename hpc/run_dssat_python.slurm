@@ -89,6 +89,7 @@ mkdir -p "$SUMMARY_DIR"
 # Here we use mpirun and default to SLURM_NTASKS if available.
 NPROCS="${SLURM_NTASKS:-550}"
 
+overall_status=0
 for RUN_DIR in "${RUN_DIRS[@]}"; do
   echo "============================================================"
   echo "Running DSSAT MPI job for: $RUN_DIR"
@@ -112,6 +113,9 @@ for RUN_DIR in "${RUN_DIRS[@]}"; do
   rc=$?
   echo "Run finished with exit code $rc at: $(date)"
   if [[ "$rc" != "0" ]]; then
-    echo "WARNING: Non-zero exit code. Check SLURM output for details."
+    echo "ERROR: Incomplete or failed run. Check the status JSON and SLURM output."
+    overall_status=1
   fi
 done
+
+exit "$overall_status"

@@ -9,9 +9,9 @@
 # It does NOT replace config.yml — it sits on top of it. For each combination
 # the orchestrator merges (in increasing priority):
 #     config.yml  <  experiment.yml:base  <  the combination's factor values
-# writes the merged result to config.yml, runs the pipeline, then restores your
-# original config.yml. So anything you don't mention here keeps its config.yml
-# value, and anything you don't mention there keeps the in-script default.
+# writes each merged configuration to a private overlay file and runs the pipeline
+# with DSSAT_CONFIG_FILE. The canonical config.yml is not modified. Results are
+# accepted only through the driver's receipt and completion sidecars.
 # =============================================================================
 
 experiment_name: "wx_soil_sensitivity"
@@ -22,7 +22,7 @@ experiment_name: "wx_soil_sensitivity"
 # This is "the example simulation" you want to repeat under every input combo.
 base:
   project_name:            "dssat_spatial_demo"
-  grid_spacing_meters:     20000          # 40 km demo grid; shrink for production
+  grid_spacing_meters:     20000          # 20 km demo grid; shrink for production
   crop_extension:          "MZ"
   boundary_shapefile_name: "tl_2024_us_state.shp"
   enable_boundary_filter:  true
@@ -52,7 +52,7 @@ base:
 #   year in your FileX (the UFGA8201 demo template is fixed to 1982). Use a
 #   multi-year experiment file, or per-window templates, to sweep periods for real.
 factors:
-  # FULL FACTORIAL — all weather × soil sources available in dssatutils
+  # FULL FACTORIAL — all weather × soil sources supported by the tutorial dispatch table
   # (6 weather × 4 soil = 24 combinations). Some need extra setup and are dropped
   # automatically when unavailable: AGERA5 needs a Copernicus CDS key; HWSD needs
   # the FAO HWSD raster+db files; SOILGRIDS_ONLINE (VRT) needs python rasterio;

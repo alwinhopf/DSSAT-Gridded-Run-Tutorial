@@ -38,7 +38,7 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
         matplotlib.use('Agg')
         tree = ast.parse((ROOT / 'dssat_main_pipeline.py').read_text(encoding="utf-8"))
         block = max((n for n in ast.walk(tree) if isinstance(n, ast.If) and 'STEP 4: VISUALIZING RESULTS' in ast.unparse(n)), key=lambda n: n.lineno)
-        env.update(pd=pd, gpd=gpd, os=__import__('os'))
+        env.update(pd=pd, gpd=gpd, os=__import__('os'), gridfile=[1, 2])
         exec(compile(ast.Module(body=[block], type_ignores=[]), '<plotting>', 'exec'), env)
         assert (env['plot_boundary'] is not None) == (backdrop == 'available')
         if backdrop == 'available': assert len(env['plot_boundary']) == 1
@@ -59,7 +59,7 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
             if isinstance(x, bool): return 'TRUE' if x else 'FALSE'
             if isinstance(x, list): return 'c(' + ','.join(map(literal, x)) + ')'
             return json.dumps(x)
-        setup = '\n'.join(k + ' <- ' + literal(v) for k, v in env.items()) + '\n'
+        setup = '\n'.join(k + ' <- ' + literal(v) for k, v in env.items()) + '\ngridfile <- data.frame(point_id=1:2)\n'
         block = (ROOT / 'dssat_main_pipeline.R').read_text(encoding="utf-8").split('# STEP 4: VISUALIZE RESULTS', 1)[1]
         script = tmp_path / 'render.R'
         script.write_text(setup + block + '\nstopifnot(is.null(boundary_sf_4326) == ' + literal(backdrop != 'available') + ')\n')
@@ -67,3 +67,24 @@ def test_reused_grid_renders(language, backdrop, tmp_path):
         assert completed.returncode == 0, completed.stderr
         plot = tmp_path / 'map_treatment4.png'
     assert plot.exists() and plot.stat().st_size > 1000
+
+
+@pytest.mark.parametrize('language', ['R', 'python'])
+def test_single_point_skips_maps(language, tmp_path):
+    # Only the gate's inputs are present: entering plotting would fail.
+    if language == 'python':
+        tree = ast.parse((ROOT / 'dssat_main_pipeline.py').read_text(encoding='utf-8'))
+        block = max((n for n in ast.walk(tree) if isinstance(n, ast.If)
+                     and 'STEP 4: VISUALIZING RESULTS' in ast.unparse(n)), key=lambda n: n.lineno)
+        env = dict(RUN_DSSAT_EXECUTION=True, gridfile=[1])
+        exec(compile(ast.Module(body=[block], type_ignores=[]), '<plotting>', 'exec'), env)
+    else:
+        rscript = find_rscript()
+        if not rscript:
+            pytest.skip('Rscript unavailable')
+        block = (ROOT / 'dssat_main_pipeline.R').read_text(encoding='utf-8').split('# STEP 4: VISUALIZE RESULTS', 1)[1]
+        script = tmp_path / 'skip-map.R'
+        script.write_text('RUN_DSSAT_EXECUTION <- TRUE\ngridfile <- data.frame(point_id=1)\n' + block, encoding='utf-8')
+        completed = subprocess.run([rscript, '--vanilla', str(script)], capture_output=True, text=True, timeout=60)
+        assert completed.returncode == 0, completed.stderr
+    assert list(tmp_path.glob('*.png')) == []

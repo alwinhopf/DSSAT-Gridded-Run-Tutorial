@@ -29,11 +29,6 @@ dependencies:
   - pytest=8.2.2
   # mpi4py via pip on HPC (see note above); uncomment for a local conda MPI:
   # - mpi4py=3.1.6
-  - pip:
-      # Shared package pins. Bump these deliberately when validating a new
-      # workspace release; avoid branch pins so clean installs are reproducible.
-      # Immutable workspace baselines; update setup_renv.R and both lockfiles together.
-      - dssatutils[cds] @ git+https://github.com/alwinhopf/dssatutils.git@f728cd810923465360e4730d8893bb566dc0773c
-      - dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@14871db233af97a378fd42fb0c9749b5ff9b9453
-      # CDS-backed weather sources (AgERA5, ERA5-Land, E-OBS CDS mode)
-      # still require user credentials; run setup_cds_credentials() once.
+# Shared monorepo support is installed after conda-lock using requirements.txt.
+# Pin: 4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9 (pending release tag).
+# python -m pip install -r requirements.txt

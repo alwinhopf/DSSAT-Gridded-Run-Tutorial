@@ -1,5 +1,5 @@
 #=======================================================================
-#   DSSAT PIPELINE SCRIPT — Spatial / Gridded Crop Modeling
+#   DSSAT PIPELINE SCRIPT â€” Spatial / Gridded Crop Modeling
 #   Modular soil & weather download, folder building, local or HPC run
 #=======================================================================
 #
@@ -17,20 +17,20 @@
 #
 # --- THREE WAYS TO DEFINE YOUR SPATIAL DOMAIN ---
 #
-#  MODE A — Regular grid (DEFAULT for demo): the pipeline creates a regular
+#  MODE A â€” Regular grid (DEFAULT for demo): the pipeline creates a regular
 #            grid of points at GRID_SPACING_METERS spacing that falls inside
 #            the boundary you specify in BOUNDARY_SHAPEFILE_NAME / STATE_NAME_FILTER.
 #            Set USE_EXISTING_POINT_SHAPEFILE <- FALSE  (default)
 #
-#  MODE B — Custom shapefile (your own field/farm/study area): supply any
-#            point or polygon shapefile — polygons are auto-converted to
+#  MODE B â€” Custom shapefile (your own field/farm/study area): supply any
+#            point or polygon shapefile â€” polygons are auto-converted to
 #            centroids. Set:
 #              USE_EXISTING_POINT_SHAPEFILE <- TRUE
 #              EXISTING_POINT_SHAPEFILE_PATH <- "path/to/your/points.shp"
 #            Useful for: field boundaries, research station coordinates,
 #            administrative units, or any pre-defined point set.
 #
-#  MODE C — Cropland-only points from CDL/NLCD (run on farmland only):
+#  MODE C â€” Cropland-only points from CDL/NLCD (run on farmland only):
 #            First run the two landcover helper scripts to build a cropland
 #            point shapefile, then feed it to this pipeline via MODE B.
 #            See README section "Optional: run only on cropland" for the
@@ -67,6 +67,14 @@ detect_project_dir <- function() {
 
 MAIN_PROJECT_DIR <- detect_project_dir()
 CODE_ROOT_DIR <- MAIN_PROJECT_DIR
+# Explicit local monorepo builds take precedence over the locked study library.
+# CI and fresh installs without this directory use their installed packages.
+local_cropmodel_library <- Sys.getenv("CROPMODEL_R_LIBRARY", unset="")
+if(!nzchar(local_cropmodel_library) && identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")) {
+  candidate <- file.path(CODE_ROOT_DIR,".download-runtime","current-library")
+  local_cropmodel_library <- if(dir.exists(candidate)) candidate else file.path(CODE_ROOT_DIR,".download-runtime","library")
+} else if(nzchar(local_cropmodel_library) && !dir.exists(local_cropmodel_library)) stop("Selected CROPMODEL_R_LIBRARY does not exist: ",local_cropmodel_library)
+if (dir.exists(local_cropmodel_library)) .libPaths(c(local_cropmodel_library, .libPaths()))
 
 message(sprintf("Running engine code from: %s", CODE_ROOT_DIR))
 
@@ -79,7 +87,7 @@ if (os_system == "Windows") {
   DSSAT_EXE_NAME <- "DSCSM048.exe"
 } else {
   # macOS / Linux: DSSAT must be compiled from source. No official installer.
-  # See README.md → "Installing DSSAT on macOS (Apple Silicon)" for the full tutorial.
+  # See README.md â†’ "Installing DSSAT on macOS (Apple Silicon)" for the full tutorial.
   # Quick summary for macOS Apple Silicon (M1/M2/M3/M4/M5):
   #
   #   brew install gcc cmake git
@@ -113,7 +121,7 @@ if (os_system == "Windows") {
 sibling_dssat <- file.path(dirname(CODE_ROOT_DIR), "DSSAT48")
 if (dir.exists(sibling_dssat)) DSSAT_BASE <- sibling_dssat
 
-# Environment-variable override (recommended — keeps paths out of version control):
+# Environment-variable override (recommended â€” keeps paths out of version control):
 #   Sys.setenv(DSSAT_EXE  = "/full/path/to/dscsm048")   # overrides both BASE + NAME
 #   Sys.setenv(DSSAT_BASE = "/path/to/DSSAT48")          # overrides base folder only
 DSSAT_BASE <- Sys.getenv("DSSAT_BASE", unset = DSSAT_BASE)
@@ -165,9 +173,9 @@ message(sprintf("Engine generated-output root: %s", OUTPUT_ROOT_DIR))
 # PROJECT_NAME: short label used in folder/file naming. No spaces.
 PROJECT_NAME      <- cfg_get("project_name", "dssat_spatial_demo")
 # Grid spacing in meters. Larger = fewer points = faster demo.
-# Suggested: 50000 (50 km) for a first test; 5000–10000 for production runs.
+# Suggested: 50000 (50 km) for a first test; 5000â€“10000 for production runs.
 GRID_SPACING_METERS <- cfg_get("grid_spacing_meters", 50000)
-# Crop module extension — "MZ" = maize, "WH" = wheat, "SB" = soybean, etc.
+# Crop module extension â€” "MZ" = maize, "WH" = wheat, "SB" = soybean, etc.
 CROP_EXTENSION    <- cfg_get("crop_extension", "MZ")
 
 # --- 2b. Optional: Run folder naming (decouple inputs vs runs) ---
@@ -191,7 +199,7 @@ RUN_NAME_OVERRIDE <- cfg_get("run_name_override", "")  # if non-empty, this exac
 #   Set USE_EXISTING_POINT_SHAPEFILE <- TRUE and point
 #   EXISTING_POINT_SHAPEFILE_PATH at your file.
 #   The pipeline auto-converts polygons to centroids, re-projects to
-#   WGS84, and normalises IDs — so any shapefile format works.
+#   WGS84, and normalises IDs â€” so any shapefile format works.
 #   Examples:
 #     "gridpoints/my_field_centroids.shp"     # farm/field polygons
 #     "gridpoints/study_sites.shp"            # research station points
@@ -201,7 +209,7 @@ RUN_NAME_OVERRIDE <- cfg_get("run_name_override", "")  # if non-empty, this exac
 # MODE C (CDL/NLCD cropland only):
 #   Run r_scripts/landcover_raster.R then r_scripts/landcover_raster_to_gridpoints.R
 #   to build a cropland point shapefile, then use MODE B to feed it here.
-#   See README → "Optional: run only on cropland" for the full walkthrough.
+#   See README â†’ "Optional: run only on cropland" for the full walkthrough.
 USE_EXISTING_POINT_SHAPEFILE  <- cfg_get("use_existing_point_shapefile", FALSE)   # TRUE = MODE B/C; FALSE = MODE A (demo default)
 EXISTING_POINT_SHAPEFILE_PATH <- cfg_get("existing_point_shapefile_path",
                                          file.path(GRIDPOINTS_DIR, "my_points.shp"))  # MODE B/C only
@@ -233,7 +241,7 @@ if (USE_MASTER_GRID) {
   }
 }
 
-# --- 2b. Boundary settings (MODE A only — ignored when USE_EXISTING_POINT_SHAPEFILE = TRUE) ---
+# --- 2b. Boundary settings (MODE A only â€” ignored when USE_EXISTING_POINT_SHAPEFILE = TRUE) ---
 # BOUNDARY_SHAPEFILE_NAME: path relative to shapefile/ folder.
 #   Default uses the US Census TIGER/Line state boundaries (download instructions in README).
 BOUNDARY_SHAPEFILE_NAME  <- cfg_get("boundary_shapefile_name", "tl_2024_us_state.shp")
@@ -243,7 +251,7 @@ BOUNDARY_SHAPEFILE_NAME  <- cfg_get("boundary_shapefile_name", "tl_2024_us_state
 ENABLE_BOUNDARY_FILTER   <- cfg_get("enable_boundary_filter", TRUE)
 BOUNDARY_FILTER_COLUMN   <- cfg_get("boundary_filter_column", "NAME")
 # STATE_NAME_FILTER: one or more values to keep. Must match BOUNDARY_FILTER_COLUMN exactly.
-# Demo: Montana at 50 km spacing yields ~60 grid points — fast for a first test.
+# Demo: Montana at 50 km spacing yields ~60 grid points â€” fast for a first test.
 STATE_NAME_FILTER        <- as.character(cfg_get("state_name_filter", c("Iowa")))
 
 # --- 2d. Optional cropland mask ---
@@ -263,6 +271,20 @@ CROPLAND_STRICT <- isTRUE(as.logical(cfg_get("cropland_strict", FALSE)))
 REUSE_CROPLAND_GRID <- isTRUE(as.logical(cfg_get("reuse_cropland_grid", TRUE)))
 CROPLAND_CLIP_TO_BOUNDARY <- isTRUE(as.logical(cfg_get("cropland_clip_to_boundary", TRUE)))
 CROPLAND_RELOCATE_ANCHOR <- isTRUE(as.logical(cfg_get("cropland_relocate_anchor", FALSE)))
+SAMPLING_STRATEGY <- cfg_get("sampling_strategy", NULL)
+SAMPLING_STRATA <- as.numeric(cfg_get("sampling_strata", 5))
+if(length(SAMPLING_STRATA)!=1 || !is.finite(SAMPLING_STRATA) || SAMPLING_STRATA!=floor(SAMPLING_STRATA) || SAMPLING_STRATA<1 || SAMPLING_STRATA>32) stop("sampling_strata must be an integer from 1 to 32")
+SAMPLING_STRATA <- as.integer(SAMPLING_STRATA)
+SAMPLING_CELL_CRS <- as.character(cfg_get("sampling_cell_crs", MASTER_GRID_CRS))
+if (!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) {
+  if (!all(c("sampling_strategy", "sampling_grid_identity", "build_sampling_grid") %in%
+           getNamespaceExports("cropmodelruntime")) ||
+      !"sampling_provenance" %in% getNamespaceExports("cropmodeldata"))
+    stop("sampling_strategy requires the development cropmodel sampling APIs. Install the documented local monorepo packages, or leave sampling_strategy null.")
+  SAMPLING_STRATEGY <- cropmodelruntime::sampling_strategy(SAMPLING_STRATEGY)
+  if (!USE_CROPLAND_MASK || cfg_get("cropland_filter_basis", "cell_fraction") != "cell_fraction")
+    stop("Explicit sampling requires cropland masking with cell_fraction support")
+}
 CROPLAND_FILTER_BASIS <- tolower(trimws(as.character(cfg_get(
   "cropland_filter_basis", "cell_fraction"
 ))))
@@ -310,11 +332,11 @@ CHIRPS_GEE_PROJECT  <- as.character(cfg_get("chirps_gee_project", ""))
 CHIRPS_DOWNLOAD_TIMEOUT <- cfg_get("chirps_download_timeout", NULL)
 
 # 3. Soil Settings
-# SOIL_SOURCE: "SSURGO"          — US only, queries USDA SDA web service per point
-#              "SOILGRIDS_10K"   — global, reads a pre-downloaded master .SOL file
-#              "AGMIP"           — global AgMIP/Han DSSAT-ready 5 arc-min .SOL file
-#              "SOILGRIDS_ONLINE"— global, queries SoilGrids REST API per point
-#              "POLARIS"         — US 30 m, streams POLARIS GeoTIFF tiles per point
+# SOIL_SOURCE: "SSURGO"          â€” US only, queries USDA SDA web service per point
+#              "SOILGRIDS_10K"   â€” global, reads a pre-downloaded master .SOL file
+#              "AGMIP"           â€” global AgMIP/Han DSSAT-ready 5 arc-min .SOL file
+#              "SOILGRIDS_ONLINE"â€” global, queries SoilGrids REST API per point
+#              "POLARIS"         â€” US 30 m, streams POLARIS GeoTIFF tiles per point
 SOIL_SOURCE        <- cfg_get("soil_source", "SOILGRIDS_10K")
 STATSGO            <- isTRUE(as.logical(cfg_get("statsgo", FALSE)))
 STANDARDIZE_LAYERS <- isTRUE(as.logical(cfg_get("standardize_layers", FALSE)))
@@ -357,6 +379,7 @@ PRISM_BACKEND      <- cfg_get("prism_backend", "acis")
 MSWX_NC_DIR        <- cfg_get("mswx_nc_dir", file.path(INPUT_ROOT_DIR, "mswx_netcdf"))
 MSWEP_NC_DIR       <- cfg_get("mswep_nc_dir", file.path(INPUT_ROOT_DIR, "mswep_netcdf"))
 CRUJRA_NC_DIR      <- cfg_get("crujra_nc_dir", file.path(INPUT_ROOT_DIR, "crujra_netcdf"))
+SILO_NC_DIR        <- cfg_get("silo_nc_dir", file.path(INPUT_ROOT_DIR, "silo_netcdf"))
 TERRACLIMATE_NC_DIR <- cfg_get("terraclimate_nc_dir", file.path(INPUT_ROOT_DIR, "terraclimate_netcdf"))
 # LUCAS (Europe) only: the downloaded ESDAC LUCAS topsoil table (CSV/XLSX).
 LUCAS_CSV          <- cfg_get("lucas_csv", file.path(INPUT_ROOT_DIR, "LUCAS", "lucas_topsoil.csv"))
@@ -368,8 +391,12 @@ WOSIS_PROFILE_CSV      <- cfg_get("wosis_profile_csv", file.path(INPUT_ROOT_DIR,
 
 # 4. Construct Dynamic Folder Names
 # > Soil & Weather folders: Named by [Location]_[Resolution]_[Source]
+if (!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) SAMPLING_GRID_KEY <- cropmodelruntime::sampling_grid_identity(.CONFIG,CODE_ROOT_DIR)
 .CACHE_IDENTITY <- gsub("[^A-Za-z0-9_-]", "_", trimws(as.character(cfg_get("cache_identity", ""))))
-.CACHE_SUFFIX <- if (nzchar(.CACHE_IDENTITY)) paste0("_", substr(.CACHE_IDENTITY, 1L, 16L)) else ""
+if(!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY) && !nzchar(.CACHE_IDENTITY)) .CACHE_IDENTITY <- paste0("sg",substr(SAMPLING_GRID_KEY,1,15))
+.CACHE_SUFFIX <- if (nzchar(.CACHE_IDENTITY)) paste0("_", substr(.CACHE_IDENTITY, 1L, 48L)) else ""
+.sampling_key <- cropmodeldata::fallback_policy_key(list(input_fallback_resolution_fraction=cfg_get("input_fallback_resolution_fraction",0),input_fallback_resolution_m=cfg_get("input_fallback_resolution_m",GRID_SPACING_METERS),input_fallback_mode=cfg_get("input_fallback_mode","nearest_valid_land"),input_fallback_search_step_m=cfg_get("input_fallback_search_step_m",50),input_fallback_enabled=cfg_get("input_fallback_enabled",FALSE), input_fallback_land_mask=cfg_get("input_fallback_land_mask",""), input_fallback_land_values=cfg_get("input_fallback_land_values",list()), input_fallback_max_distance_m=cfg_get("input_fallback_max_distance_m",500), input_fallback_max_candidates=cfg_get("input_fallback_max_candidates",10000), input_fallback_within_cell=cfg_get("input_fallback_within_cell",TRUE), input_fallback_cell_crs=cfg_get("input_fallback_cell_crs","EPSG:5070")))
+if(nzchar(.sampling_key) && !endsWith(.CACHE_IDENTITY,.sampling_key)) .CACHE_SUFFIX <- paste0(.CACHE_SUFFIX,"_",.sampling_key)
 SOIL_BASENAME <- paste0(GRID_BASE_NAME, "_", SOIL_SOURCE, .CACHE_SUFFIX)
 WEATHER_DIR_NAME <- paste0(GRID_BASE_NAME, "_", WEATHER_SOURCE, .CACHE_SUFFIX)
 
@@ -394,6 +421,7 @@ if (nzchar(RUN_NAME_OVERRIDE)) {
 }
 
 # Make sure the folder name is filesystem-friendly
+if(!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY) && !nzchar(RUN_NAME_OVERRIDE)) DSSAT_RUN_NAME <- paste0(DSSAT_RUN_NAME,"_sampling_",.CACHE_IDENTITY)
 DSSAT_RUN_NAME <- gsub("[^A-Za-z0-9_\\-]", "_", DSSAT_RUN_NAME)
 
 # --- Paths (Dynamic) ---
@@ -405,9 +433,15 @@ RESULTS_SUBDIR <- "results"
 # INPUT/engine root, NOT the per-study OUTPUT root. The raw grids are independent
 # of which study consumes them, so keeping them with the engine lets every output
 # project reuse one cache instead of re-downloading (e.g. GridMET 1984-2025) per
-# study. These dirs are gitignored — they hold large generated downloads.
+# study. These dirs are gitignored â€” they hold large generated downloads.
 PROVIDER_CACHE_ROOT <- resolve_config_path(cfg_get("provider_cache_root", ""), INPUT_ROOT_DIR)
 if (!nzchar(PROVIDER_CACHE_ROOT)) PROVIDER_CACHE_ROOT <- INPUT_ROOT_DIR
+SOILGRIDS_CACHE_DIR <- resolve_config_path(Sys.getenv("SOILGRIDS_CACHE_DIR", unset=cfg_get("soilgrids_cache_dir", "")), PROVIDER_CACHE_ROOT)
+SOILGRIDS_CACHE_DOWNLOAD <- as.logical(cfg_get("soilgrids_cache_download", FALSE))
+SOILGRIDS_CACHE_SCOPE <- tolower(cfg_get("soilgrids_cache_scope", "region"))
+SOILGRIDS_CACHE_BBOX <- cfg_get("soilgrids_cache_bbox", list())
+SOILGRIDS_CACHE_BUFFER_DEGREES <- as.numeric(cfg_get("soilgrids_cache_buffer_degrees", 0.02))
+if (nzchar(SOILGRIDS_CACHE_DIR)) Sys.setenv(SOILGRIDS_CACHE_DIR=SOILGRIDS_CACHE_DIR)
 GRIDMET_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "gridmet_netcdf_cache")
 CHIRPS_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_netcdf_cache")
 CHIRPS_V3_CACHE_DIR <- file.path(PROVIDER_CACHE_ROOT, "chirps_v3_netcdf_cache")
@@ -442,6 +476,9 @@ if (USE_CROPLAND_MASK) {
            "_clip", as.integer(CROPLAND_CLIP_TO_BOUNDARY),
            "_move", as.integer(CROPLAND_RELOCATE_ANCHOR))
   )
+}
+if (!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) {
+  CROPLAND_GRID_TAG <- paste0(CROPLAND_GRID_TAG,"_sampling-",substr(SAMPLING_GRID_KEY,1,12))
 }
 POINT_SHAPEFILE_NAME <- paste0(GRID_BASE_NAME, CROPLAND_GRID_TAG, ".shp")
 ALL_LAND_POINT_SHAPEFILE_PATH <- file.path(GRIDPOINTS_OUTPUT_DIR, ALL_LAND_POINT_SHAPEFILE_NAME)
@@ -503,7 +540,7 @@ CONFIGURED_DSSAT_EXE <- resolve_config_path(cfg_get("dssat_exe_path", ""), CODE_
 DSSAT_EXE_PATH <- if (nzchar(CONFIGURED_DSSAT_EXE)) CONFIGURED_DSSAT_EXE else file.path(DSSAT_BASE, DSSAT_EXE_NAME)
 DSSAT_EXE_PATH <- Sys.getenv("DSSAT_EXE", unset = DSSAT_EXE_PATH)
 TEMPLATE_DIR <- resolve_config_path(cfg_get("template_dir", file.path(INPUT_ROOT_DIR, "dssat_templates")), CODE_ROOT_DIR)
-TEMPLATE_FILE_NAME <- cfg_get("template_file_name", "UFGA8201.MZX")  # DEMO PLACEHOLDER — replace with your own experiment file
+TEMPLATE_FILE_NAME <- cfg_get("template_file_name", "UFGA8201.MZX")  # DEMO PLACEHOLDER â€” replace with your own experiment file
                                        # UFGA8201.MZX is a maize file bundled with DSSAT for testing only.
                                        # Any valid DSSAT experiment file works (.MZX, .WHX, .SBX, etc.)
                                        # Match the extension to your CROP_EXTENSION setting above.
@@ -551,6 +588,7 @@ ZIP_FOR_HPC <- isTRUE(as.logical(cfg_get("zip_for_hpc", FALSE)))
 # --- 7. Switches ---
 RUN_STEP_1_SOILS <- isTRUE(as.logical(cfg_get("run_step_1_soils", TRUE))) # Set to FALSE to only use already downloaded soil files
 RUN_STEP_2_WEATHER <- isTRUE(as.logical(cfg_get("run_step_2_weather", TRUE)))  # Set to FALSE to only use already downloaded weather files
+CHECK_PROVENANCE <- isTRUE(as.logical(cfg_get("check_provenance", TRUE)))
 DOWNLOAD_ONLY <- isTRUE(as.logical(cfg_get("download_only", FALSE))) # Stop after input processing; never create DSSAT run folders
 RUN_DSSAT_EXECUTION <- isTRUE(as.logical(cfg_get("run_dssat_execution", TRUE))) # Set to FALSE for HPC preparation
 CLEANUP_RUN_FOLDERS <- isTRUE(as.logical(cfg_get("cleanup_run_folders", FALSE))) # Set to TRUE to delete all simulation folders after run
@@ -683,8 +721,8 @@ if (COPY_SUPPORT_FILES) {
 # Core counts are read from config.yml (soil_cores / weather_cores / dssat_cores).
 # "auto" (the default) = all logical CPUs minus 1, which is appropriate for most
 # workloads. Set an explicit integer in config.yml to tune per stage:
-#   - soil/weather steps are API/IO-bound  → can benefit from MORE than n_physical_cores
-#   - DSSAT step is CPU+disk-bound          → stay at or below n_physical_cores
+#   - soil/weather steps are API/IO-bound  â†’ can benefit from MORE than n_physical_cores
+#   - DSSAT step is CPU+disk-bound          â†’ stay at or below n_physical_cores
 # makeCluster/parLapply (PSOCK, not fork) is used throughout the main pipeline,
 # so all core counts work correctly on Windows, Linux, and macOS.
 resolve_cores <- function(key, default_n) {
@@ -708,7 +746,7 @@ message("Loading libraries...")
 
 # Every CRAN package the pipeline attaches when it sources its helper modules.
 # All helper modules are sourced at startup (some share helper functions), so
-# the FULL set must be present for `source()` to succeed — that is why we check
+# the FULL set must be present for `source()` to succeed â€” that is why we check
 # them all up front rather than only the selected weather/soil source's deps.
 packages_needed <- c(
   # --- core pipeline ---
@@ -717,10 +755,10 @@ packages_needed <- c(
   "rstudioapi", "zoo",
   # --- weather / soil helper modules (attached at source time) ---
   "nasapower", "daymetr", "terra", "ncdf4", "httr", "jsonlite", "tidyr",
-  "readr", "soilDB", "dssatutils", "dssatengine"
+  "readr", "soilDB", "cropmodeldata", "cropmodelruntime"
 )
 # Source-specific packages that are loaded LAZILY inside their module (so
-# sourcing the file never needs them) — require them only when that source is
+# sourcing the file never needs them) â€” require them only when that source is
 # actually selected, so e.g. a Daymet user is never asked to install RSQLite.
 if (WEATHER_SOURCE == "AGERA5" || (WEATHER_SOURCE == "EOBS" && EOBS_USE_CDS)) {
   packages_needed <- c(packages_needed, "ecmwfr")
@@ -728,24 +766,23 @@ if (WEATHER_SOURCE == "AGERA5" || (WEATHER_SOURCE == "EOBS" && EOBS_USE_CDS)) {
 if (SOIL_SOURCE == "HWSD")      packages_needed <- c(packages_needed, "DBI", "RSQLite")
 
 # Packages installed from GitHub rather than CRAN (name -> repo). None are
-# currently required beyond the shared DSSAT helper packages — the GRIDMET
+# currently required beyond the shared DSSAT helper packages â€” the GRIDMET
 # module downloads netCDF directly via httr + terra, so no climateR dependency.
 # Add entries here only if a helper module genuinely `library()`s another
 # GitHub-only package.
 github_pkgs <- list(
-  dssatutils = "alwinhopf/dssatutils",
-  dssatengine = "alwinhopf/dssatengine"
+  cropmodeldata = "alwinhopf/cropmodel/packages/cropmodel_data/R/cropmodeldata",
+  cropmodelruntime = "alwinhopf/cropmodel/packages/cropmodel_runtime/R/cropmodelruntime"
 )
 
 # ---------------------------------------------------------------------------
-# ensure_packages(): install any missing packages (prompting first in an
-# interactive session, auto-installing in batch/Rscript), then attach them all.
+# ensure_packages(): validate the restored package library, then attach dependencies.
 # This makes "Source" in RStudio self-bootstrapping instead of erroring on the
 # first missing dependency.
 #
 # Windows/macOS gotcha this handles: install.packages() defaults to
 # pkgType = "both", so for packages whose CRAN *source* is newer than the
-# *binary* (sf, terra, soilDB, ...) it tries to COMPILE from source — which
+# *binary* (sf, terra, soilDB, ...) it tries to COMPILE from source â€” which
 # needs Rtools + system GDAL/GEOS/PROJ and typically fails. We therefore force
 # type = "binary" on Windows/macOS (with a source fallback), and route installs
 # through renv::install() when an renv project is active so they land in the
@@ -819,7 +856,7 @@ possible_script_dirs <- c(
   MAIN_PROJECT_DIR
 )
 
-# Weather/soil helpers now come from the dssatutils package (loaded below); only
+# Weather/soil helpers now come from the cropmodeldata package (loaded below); only
 # the landcover helpers remain in r_scripts/, so detect the dir via one of those.
 SCRIPT_DIR <- NA
 for (dir in possible_script_dirs) {
@@ -834,39 +871,20 @@ if (is.na(SCRIPT_DIR)) {
 }
 message(sprintf("Using landcover helper scripts from: %s", SCRIPT_DIR))
 
-library(dssatutils)  # [dssatutils] shared weather/soil sources
-library(dssatengine) # [dssatengine] shared gridded run engine
-if (!"soil_file_issue" %in% getNamespaceExports("dssatutils")) {
-  stop("This driver requires the fixed-column soil preflight in the updated dssatutils package. ",
+library(cropmodeldata)  # [cropmodeldata] shared weather/soil sources
+library(cropmodelruntime) # [cropmodelruntime] shared gridded run engine
+if (!"soil_file_issue" %in% getNamespaceExports("cropmodeldata")) {
+  stop("This driver requires the fixed-column soil preflight in the updated cropmodeldata package. ",
        "Install the corrected local checkout and restart R before running; preserve existing caches.",
        call. = FALSE)
 }
 
-ensure_dssatutils_chirps_v3 <- function() {
+ensure_cropmodeldata_chirps_v3 <- function() {
   if (!identical(WEATHER_SOURCE, "NASA_POWER_CHIRPS_V3")) {
     return(invisible(TRUE))
   }
 
-  sibling_root <- normalizePath(file.path(CODE_ROOT_DIR, "..", "dssatutils"),
-                                mustWork = FALSE)
-  candidates <- c(
-    file.path(sibling_root, "R", "config.R"),
-    file.path(sibling_root, "R", "utils.R"),
-    file.path(sibling_root, "R", "provider_retry.R"),
-    file.path(sibling_root, "R", "weather_missing_normalization.R"),
-    file.path(sibling_root, "R", "weather_rainfall_merge.R"),
-    file.path(sibling_root, "R", "weather_chirps_v3.R")
-  )
-  if (all(file.exists(candidates))) {
-    for (src in candidates) source(src, local = globalenv())
-    message(sprintf(
-      "Loaded CHIRPS v3 weather helpers from local dssatutils checkout: %s",
-      sibling_root
-    ))
-    return(invisible(TRUE))
-  }
-
-  ns <- asNamespace("dssatutils")
+  ns <- asNamespace("cropmodeldata")
   has_namespace_v3 <- exists("process_weather_nasapower_chirps_v3", ns, inherits = FALSE) &&
     exists(".extract_coords", ns, inherits = FALSE) &&
     exists(".normalize_weather_missing_values", ns, inherits = FALSE)
@@ -878,29 +896,30 @@ ensure_dssatutils_chirps_v3 <- function() {
 
   if (!exists("process_weather_nasapower_chirps_v3", mode = "function")) {
     stop("process_weather_nasapower_chirps_v3 is not available. ",
-         "Reinstall/update the dssatutils R package from the local checkout ",
-         "or keep ../dssatutils/R/weather_chirps_v3.R available.",
+         "Reinstall/update the cropmodeldata R package from the local checkout ",
+         "from ../cropmodel/packages/cropmodel_data/R/cropmodeldata.",
          call. = FALSE)
   }
   invisible(TRUE)
 }
-ensure_dssatutils_chirps_v3()
+ensure_cropmodeldata_chirps_v3()
 
 # Soil sources that write one Saxton-&-Rawls .SOL per grid point named by point
 # ID (so SOIL_ID == point ID and the per-point combine logic applies).
-PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")
+PER_POINT_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN",
+                    "POLARIS", "SOILGRIDS_ONLINE", "SOILGRIDS_10K")
 # Soil sources needing no pre-downloaded external file (queried online).
 KEYLESS_ONLINE_SOIL <- c("SSURGO", "GNATSGO", "ISDASOIL", "SOILGRIDS_ONLINE", "POLARIS", "SSURGO_ALDERMAN")
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_openmeteo.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_nasapower_chirps.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "weather_agera5.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "soil_ssurgo.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "soil_soilgrids.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "soil_soilgrids_online.R"))
-# [dssatutils] source(file.path(SCRIPT_DIR, "soil_hwsd.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_daymet.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_nasapower.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_gridmet.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_openmeteo.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_nasapower_chirps.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "weather_agera5.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "soil_ssurgo.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "soil_soilgrids.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "soil_soilgrids_online.R"))
+# [cropmodeldata] source(file.path(SCRIPT_DIR, "soil_hwsd.R"))
 
 # --- Helper: format_SQL_in_statement ---
 format_SQL_in_statement <- function(x) {
@@ -926,8 +945,8 @@ delete_numbered_folders <- function(ids) {
 }
 
 # --- Helper: Validate Weather File ---
-if (!all(c("start_date", "end_date") %in% names(formals(dssatutils::is_wth_valid)))) {
-  stop("This driver requires the weather-recovery update in dssatutils. ",
+if (!all(c("start_date", "end_date") %in% names(formals(cropmodeldata::is_wth_valid)))) {
+  stop("This driver requires the weather-recovery update in cropmodeldata. ",
        "After active input jobs finish, install the corrected local checkout into the study library and restart R.",
        call. = FALSE)
 }
@@ -961,7 +980,7 @@ is_wth_valid <- function(id, dir, end_yr, start_yr = NULL) {
   key <- paste(path, info$size, as.numeric(info$mtime), start_yr, end_yr,
                WEATHER_VALIDATION_END_DATE, paste(weather_required_columns(), collapse = ","), sep = "|")
   if (exists(key, cache, inherits = FALSE)) return(cache[[key]])
-  valid <- dssatutils::is_wth_valid(path, end_year = end_yr, start_year = start_yr,
+  valid <- cropmodeldata::is_wth_valid(path, end_year = end_yr, start_year = start_yr,
     end_date = WEATHER_VALIDATION_END_DATE, required_columns = weather_required_columns())
   cache[[key]] <- valid
   cache$count <- cache$count + 1L
@@ -972,25 +991,14 @@ is_wth_valid <- function(id, dir, end_yr, start_yr = NULL) {
 
 # --- Helper: Clean Invalid Soil Files ---
 clean_invalid_soils <- function(dir, ids) {
-  if (!dir.exists(dir)) return()
+  if (!dir.exists(dir)) return(invisible(NULL))
   for (id in ids) {
     f <- file.path(dir, paste0(id, ".SOL"))
-    if (file.exists(f)) {
-      is_valid <- tryCatch({
-        if (file.info(f)$size == 0) FALSE
-        else {
-          lines <- readLines(f, n = 5, warn = FALSE, encoding = "UTF-8")
-          if (length(lines) == 0) FALSE
-          else if (any(grepl("ERROR", lines, ignore.case = TRUE))) FALSE
-          else if (!any(grepl("^\\s*\\*", lines))) FALSE
-          else TRUE
-        }
-      }, error = function(e) FALSE)
-      
-      if (!is_valid) {
-        message(sprintf("Deleting invalid/empty soil file: %s", f))
-        unlink(f)
-      }
+    if (!file.exists(f)) next
+    issue <- cropmodeldata::soil_file_issue(f)
+    if (!is.null(issue)) {
+      message(sprintf("Removing invalid derived soil profile %s: %s", id, issue))
+      if (unlink(f) != 0L || file.exists(f)) stop("Cannot remove invalid derived soil profile: ", f)
     }
   }
 }
@@ -1030,7 +1038,7 @@ soil_input_issue <- function(id) {
     id
   }
   # Shared fixed-column reader also rejects legacy shifted cached layer rows.
-  return(dssatutils::soil_file_issue(file.path(dir_path, "SOIL.SOL")))
+  return(cropmodeldata::soil_file_issue(file.path(dir_path, "SOIL.SOL")))
 }
 
 weather_input_issue <- function(id) {
@@ -1043,7 +1051,7 @@ weather_input_issue <- function(id) {
   if (!file.exists(f)) return(paste0(basename(f), " is missing"))
   if (file.info(f)$size == 0) return(paste0(basename(f), " is empty"))
   required <- weather_required_columns()
-  if (!dssatutils::is_wth_valid(
+  if (!cropmodeldata::is_wth_valid(
     f,
     end_year = WEATHER_END_YEAR,
     start_year = WEATHER_START_YEAR,
@@ -1204,7 +1212,7 @@ extend_weather_smart_single <- function(f, reference_year) {
     }
     ref_data <- d[d[,1] > ref_start & d[,1] < ref_end, , drop = FALSE]
   } else {
-    # NO complete years found — fall back to previous behavior (first 365 rows)
+    # NO complete years found â€” fall back to previous behavior (first 365 rows)
     ref_data <- d[1:min(365, nrow(d)), , drop = FALSE]
   }
   
@@ -1410,7 +1418,35 @@ apply_cropland_mask <- function(points_sf, raster_file, grid_spacing_m, classes,
 #-----------------------------------------------------------------------
 # STEP 0: CREATE GRIDFILE
 #-----------------------------------------------------------------------
+
+# Optional native R twin; wrap every public point provider through one contract.
+.fallback_mask <- as.character(cfg_get("input_fallback_land_mask", ""))
+if (nzchar(.fallback_mask) && !grepl("^([A-Za-z]:|/|\\\\)", .fallback_mask))
+  .fallback_mask <- file.path(CODE_ROOT_DIR, .fallback_mask)
+ .fallback_repair_config <- setNames(lapply(c("repair_weather_missing_values","repair_weather_date_gaps","repair_weather_temperature_inversions","weather_repair_max_gap_days","weather_repair_window_days","weather_repair_variables","weather_repair_inversion_method","weather_repair_max_inversion_c"), function(k) cfg_get(k, NULL)), c("repair_weather_missing_values","repair_weather_date_gaps","repair_weather_temperature_inversions","weather_repair_max_gap_days","weather_repair_window_days","weather_repair_variables","weather_repair_inversion_method","weather_repair_max_inversion_c"))
+.fallback_options <- list(
+  record_provenance = !is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY),
+  cell_file = if(!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) paste0(tools::file_path_sans_ext(POINT_SHAPEFILE_PATH),".cells.gpkg") else NULL,
+  eligibility_mask = if(!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY) && SAMPLING_STRATEGY!="grid_anchor") resolve_optional_path(CROPLAND_RASTER_FILE) else NULL,
+  eligibility_values = CROPLAND_CLASSES,
+  repair = function(directory, ids) cropmodeldata::repair_fallback_weather(directory, ids, .fallback_repair_config),
+  enabled = isTRUE(as.logical(cfg_get("input_fallback_enabled", FALSE))),
+  mode = as.character(cfg_get("input_fallback_mode", "nearest_valid_land")),
+  search_step_m = as.numeric(cfg_get("input_fallback_search_step_m", 50)),
+  land_mask = .fallback_mask,
+  land_values = unlist(cfg_get("input_fallback_land_values", list())),
+  resolution_fraction = as.numeric(cfg_get("input_fallback_resolution_fraction",0)),
+  resolution_m = as.numeric(cfg_get("input_fallback_resolution_m",GRID_SPACING_METERS)),
+  max_distance_m = as.numeric(cfg_get("input_fallback_max_distance_m", 500)),
+  max_candidates = as.integer(cfg_get("input_fallback_max_candidates", 10000)),
+  cell_size_m = if (isTRUE(as.logical(cfg_get("input_fallback_within_cell", TRUE)))) { .size <- as.numeric(cfg_get("input_fallback_resolution_m",GRID_SPACING_METERS)); if(.size>0) .size else NULL } else NULL,
+  cell_crs = as.character(cfg_get("input_fallback_cell_crs", "EPSG:5070")),
+  log_file = file.path(RESULTS_ROOT_DIR, "sampling_fallback.log"))
+for (.provider_name in grep("^process_(weather|soils)_", getNamespaceExports("cropmodeldata"), value=TRUE))
+  assign(.provider_name, cropmodeldata::spatial_fallback_provider(getExportedValue("cropmodeldata", .provider_name), c(.fallback_options,list(provider_name=.provider_name))))
+
 message("STEP 0: PREPARING GRIDFILE / POINTS")
+dir.create(OUTPUT_ROOT_DIR, recursive = TRUE, showWarnings = FALSE)
 setwd(OUTPUT_ROOT_DIR)
 dir.create(GRIDPOINTS_OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
@@ -1419,6 +1455,8 @@ boundary_sf <- NULL
 can_reuse_derived <- !USE_EXISTING_POINT_SHAPEFILE &&
   ((USE_CROPLAND_MASK && REUSE_CROPLAND_GRID) ||
    (USE_MASTER_GRID && REUSE_MASTER_GRID)) && file.exists(POINT_SHAPEFILE_PATH)
+if (!is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) can_reuse_derived <- can_reuse_derived &&
+  all(vapply(c(".cells.gpkg",".sampling.json"),function(ext) file.exists(sub("\\.shp$",ext,POINT_SHAPEFILE_PATH)),logical(1)))
 if (can_reuse_derived) {
   candidate_grid <- st_read(POINT_SHAPEFILE_PATH, quiet = TRUE)
   master_fields_ok <- !USE_MASTER_GRID ||
@@ -1480,6 +1518,12 @@ if (is.null(gridfile) && USE_EXISTING_POINT_SHAPEFILE) {
   }
 }
 
+if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile)) && !is.null(SAMPLING_STRATEGY) && nzchar(SAMPLING_STRATEGY)) {
+  gridfile <- cropmodelruntime::build_sampling_grid(gridfile,resolve_optional_path(CROPLAND_RASTER_FILE),
+    GRID_SPACING_METERS,CROPLAND_CLASSES,strategy=SAMPLING_STRATEGY,strata=SAMPLING_STRATA,
+    min_fraction=CROPLAND_MIN_FRACTION,boundary=boundary_sf,clip_to_boundary=CROPLAND_CLIP_TO_BOUNDARY,
+    cell_crs=SAMPLING_CELL_CRS,id_col=POINT_ID_COLUMN,output_path=POINT_SHAPEFILE_PATH,mask_year=cfg_get("sampling_mask_year",NULL))$points
+}
 if (USE_CROPLAND_MASK && !("crop_pct" %in% names(gridfile))) {
   gridfile <- apply_cropland_mask(
     points_sf = gridfile,
@@ -1561,7 +1605,7 @@ save_unresolvable_point_ids <- function(cache_path, new_ids, reasons = NULL) {
       } else {
         "unresolvable_or_out_of_bounds"
       }
-      status <- if (grepl("^no-(soil|layers|coverage|tabular):", rsn)) "permanent" else "retryable"
+      status <- if (grepl("^no-(soil|layers|coverage|tabular):|^outside_coverage", rsn)) "permanent" else "retryable"
       existing_data[[pid]] <- list(reason = rsn, status = status, updated_at = tstr)
     }
     jsonlite::write_json(existing_data, cache_path, pretty = TRUE, auto_unbox = TRUE)
@@ -1591,6 +1635,10 @@ remove_unresolvable_point_ids <- function(cache_path, ids_to_remove) {
 # STEP 1: SOIL DATA
 #-----------------------------------------------------------------------
 message("STEP 1: PROCESSING SOIL DATA")
+.input_soil_lock <- cropmodeldata::acquire_input_lock(file.path(SOIL_ROOT_DIR, paste0(SOIL_BASENAME, "_individual_SOL")))
+# Completion exclusions exist even when providers are disabled and inputs are reused.
+soil_unresolvable_file <- file.path(CENTRAL_SOIL_DIR,paste0(SOIL_BASENAME,"_unresolvable.json"))
+unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
 if (RUN_STEP_1_SOILS) {
   dir.create(CENTRAL_SOIL_DIR, showWarnings = FALSE, recursive = TRUE)
   # Uses new naming: [Location]_[Res]_[Source]
@@ -1602,6 +1650,7 @@ if (RUN_STEP_1_SOILS) {
   dir.create(individual_sol_output_folder, recursive = TRUE, showWarnings = FALSE)
   soil_unresolvable_file <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_unresolvable.json"))
   unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
+  clean_invalid_soils(individual_sol_output_folder, as.character(gridfile[[POINT_ID_COLUMN]]))
 
   # Check for provider-generated failure CSV and harvest permanent failures
   soil_fail_csv <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_download_failures.csv"))
@@ -1619,7 +1668,8 @@ if (RUN_STEP_1_SOILS) {
     }, error = function(e) {})
   }
   
-  if (SOIL_SOURCE %in% PER_POINT_SOIL) {
+  # File naming and provider dispatch are separate contracts.
+  if (SOIL_SOURCE %in% c("SSURGO", "GNATSGO", "ISDASOIL", "LUCAS", "SSURGO_ALDERMAN")) {
     # All of these write one Saxton-&-Rawls .SOL per point named by point ID, so
     # the combine/retry logic is shared. gNATSGO fills SSURGO's US gaps;
     # iSDAsoil = Africa 30 m; LUCAS = EU topsoil (needs lucas_csv).
@@ -1639,10 +1689,8 @@ if (RUN_STEP_1_SOILS) {
       ISDASOIL = process_soils_isdasoil,
       LUCAS    = function(gridfile, csv, indiv, cores, idc, latc, lonc, fmt)
                    process_soils_lucas(gridfile, csv, indiv, cores, idc, latc, lonc, fmt, lucas_csv = LUCAS_CSV))
-    if (CHECK_SOIL_DOWNLOADS) {
-      ids <- as.character(gridfile[[POINT_ID_COLUMN]])
-      clean_invalid_soils(individual_sol_output_folder, ids)
-    }
+    ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    clean_invalid_soils(individual_sol_output_folder, ids)
     
     max_retries <- max(1L, SOIL_DOWNLOAD_RETRIES)
     retry_count <- 0
@@ -1675,13 +1723,12 @@ if (RUN_STEP_1_SOILS) {
         .soil_fn(gridfile, soilfile_CSV, individual_sol_output_folder, SOIL_CORES,
                  POINT_ID_COLUMN, LAT_COLUMN, LONG_COLUMN, format_SQL_in_statement)
 
+        clean_invalid_soils(individual_sol_output_folder, ids)
         combine_sol_files_local(individual_sol_output_folder, soilfile_DSSAT)
         
         retry_count <- retry_count + 1
         
-        if (CHECK_SOIL_DOWNLOADS) {
-          clean_invalid_soils(individual_sol_output_folder, ids)
-        }
+        clean_invalid_soils(individual_sol_output_folder, ids)
 
         # Refresh failure harvest
         if (file.exists(soil_fail_csv)) {
@@ -1735,22 +1782,19 @@ if (RUN_STEP_1_SOILS) {
                      output_sol_dir = individual_sol_output_folder,
                      id_col = POINT_ID_COLUMN)
   } else if (SOIL_SOURCE == "SOILGRIDS_ONLINE") {
+    if (nzchar(SOILGRIDS_CACHE_DIR)) {
+      if (!"prepare_soilgrids_cache" %in% getNamespaceExports("cropmodeldata"))
+        stop("Installed cropmodeldata lacks SoilGrids cache integration; install the updated package.")
+      cropmodeldata::prepare_soilgrids_cache(gridfile, SOILGRIDS_CACHE_DIR,
+        download=SOILGRIDS_CACHE_DOWNLOAD, scope=SOILGRIDS_CACHE_SCOPE,
+        bbox=SOILGRIDS_CACHE_BBOX, buffer_degrees=SOILGRIDS_CACHE_BUFFER_DEGREES)
+    }
+
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
-    if (CHECK_SOIL_DOWNLOADS) {
-      clean_invalid_soils(individual_sol_output_folder, ids)
-    }
+    clean_invalid_soils(individual_sol_output_folder, ids)
     sg_log <- file.path(individual_sol_output_folder, "soil_processing_errors.log")
-    if (file.exists(sg_log)) {
-      tryCatch({
-        sg_lines <- readLines(sg_log, warn = FALSE)
-        err_lines <- grep("SKIPPED:\\s*ID:\\s*(\\w+)", sg_lines, value = TRUE)
-        if (length(err_lines) > 0) {
-          err_ids <- sub("^.*SKIPPED:\\s*ID:\\s*(\\w+).*$", "\\1", err_lines)
-          save_unresolvable_point_ids(soil_unresolvable_file, err_ids, err_lines)
-          unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, err_ids))
-        }
-      }, error = function(e) {})
-    }
+    # Historical SKIPPED records may be transient raster-read failures.
+    # Only load_soil_exclusions() can classify a point as permanent.
     existing_files <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
     accounted_ids <- union(existing_files, unresolvable_soil_ids)
     missing_mask <- !(ids %in% accounted_ids)
@@ -1787,32 +1831,11 @@ if (RUN_STEP_1_SOILS) {
         
         retry_count <- retry_count + 1
         
-        if (file.exists(sg_log)) {
-          tryCatch({
-            sg_lines <- readLines(sg_log, warn = FALSE)
-            err_lines <- grep("SKIPPED:\\s*ID:\\s*(\\w+)", sg_lines, value = TRUE)
-            if (length(err_lines) > 0) {
-              err_ids <- sub("^.*SKIPPED:\\s*ID:\\s*(\\w+).*$", "\\1", err_lines)
-              save_unresolvable_point_ids(soil_unresolvable_file, err_ids, err_lines)
-              unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, err_ids))
-            }
-          }, error = function(e) {})
-        }
-
-        if (CHECK_SOIL_DOWNLOADS) {
-          ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
-          clean_invalid_soils(individual_sol_output_folder, ids_left)
-          if (!ok) break
-          existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-          accounted_left <- union(existing_left, unresolvable_soil_ids)
-          missing_left_mask <- !(ids_left %in% accounted_left)
-          points_to_process <- points_to_process[missing_left_mask, ]
-        } else {
-          existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
-          ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
-          accounted_left <- union(existing_left, unresolvable_soil_ids)
-          points_to_process <- points_to_process[!(ids_left %in% accounted_left), ]
-        }
+        ids_left <- as.character(points_to_process[[POINT_ID_COLUMN]])
+        clean_invalid_soils(individual_sol_output_folder, ids_left)
+        existing_left <- tools::file_path_sans_ext(list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
+        accounted_left <- union(existing_left, unresolvable_soil_ids)
+        points_to_process <- points_to_process[!(ids_left %in% accounted_left), ]
       }
       
       if (nrow(points_to_process) > 0) {
@@ -1847,6 +1870,7 @@ if (RUN_STEP_1_SOILS) {
     # streamed via GDAL /vsicurl. Water limits come from POLARIS's van Genuchten
     # curve (stat=p50 deterministic). Resume by skipping points already on disk.
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
+    clean_invalid_soils(individual_sol_output_folder, ids)
     existing_files <- tools::file_path_sans_ext(
       list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
     accounted_ids <- union(existing_files, unresolvable_soil_ids)
@@ -1868,13 +1892,14 @@ if (RUN_STEP_1_SOILS) {
         warning(sprintf("POLARIS extraction failed for this batch (%d point(s)): %s",
                         nrow(points_to_process), conditionMessage(e)))
       })
+      clean_invalid_soils(individual_sol_output_folder, ids)
       # Mark points that still failed as unresolvable
       new_existing <- tools::file_path_sans_ext(
         list.files(individual_sol_output_folder, pattern = "\\.SOL$"))
       failed_ids <- setdiff(points_to_process[[POINT_ID_COLUMN]], new_existing)
       if (length(failed_ids) > 0) {
-        save_unresolvable_point_ids(soil_unresolvable_file, failed_ids, "polaris_read_failed_or_out_of_bounds")
-        unresolvable_soil_ids <- unique(c(unresolvable_soil_ids, failed_ids))
+        remove_unresolvable_point_ids(soil_unresolvable_file, failed_ids)
+        message(sprintf("POLARIS retryable missing profiles: %d", length(failed_ids)))
       }
     }
 
@@ -1930,14 +1955,16 @@ if (RUN_STEP_1_SOILS) {
 #-----------------------------------------------------------------------
 # STEP 2: WEATHER DATA
 #-----------------------------------------------------------------------
+cropmodeldata::release_input_lock(.input_soil_lock)
 message("STEP 2: DOWNLOADING WEATHER DATA")
 output_dir <- file.path(CENTRAL_WEATHER_DIR, WEATHER_DIR_NAME)
+.input_weather_lock <- cropmodeldata::acquire_input_lock(output_dir)
 apply_weather_repairs <- function(target_ids = NULL) {
   if (!dir.exists(output_dir)) return()
   repair_log <- file.path(output_dir, "weather_repair.log")
 
   if (REPAIR_WEATHER_MISSING_VALUES) {
-    repair_summary <- dssatutils::repair_weather_missing_values(
+    repair_summary <- cropmodeldata::repair_weather_missing_values(
       weather_dir = output_dir,
       ids = target_ids,
       max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
@@ -1954,7 +1981,7 @@ apply_weather_repairs <- function(target_ids = NULL) {
   }
 
   if (REPAIR_WEATHER_DATE_GAPS) {
-    repair_summary <- dssatutils::repair_weather_date_gaps(
+    repair_summary <- cropmodeldata::repair_weather_date_gaps(
       weather_dir = output_dir,
       ids = target_ids,
       max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
@@ -1971,7 +1998,7 @@ apply_weather_repairs <- function(target_ids = NULL) {
   }
 
   if (REPAIR_WEATHER_TEMPERATURE_INVERSIONS) {
-    repair_summary <- dssatutils::repair_weather_temperature_inversions(
+    repair_summary <- cropmodeldata::repair_weather_temperature_inversions(
       weather_dir = output_dir,
       ids = target_ids,
       max_gap_days = WEATHER_REPAIR_MAX_GAP_DAYS,
@@ -1999,6 +2026,10 @@ if (dir.exists(output_dir)) {
 }
 
 
+# Completion exclusions exist even when weather download is disabled.
+weather_unresolvable_file <- file.path(output_dir,"unresolvable_points.json")
+weather_retryable_file <- file.path(output_dir,"retryable_weather_points.json")
+unresolvable_weather_ids <- load_weather_exclusions(weather_unresolvable_file)
 if (RUN_STEP_2_WEATHER) {
   dir.create(CENTRAL_WEATHER_DIR, showWarnings = FALSE, recursive = TRUE)
   
@@ -2065,6 +2096,7 @@ if (RUN_STEP_2_WEATHER) {
                           n_cores = WEATHER_CORES, 
                           log_file = log_file)
       
+      tryCatch({
       if (WEATHER_SOURCE == "DAYMET") do.call(process_weather_daymet, common_args)
       else if (WEATHER_SOURCE == "NASA_POWER") do.call(process_weather_nasapower, common_args)
       else if (WEATHER_SOURCE == "GRIDMET") do.call(process_weather_gridmet, c(common_args, list(gridmet_cache_dir = GRIDMET_CACHE_DIR)))
@@ -2132,8 +2164,29 @@ if (RUN_STEP_2_WEATHER) {
       else if (WEATHER_SOURCE == "TERRACLIMATE")
         do.call(process_weather_terraclimate, c(common_args, list(terraclimate_nc_dir = TERRACLIMATE_NC_DIR)))
 
+      }, error = function(e) {
+        # Catch only transient provider failures. Configuration/logic errors stay fatal.
+        transient <- inherits(e, "dssat_connectivity_error") ||
+          cropmodeldata:::.provider_transient(e)
+        if (!transient) stop(e)
+        msg <- sprintf("Weather provider %s attempt %d/%d interrupted: %s. Rechecking completed files before retry.",
+                       WEATHER_SOURCE, retry_count + 1L, max_retries, conditionMessage(e))
+        write(msg, file = log_file, append = TRUE)
+        warning(msg, call. = FALSE)
+      })
+
       retry_count <- retry_count + 1
       
+      .outcomes <- cropmodeldata::provider_outcomes(output_dir)
+      .outside <- as.character(points_to_process[[POINT_ID_COLUMN]])
+      .outside <- .outside[vapply(.outside, function(id) identical(.outcomes[[id]]$status, "outside_coverage"), logical(1))]
+      if (length(.outside)) {
+        save_unresolvable_point_ids(weather_unresolvable_file, .outside, "outside_coverage")
+        remove_unresolvable_point_ids(weather_retryable_file, .outside)
+        unresolvable_weather_ids <- union(unresolvable_weather_ids, .outside)
+        points_to_process <- points_to_process[!as.character(points_to_process[[POINT_ID_COLUMN]]) %in% .outside,,drop=FALSE]
+      }
+
       # Run configured repairs on newly written points before checking validity
       apply_weather_repairs(points_to_process[[POINT_ID_COLUMN]])
 
@@ -2185,7 +2238,7 @@ if (AUDIT_WEATHER_QUALITY) {
     ids <- as.character(gridfile[[POINT_ID_COLUMN]])
     repair_log <- file.path(output_dir, "weather_repair.log")
     audit_csv <- file.path(output_dir, "weather_quality_audit.csv")
-    audit_summary <- dssatutils::audit_weather_quality(
+    audit_summary <- cropmodeldata::audit_weather_quality(
       weather_dir = output_dir,
       ids = ids,
       audit_csv = audit_csv,
@@ -2229,6 +2282,7 @@ if (EXTEND_WEATHER_DATA) {
     if(length(files_to_extend) > 0) {
       message(sprintf("Running Fast Extension on %d files...", length(files_to_extend)))
       cl <- makeCluster(WEATHER_CORES)
+      parallel::clusterCall(cl, function(paths) .libPaths(paths), .libPaths())
       #clusterExport(cl, c("extend_weather_smart_single", "WEATHER_REFERENCE_YEAR"), envir = environment())
       #clusterEvalQ(cl, library(zoo)) 
       #parLapply(cl, files_to_extend, function(f) {
@@ -2271,6 +2325,7 @@ if (EXTEND_WEATHER_DATA) {
   }
 }
 
+cropmodeldata::release_input_lock(.input_weather_lock)
 if (DOWNLOAD_ONLY) {
   coverage <- list()
   point_ids <- as.character(gridfile[[POINT_ID_COLUMN]])
@@ -2340,14 +2395,14 @@ RUN_PROVENANCE <- list(
   boundary = .hash_file_set(file.path(SHAPEFILE_DIR, BOUNDARY_SHAPEFILE_NAME)),
   cropland = .hash_file_set(if (nzchar(CROPLAND_RASTER_FILE)) resolve_config_path(CROPLAND_RASTER_FILE, CODE_ROOT_DIR) else ""),
   template = .hash_file_set(TEMPLATE_FILE_PATH),
-  external_soil = .hash_file_set(EXTERNAL_SOIL_FILE),
+  external_soil = if (CHECK_PROVENANCE) .hash_file_set(EXTERNAL_SOIL_FILE) else NULL,
   resolved_inputs = list(
-    weather_wth = .hash_file_set(list.files(output_dir, pattern = "[.]WTH$", full.names = TRUE)),
-    soil_sol = .hash_file_set(list.files(
+    weather_wth = if (CHECK_PROVENANCE) .hash_file_set(list.files(output_dir, pattern = "[.]WTH$", full.names = TRUE)) else NULL,
+    soil_sol = if (CHECK_PROVENANCE) .hash_file_set(list.files(
       file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_individual_SOL")),
       pattern = "[.]SOL$", full.names = TRUE
-    )),
-    soil_mapping = .hash_file_set(file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, ".CSV"))),
+    )) else NULL,
+    soil_mapping = if (CHECK_PROVENANCE) .hash_file_set(file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, ".CSV"))) else NULL,
     dssat_executable = .hash_file_set(DSSAT_EXE_PATH),
     dssatpro = .hash_file_set(file.path(dirname(DSSAT_EXE_PATH), "DSSATPRO.V48")),
     support_files = .hash_file_set(list.files(
@@ -2370,13 +2425,13 @@ RUN_PROVENANCE <- list(
 
 # Implementation identity -- matches Python twin's RUN_PROVENANCE["implementation"]
 .engine_ver <- tryCatch(
-  as.character(utils::packageVersion("dssatengine")),
+  as.character(utils::packageVersion("cropmodelruntime")),
   error = function(e) "unknown"
 )
 RUN_PROVENANCE[["implementation"]] <- list(
   engine_version       = .engine_ver,
-  engine_implementation = .hash_object(lapply(sort(ls(asNamespace("dssatengine"), all.names = TRUE)), function(n) {
-    x <- get(n, asNamespace("dssatengine"))
+  engine_implementation = .hash_object(lapply(sort(ls(asNamespace("cropmodelruntime"), all.names = TRUE)), function(n) {
+    x <- get(n, asNamespace("cropmodelruntime"))
     if (is.function(x)) list(deparse(formals(x)), deparse(body(x))) else NULL
   })),
   output_metric_schema = 2L
@@ -2405,8 +2460,8 @@ if(file.exists(soil_mapping_file)) {
   common_cols <- setdiff(intersect(names(points), names(soil_map)), POINT_ID_COLUMN)
   if(length(common_cols) > 0) soil_map <- soil_map[, !names(soil_map) %in% common_cols]
   # The soil mapping CSV is a per-LAYER table (many rows per point id). We only
-  # need point-level attributes (SOIL_ID, coords) here — the full profile lives
-  # in each point's .SOL file — so collapse to ONE row per id before joining.
+  # need point-level attributes (SOIL_ID, coords) here â€” the full profile lives
+  # in each point's .SOL file â€” so collapse to ONE row per id before joining.
   # Without this, left_join() does a one-to-many expansion that multiplies
   # `points` into one-row-per-soil-layer (e.g. 23 points -> 317 rows), which
   # then runs DSSAT many redundant times per folder in parallel (racing on the
@@ -2515,7 +2570,7 @@ create_folders_and_files <- function(i) {
     # placeholders (LATITUDE/LONGITUDE/ELEV) are right-justified at their field
     # edges, so each is swapped for a SAME-LENGTH number to preserve the
     # fixed-width column alignment. Every field-level data line that carries the
-    # LATITUDE/LONGITUDE placeholders is edited — "ELEV" also appears in the @L
+    # LATITUDE/LONGITUDE placeholders is edited â€” "ELEV" also appears in the @L
     # header, so a global replace would corrupt it. Anything unexpected (bad
     # coord, width overflow) leaves the placeholder untouched: never fatal.
     content <- tryCatch({
@@ -2568,12 +2623,23 @@ create_folders_and_files <- function(i) {
   wth <- file.path(weather_repo, paste0(ID, ".WTH"))
   if (file.exists(wth)) file.copy(wth, file.path(ID, basename(wth)))
   
-  # 4. EXTRAS — genotype/SDA/CO2 files (only copy files listed in SUPPORT_FILES).
+  # 4. EXTRAS â€” genotype/SDA/CO2 files (only copy files listed in SUPPORT_FILES).
   if (length(SUPPORT_FILES) > 0) {
     files_to_copy <- file.path(TEMPLATE_DIR, SUPPORT_FILES)
     file.copy(files_to_copy, ID, overwrite = TRUE)
   }
 }
+
+source(file.path(R_SCRIPTS_DIR, "scenario_completion.R"), local = TRUE)
+.expected_treatments <- if (length(TREATMENT_LIST)) as.integer(TREATMENT_LIST) else seq.int(TREATMENT_START, TREATMENT_END)
+.point_signatures <- if (CHECK_PROVENANCE) point_input_signatures(gridfile, POINT_ID_COLUMN,
+  file.path(CENTRAL_SOIL_DIR,paste0(SOIL_BASENAME,"_individual_SOL")),output_dir) else list()
+if (RESUME_DSSAT_RUNS) restore_aggregate_points(FINAL_RESULTS_PATH, DSSAT_RUN_DIR,
+  RUN_PROVENANCE, .expected_treatments, as.character(points[[POINT_ID_COLUMN]]), .point_signatures)
+
+validate_cached_point_results(DSSAT_RUN_DIR, as.character(points[[POINT_ID_COLUMN]]), .expected_treatments)
+
+if (RUN_DSSAT_EXECUTION) start_completion(FINAL_RESULTS_PATH)
 
 # --- 3.4. Execute Folder Creation ---
 message("Creating/verifying simulation folders...")
@@ -2584,11 +2650,12 @@ if (RESUME_DSSAT_RUNS) {
 }
 if (length(ids_to_create_indices) > 0) {
   cl <- makeCluster(SOIL_CORES)
+  parallel::clusterCall(cl, function(paths) .libPaths(paths), .libPaths())
   on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
   clusterExport(cl, varlist = c("points", "SOIL_SOURCE", "PER_POINT_SOIL", "individual_soil_folder", "TEMPLATE_FILE_PATH", "create_folders_and_files", "TEMPLATE_FILE_NAME", "TEMPLATE_SOIL_ID_PLACEHOLDER", "POINT_ID_COLUMN", "weather_repo", "TEMPLATE_DIR", "SUPPORT_FILES", "LAT_COLUMN", "LONG_COLUMN"), envir = environment())
   parLapply(cl, ids_to_create_indices, create_folders_and_files)
   stopCluster(cl)
-  on.exit()  # clear the guard — cluster stopped cleanly
+  on.exit()  # clear the guard â€” cluster stopped cleanly
 }
 
 # --- 3.5. Run Simulations ---
@@ -2603,6 +2670,7 @@ if (RUN_DSSAT_EXECUTION) {
     check_file_exists <- function(ID) file.exists(file.path(ID, paste0("results_", ID, ".csv")))
     completed_mask <- unlist(pblapply(all_ids, check_file_exists))
     ids_to_run <- all_ids[!completed_mask]
+    message(sprintf("Resume: %d point(s) require execution.", length(ids_to_run)))
   }
   
   if(length(ids_to_run) > 0) {
@@ -2630,12 +2698,13 @@ if (RUN_DSSAT_EXECUTION) {
 
   if(length(ids_to_run) > 0) {
     cl <- makeCluster(DSSAT_CORES)
+    parallel::clusterCall(cl, function(paths) .libPaths(paths), .libPaths())
     on.exit(tryCatch(stopCluster(cl), error = function(e) NULL), add = TRUE)
-    clusterEvalQ(cl, { library(dssatengine) })
-    SUPPORTS_TREATMENT_LIST <- "treatment_list" %in% names(formals(dssatengine::run_simulation))
+    clusterEvalQ(cl, { library(cropmodelruntime) })
+    SUPPORTS_TREATMENT_LIST <- "treatment_list" %in% names(formals(cropmodelruntime::run_simulation))
     if (length(TREATMENT_LIST) && !SUPPORTS_TREATMENT_LIST) {
-      stop("This config sets treatment_list, but the installed dssatengine package ",
-           "does not support explicit treatment lists. Reinstall/update dssatengine ",
+      stop("This config sets treatment_list, but the installed cropmodelruntime package ",
+           "does not support explicit treatment lists. Reinstall/update cropmodelruntime ",
            "before running; falling back to a contiguous range would change the run.",
            call. = FALSE)
     }
@@ -2659,7 +2728,7 @@ if (RUN_DSSAT_EXECUTION) {
       )
       if (length(TREATMENT_LIST)) args$treatment_list <- TREATMENT_LIST
       tryCatch(
-        do.call(dssatengine::run_simulation, args),
+        do.call(cropmodelruntime::run_simulation, args),
         error = function(e) {
           # run_simulation already records the full cause in the point folder.
           # Returning NULL keeps one bad cell from aborting every other worker.
@@ -2676,7 +2745,7 @@ if (RUN_DSSAT_EXECUTION) {
                   envir = globalenv())
     parLapply(cl, ids_to_run, run_simulation_wrapper)
     stopCluster(cl)
-    on.exit()  # clear guard — cluster stopped cleanly
+    on.exit()  # clear guard â€” cluster stopped cleanly
 
     # --- Loud per-point failure report ---
     # run_simulation() runs in parallel workers whose message()/error output is
@@ -2736,12 +2805,14 @@ if (RUN_DSSAT_EXECUTION) {
     keep_cols <- intersect(c(
       POINT_ID_COLUMN, "MROW", "MCOL", "MSPACE_M", "SAMP_M", "NEST_F",
       "crop_frac", "crop_pct", "crop_pt", "crop_ha", "cell_ha", "full_ha",
-      "orig_lat", "orig_lon", "anchor_mv", "anchor_km"
+      "orig_lat", "orig_lon", "anchor_mv", "anchor_km",
+      "cell_id", "samp_meth", "samp_ver", "stratum", "sample_n", "weight_ha", "cell_crop", "known_frac"
     ), names(point_attrs))
     if (length(keep_cols) > 1) {
       point_attrs <- point_attrs[, keep_cols, drop = FALSE]
       names(point_attrs)[names(point_attrs) == POINT_ID_COLUMN] <- "point_id"
       point_attrs$point_id <- as.character(point_attrs$point_id)
+      final_data <- final_data[, setdiff(names(final_data), setdiff(names(point_attrs), "point_id")), drop=FALSE]
       final_data <- dplyr::left_join(final_data, point_attrs, by = "point_id")
       if ("cell_ha" %in% names(final_data)) final_data$gridcell_area_ha <- final_data$cell_ha
       if ("crop_ha" %in% names(final_data)) final_data$cropland_ha <- final_data$crop_ha
@@ -2752,9 +2823,34 @@ if (RUN_DSSAT_EXECUTION) {
         final_data$top_weight_production_kg <- final_data$top_weight_kg_ha * final_data$cropland_ha
       }
     }
-    write_csv(final_data, FINAL_RESULTS_PATH)
-    jsonlite::write_json(RUN_PROVENANCE, paste0(FINAL_RESULTS_PATH, ".manifest.json"),
+    if ("samp_meth" %in% names(final_data)) {
+      final_data$sampling_method <- final_data$samp_meth
+      final_data$sampling_version <- final_data$samp_ver
+      for(layer in c("soil","weather")) {
+        directory <- if(layer=="soil") file.path(SOIL_ROOT_DIR,paste0(SOIL_BASENAME,"_individual_SOL")) else file.path(WEATHER_ROOT_DIR,WEATHER_DIR_NAME)
+        records <- cropmodeldata::sampling_provenance(directory,unique(final_data$point_id),layer)
+        final_data <- final_data[,setdiff(names(final_data),setdiff(names(records),"point_id")),drop=FALSE]
+        final_data <- dplyr::left_join(final_data,records,by="point_id")
+      }
+    }
+    .result_stage <- tempfile(".results-", tmpdir = dirname(FINAL_RESULTS_PATH))
+    write_csv(final_data, .result_stage)
+    if (!file.rename(.result_stage, FINAL_RESULTS_PATH)) stop("Could not publish combined results")
+    publish_completion(FINAL_RESULTS_PATH, final_data, as.character(gridfile[[POINT_ID_COLUMN]]), .expected_treatments,
+                       union(unresolvable_soil_ids, unresolvable_weather_ids), RUN_PROVENANCE, .point_signatures)
+    .manifest_stage <- tempfile(".manifest-",tmpdir=dirname(FINAL_RESULTS_PATH))
+    jsonlite::write_json(RUN_PROVENANCE, .manifest_stage,
                          auto_unbox = TRUE, pretty = TRUE, null = "null")
+    if(!file.rename(.manifest_stage,paste0(FINAL_RESULTS_PATH,".manifest.json"))) stop("Could not publish scenario identity")
+    receipt <- Sys.getenv("DSSAT_RESULT_RECEIPT", "")
+    if (nzchar(receipt)) {
+      dir.create(dirname(receipt), recursive=TRUE, showWarnings=FALSE)
+      stage <- tempfile(".receipt-", tmpdir=dirname(receipt))
+      jsonlite::write_json(list(schema=1L, result_path=normalizePath(FINAL_RESULTS_PATH, winslash="/"),
+        status_path=normalizePath(paste0(FINAL_RESULTS_PATH,".status.json"), winslash="/")),
+        stage, auto_unbox=TRUE)
+      if (!file.rename(stage, receipt)) stop("Could not publish result receipt")
+    }
     message(sprintf("Results combined: %d rows -> %s", nrow(final_data), FINAL_RESULTS_PATH))
   } else {
     diagnostic_location <- if (ARCHIVE_FAILED_RUN_FOLDERS && failed_archive_created) {
@@ -2772,7 +2868,7 @@ if (RUN_DSSAT_EXECUTION) {
   # --- 3.8. Optional cleanup of per-point run folders --------------------------
   # When CLEANUP_RUN_FOLDERS is TRUE, delete the per-point simulation subfolders
   # (and all of their DSSAT I/O) now that the combined summary CSV has been
-  # written — so a large sweep does not leave thousands of folders cluttering the
+  # written â€” so a large sweep does not leave thousands of folders cluttering the
   # drive. Guarded on the combined CSV actually existing on disk: if the combine
   # step produced nothing, the folders are KEPT so the failure can be diagnosed.
   # The per-scenario results CSV (FINAL_RESULTS_PATH) lives under
@@ -2805,7 +2901,7 @@ if (RUN_DSSAT_EXECUTION) {
         }
       }
     } else {
-      message("Cleanup requested, but the combined results CSV was not written — keeping run folders for troubleshooting.")
+      message("Cleanup requested, but the combined results CSV was not written â€” keeping run folders for troubleshooting.")
     }
   }
 
@@ -2850,6 +2946,14 @@ if (RUN_DSSAT_EXECUTION) {
   writeLines(metadata_content, con = metadata_con)
   close(metadata_con)
   message("Metadata file created.")
+  .attributes <- sf::st_drop_geometry(gridfile)
+  .metadata <- setNames(lapply(seq_len(nrow(.attributes)), function(i)
+    as.list(.attributes[i,setdiff(names(.attributes),POINT_ID_COLUMN),drop=FALSE])),
+    as.character(.attributes[[POINT_ID_COLUMN]]))
+  jsonlite::write_json(list(schema=1L, treatments=as.list(.expected_treatments),
+    run_mode=RUN_MODE, sequence_start=SEQUENCE_START, sequence_end=SEQUENCE_END,
+    provenance=RUN_PROVENANCE, point_metadata=.metadata),
+    file.path(DSSAT_RUN_DIR,"hpc_manifest.json"), auto_unbox=TRUE, null="null")
   
   if (ZIP_FOR_HPC) {
     message(sprintf("Zipping run directory for HPC upload: %s", DSSAT_RUN_NAME))
@@ -2894,8 +2998,8 @@ if (RUN_DSSAT_EXECUTION) {
 
 #-----------------------------------------------------------------------
 # STEP 4: VISUALIZE RESULTS
-#-----------------------------------------------------------------------
-if (RUN_DSSAT_EXECUTION) {
+# Single-point runs skip maps.
+if (RUN_DSSAT_EXECUTION && nrow(gridfile) > 1L) {
   message(sprintf("\n%s\nSTEP 4: VISUALIZING RESULTS\n%s", paste(rep("=", 60), collapse = ""), paste(rep("=", 60), collapse = "")))
   
   library(readr); library(dplyr); library(ggplot2); library(sf); library(tools)
@@ -2969,5 +3073,5 @@ if (RUN_DSSAT_EXECUTION) {
   })
   message(sprintf("\n%s\nPIPELINE FINISHED!\n%s", paste(rep("*", 60), collapse = ""), paste(rep("*", 60), collapse = "")))
 } else {
-  message("Skipping Visualization (HPC Prep Mode)")
+  message(if (RUN_DSSAT_EXECUTION) "Skipping visualization for a single point." else "Skipping visualization (HPC preparation).")
 }

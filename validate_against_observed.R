@@ -136,9 +136,9 @@ has_cds_credentials <- function() {
     nzchar(Sys.getenv("CDSAPI_KEY"))
 }
 HAS_CDS <- has_cds_credentials()
-if (!HAS_CDS && ALL_SOURCES && requireNamespace("dssatutils", quietly = TRUE)) {
+if (!HAS_CDS && ALL_SOURCES && requireNamespace("cropmodeldata", quietly = TRUE)) {
   HAS_CDS <- tryCatch({
-    dssatutils::setup_cds_credentials(prompt = interactive(), quiet = TRUE)
+    cropmodeldata::setup_cds_credentials(prompt = interactive(), quiet = TRUE)
     has_cds_credentials()
   }, error = function(e) {
     if (interactive()) message("Copernicus CDS setup skipped: ", conditionMessage(e))

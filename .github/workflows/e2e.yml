@@ -6,13 +6,13 @@ on:
     - cron: '0 2 * * 0'  # Weekly Sunday 2 AM UTC
 
 env:
+  CROPMODEL_READ_TOKEN: ${{ secrets.CROPMODEL_READ_TOKEN }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Immutable shared revisions include serialized GridMET/HDF5 validation,
   # declared weather units, and aligned missing-value handling.
   # Must provide the modules imported by both the Python and R integration
   # suites; keep this in sync with smoke.yml.
-  DSSATUTILS_REF: 'f728cd810923465360e4730d8893bb566dc0773c'
-  DSSATENGINE_REF: '14871db233af97a378fd42fb0c9749b5ff9b9453'
+  CROPMODEL_REF: '4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.
@@ -58,8 +58,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pandas numpy geopandas shapely
-          pip install "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@${DSSATUTILS_REF}"
-          pip install "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@${DSSATENGINE_REF}"
+          python scripts/install_ci_dependencies.py
       
       - name: Run Python provider and optional DSSAT tests
         if: matrix.test-type == 'python'
@@ -107,14 +106,14 @@ jobs:
       - name: Install R dependencies
         if: matrix.test-type == 'r'
         # remotes otherwise falls back to its bundled CI token when resolving
-        # dssatengine's Remotes field. That fallback token can be revoked and
+        # GitHub dependencies. That fallback token can be revoked and
         # caused public GitHub dependency installs to fail with HTTP 401.
         env:
-          GITHUB_PAT: ${{ github.token }}
+          GITHUB_PAT: ${{ secrets.CROPMODEL_READ_TOKEN }}
         run: |
           R --slave -e "install.packages(c('remotes', 'doParallel', 'sf', 'terra', 'DBI', 'RSQLite'), repos=getOption('repos'))"
-          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatutils.git', ref='${DSSATUTILS_REF}')"
-          R --slave -e "remotes::install_git('https://github.com/alwinhopf/dssatengine.git', ref='${DSSATENGINE_REF}', dependencies=FALSE, upgrade='never')"
+          Rscript --vanilla -e "remotes::install_github('alwinhopf/cropmodel', ref='${CROPMODEL_REF}', subdir='packages/cropmodel_data/R/cropmodeldata', upgrade='never')"
+          Rscript --vanilla -e "remotes::install_github('alwinhopf/cropmodel', ref='${CROPMODEL_REF}', subdir='packages/cropmodel_runtime/R/cropmodelruntime', dependencies=FALSE, upgrade='never')"
       
       - name: Run R comprehensive tests
         if: matrix.test-type == 'r'
