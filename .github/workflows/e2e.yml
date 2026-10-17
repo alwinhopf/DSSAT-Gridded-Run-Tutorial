@@ -39,10 +39,12 @@ jobs:
       
       # --- Python Setup ---
       - name: Set up Python
-        if: matrix.test-type == 'python'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version || '3.11' }}
+
+      - name: Check private dependency credentials
+        run: python scripts/install_ci_dependencies.py --check-only
       
       - name: Cache Python packages
         if: matrix.test-type == 'python'

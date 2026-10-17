@@ -1,5 +1,17 @@
 # Spatial Gridded Crop Modeling with DSSAT
 
+The 17 October 2026 smoke run failed before tests because the
+`CROPMODEL_READ_TOKEN` Actions secret was absent. Configure a fine-grained token
+with **Contents: read** access to the private `alwinhopf/cropmodel` repository
+in this repository's Actions secrets. An organization secret must explicitly
+grant access to this consumer. The automatic `GITHUB_TOKEN` cannot read another
+private repository. Both smoke and scheduled E2E lanes now check for this secret
+before expensive setup; Python installs scope the authentication header to the
+cropmodel Git URL, and R parity uses the same secret for its pinned checkout.
+After configuring the secret and publishing the fix, rerun the smoke workflow.
+Fork pull requests require a trusted run after review; keep their secrets
+withheld and do not use `pull_request_target` to execute untrusted code.
+
 Soil cache reuse always checks complete fixed-width layer fields and hydraulic
 limits, including when `check_soil_downloads` is false. Invalid derived profiles
 are removed and fetched again; valid profiles and raw source rasters are reused.
