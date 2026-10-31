@@ -1635,7 +1635,11 @@ remove_unresolvable_point_ids <- function(cache_path, ids_to_remove) {
 # STEP 1: SOIL DATA
 #-----------------------------------------------------------------------
 message("STEP 1: PROCESSING SOIL DATA")
-.input_soil_lock <- cropmodeldata::acquire_input_lock(file.path(SOIL_ROOT_DIR, paste0(SOIL_BASENAME, "_individual_SOL")))
+.input_soil_lock <- if (RUN_STEP_1_SOILS) {
+  cropmodeldata::acquire_input_lock(file.path(SOIL_ROOT_DIR, paste0(SOIL_BASENAME, "_individual_SOL")))
+} else {
+  NULL
+}
 # Completion exclusions exist even when providers are disabled and inputs are reused.
 soil_unresolvable_file <- file.path(CENTRAL_SOIL_DIR,paste0(SOIL_BASENAME,"_unresolvable.json"))
 unresolvable_soil_ids <- load_soil_exclusions(soil_unresolvable_file)
@@ -1955,10 +1959,17 @@ if (RUN_STEP_1_SOILS) {
 #-----------------------------------------------------------------------
 # STEP 2: WEATHER DATA
 #-----------------------------------------------------------------------
-cropmodeldata::release_input_lock(.input_soil_lock)
+if (!is.null(.input_soil_lock)) {
+  cropmodeldata::release_input_lock(.input_soil_lock)
+  .input_soil_lock <- NULL
+}
 message("STEP 2: DOWNLOADING WEATHER DATA")
 output_dir <- file.path(CENTRAL_WEATHER_DIR, WEATHER_DIR_NAME)
-.input_weather_lock <- cropmodeldata::acquire_input_lock(output_dir)
+.input_weather_lock <- if (RUN_STEP_2_WEATHER) {
+  cropmodeldata::acquire_input_lock(output_dir)
+} else {
+  NULL
+}
 apply_weather_repairs <- function(target_ids = NULL) {
   if (!dir.exists(output_dir)) return()
   repair_log <- file.path(output_dir, "weather_repair.log")
@@ -2021,7 +2032,7 @@ apply_weather_repairs <- function(target_ids = NULL) {
 ids <- as.character(gridfile[[POINT_ID_COLUMN]])
 
 # Run configured repairs on existing files before validation
-if (dir.exists(output_dir)) {
+if (RUN_STEP_2_WEATHER && dir.exists(output_dir)) {
   apply_weather_repairs(ids)
 }
 
@@ -2325,7 +2336,10 @@ if (EXTEND_WEATHER_DATA) {
   }
 }
 
-cropmodeldata::release_input_lock(.input_weather_lock)
+if (!is.null(.input_weather_lock)) {
+  cropmodeldata::release_input_lock(.input_weather_lock)
+  .input_weather_lock <- NULL
+}
 if (DOWNLOAD_ONLY) {
   coverage <- list()
   point_ids <- as.character(gridfile[[POINT_ID_COLUMN]])
