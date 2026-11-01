@@ -2501,6 +2501,11 @@ if (!("SOIL_ID" %in% names(points))) {
     message("WARNING: SOIL_ID column missing. Initializing as NA.")
     points$SOIL_ID <- NA_character_
   }
+} else if (SOIL_SOURCE %in% PER_POINT_SOIL) {
+  missing_soil <- is.na(points$SOIL_ID)
+  if (any(missing_soil)) {
+    points$SOIL_ID[missing_soil] <- points[[POINT_ID_COLUMN]][missing_soil]
+  }
 }
 
 individual_soil_folder <- file.path(CENTRAL_SOIL_DIR, paste0(SOIL_BASENAME, "_individual_SOL"))

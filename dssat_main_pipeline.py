@@ -1286,7 +1286,11 @@ if __name__ == '__main__':
     # =============================================================================
     print("=" * 60)
     print("STEP 1: PROCESSING SOIL DATA")
-    input_soil_lock = acquire_input_lock(os.path.join(SOIL_ROOT_DIR, SOIL_BASENAME + "_individual_SOL"))
+    input_soil_lock = (
+        acquire_input_lock(os.path.join(SOIL_ROOT_DIR, SOIL_BASENAME + "_individual_SOL"))
+        if RUN_STEP_1_SOILS
+        else None
+    )
     print("=" * 60)
 
     # Completion exclusions exist even when providers are disabled and inputs are reused.
@@ -1570,12 +1574,14 @@ if __name__ == '__main__':
     # STEP 2 - WEATHER DATA
     # =============================================================================
     print("=" * 60)
-    release_input_lock(input_soil_lock)
+    if input_soil_lock is not None:
+        release_input_lock(input_soil_lock)
+        input_soil_lock = None
     print("STEP 2: DOWNLOADING WEATHER DATA")
     print("=" * 60)
 
     weather_dir = os.path.join(WEATHER_ROOT_DIR, WEATHER_DIR_NAME)
-    input_weather_lock = acquire_input_lock(weather_dir)
+    input_weather_lock = acquire_input_lock(weather_dir) if RUN_STEP_2_WEATHER else None
     def apply_weather_repairs(target_ids=None):
         if not os.path.isdir(weather_dir):
             return
@@ -1635,7 +1641,7 @@ if __name__ == '__main__':
     weather_ids = gridfile[POINT_ID_COLUMN].astype(str)
 
     # Run configured repairs on existing files before initial validation
-    if os.path.isdir(weather_dir):
+    if RUN_STEP_2_WEATHER and os.path.isdir(weather_dir):
         apply_weather_repairs(weather_ids.tolist())
 
 
@@ -1908,7 +1914,9 @@ if __name__ == '__main__':
                 f"does not exist: {weather_dir}"
             )
 
-    release_input_lock(input_weather_lock)
+    if input_weather_lock is not None:
+        release_input_lock(input_weather_lock)
+        input_weather_lock = None
     if DOWNLOAD_ONLY:
         coverage = {}
         point_ids = list(gridfile[POINT_ID_COLUMN].astype(str))
@@ -2022,6 +2030,8 @@ if __name__ == '__main__':
 
     if "SOIL_ID" not in points.columns:
         points["SOIL_ID"] = points[POINT_ID_COLUMN] if SOIL_SOURCE in _PER_POINT_SOIL else None
+    elif SOIL_SOURCE in _PER_POINT_SOIL:
+        points["SOIL_ID"] = points["SOIL_ID"].fillna(points[POINT_ID_COLUMN])
 
     # --- Precompute run-folder support files ONCE (not per point) ---------------
     # DSSATPRO.V48 lets DSSAT find genotype/SDA/CO2 files in the install dir, so we
