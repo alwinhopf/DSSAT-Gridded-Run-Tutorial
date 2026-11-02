@@ -52,3 +52,4 @@ test-results.xml
 /prism_cache
 
 /soilgrids_raster_cache/
+._*
