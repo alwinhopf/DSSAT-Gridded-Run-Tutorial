@@ -2502,9 +2502,9 @@ if (!("SOIL_ID" %in% names(points))) {
     points$SOIL_ID <- NA_character_
   }
 } else if (SOIL_SOURCE %in% PER_POINT_SOIL) {
-  missing_soil <- is.na(points$SOIL_ID)
+  missing_soil <- is.na(points$SOIL_ID) | (ifelse(is.na(points$SOIL_ID), "", trimws(points$SOIL_ID)) == "")
   if (any(missing_soil)) {
-    points$SOIL_ID[missing_soil] <- points[[POINT_ID_COLUMN]][missing_soil]
+    points$SOIL_ID[missing_soil] <- as.character(points[[POINT_ID_COLUMN]][missing_soil])
   }
 }
 

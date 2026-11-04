@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pytest tests/test_smoke.py -v)",
+      "Bash(conda run *)",
+      "Bash(conda env *)"
+    ]
+  }
+}
