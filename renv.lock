@@ -766,8 +766,8 @@
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "cropmodel",
       "RemoteSubdir": "packages/cropmodel_data/R/cropmodeldata",
-      "RemoteRef": "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9",
-      "RemoteSha": "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+      "RemoteRef": "900e7d0bfba468644b477a547894f04d53c1486f",
+      "RemoteSha": "900e7d0bfba468644b477a547894f04d53c1486f"
     },
     "cropmodelruntime": {
       "Package": "cropmodelruntime",
@@ -801,8 +801,8 @@
       "RemoteUsername": "alwinhopf",
       "RemoteRepo": "cropmodel",
       "RemoteSubdir": "packages/cropmodel_runtime/R/cropmodelruntime",
-      "RemoteRef": "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9",
-      "RemoteSha": "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+      "RemoteRef": "900e7d0bfba468644b477a547894f04d53c1486f",
+      "RemoteSha": "900e7d0bfba468644b477a547894f04d53c1486f"
     },
     "crul": {
       "Package": "crul",

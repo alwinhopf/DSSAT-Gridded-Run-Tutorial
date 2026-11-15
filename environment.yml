@@ -30,5 +30,5 @@ dependencies:
   # mpi4py via pip on HPC (see note above); uncomment for a local conda MPI:
   # - mpi4py=3.1.6
 # Shared monorepo support is installed after conda-lock using requirements.txt.
-# Pin: 4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9 (pending release tag).
+# Pin: 900e7d0bfba468644b477a547894f04d53c1486f (pending release tag).
 # python -m pip install -r requirements.txt

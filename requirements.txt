@@ -1,5 +1,5 @@
 # Python shared support from the cropmodel monorepo.
 # Conda supplies GIS/scientific dependencies; see environment.yml.
-cropmodel-data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data
-cropmodel-runtime @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_runtime
+cropmodel-data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@900e7d0bfba468644b477a547894f04d53c1486f#subdirectory=packages/cropmodel_data
+cropmodel-runtime @ git+https://github.com/alwinhopf/cropmodel.git@900e7d0bfba468644b477a547894f04d53c1486f#subdirectory=packages/cropmodel_runtime
 pytest>=8

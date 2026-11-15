@@ -29,8 +29,8 @@ existing study templates, input roots, caches and output folders retain their pa
 `dssat_lca_tea` remains a separate Bioenergy LCA dependency.
 
 The supported standard-driver baseline is immutable commit
-`4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9`, which includes spatial fallback and
-input locking. CI, requirements and R setup use this same revision; nothing tracks
+`900e7d0bfba468644b477a547894f04d53c1486f`, which includes spatial fallback,
+input locking, and validated GridMET THREDDS download fallback in Python and R. CI, requirements and R setup use this same revision; nothing tracks
 `main`. Optional `sampling_strategy` modes require the newer development sampling
 and provenance APIs, which are not included in that revision. Leave this setting
 null for the pinned installation. To use these development modes, explicitly
@@ -255,11 +255,11 @@ R packages, which install straight from GitHub (no side-by-side clones needed).
      Store the token by running `gitcreds::gitcreds_set()`. Alternatively, you can add `GITHUB_PAT=your_token_here` directly to your local `~/.Renviron` file.
    * **For Python / `pip`:**
      Ensure your Git Credential Manager is active (it will prompt for authentication if needed), or install using your PAT directly if access requires it:
-     `pip install "git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data"`
+     `pip install "git+https://github.com/alwinhopf/cropmodel.git@900e7d0bfba468644b477a547894f04d53c1486f#subdirectory=packages/cropmodel_data"`
      PAT fallback:
      Use Git Credential Manager or your configured Git credentials with `python -m pip install -r requirements.txt`.
      Use the CDS extra for Copernicus-backed weather sources:
-     `pip install "cropmodel_data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9#subdirectory=packages/cropmodel_data"`
+     `pip install "cropmodel_data[cds] @ git+https://github.com/alwinhopf/cropmodel.git@900e7d0bfba468644b477a547894f04d53c1486f#subdirectory=packages/cropmodel_data"`
      If using SSH, verify your SSH keys are added to your GitHub account: `ssh -T git@github.com`.
 5. **DSSAT 4.8** — install from [dssat.net](https://dssat.net) to the default
    **`C:\DSSAT48`**. The pipeline auto-detects `C:\DSSAT48\DSCSM048.EXE` on

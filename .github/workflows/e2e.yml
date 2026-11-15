@@ -12,7 +12,7 @@ env:
   # declared weather units, and aligned missing-value handling.
   # Must provide the modules imported by both the Python and R integration
   # suites; keep this in sync with smoke.yml.
-  CROPMODEL_REF: '4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9'
+  CROPMODEL_REF: '900e7d0bfba468644b477a547894f04d53c1486f'
   DSSAT_PROVIDER_RETRIES: '3'
   # This job installs an explicit integration-test package set. Avoid activating
   # a deliberately partial renv library in the main process and its workers.

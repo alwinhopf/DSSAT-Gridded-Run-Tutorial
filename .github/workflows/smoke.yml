@@ -7,7 +7,7 @@ env:
   PYTHONUTF8: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Sibling repository pinned revisions
-  CROPMODEL_REF: '4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9'
+  CROPMODEL_REF: '900e7d0bfba468644b477a547894f04d53c1486f'
 
 on:
   push:
