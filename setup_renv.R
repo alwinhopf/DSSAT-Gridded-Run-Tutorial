@@ -50,7 +50,7 @@ renv::install(pkgs)
 # --- Shared packages from the cropmodel monorepo ---
 workspace_root <- normalizePath(file.path(getwd(), ".."), mustWork = FALSE)
 # Pending the first release tag: immutable migration baseline, never main.
-cropmodel_ref <- "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+cropmodel_ref <- "900e7d0bfba468644b477a547894f04d53c1486f"
 cropmodel_root <- Sys.getenv("CROPMODEL_ROOT", file.path(workspace_root, "cropmodel"))
 shared_packages <- c(cropmodeldata = "cropmodel_data", cropmodelruntime = "cropmodel_runtime")
 use_local_shared <- identical(Sys.getenv("USE_LOCAL_SHARED_PACKAGES"), "1")

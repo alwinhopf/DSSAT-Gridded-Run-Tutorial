@@ -261,7 +261,7 @@ def test_conda_lock_covers_supported_desktop_platforms():
 
 def test_shared_package_pins_are_consistent_across_install_paths():
     """All shared namespaces come from the same immutable monorepo baseline."""
-    revision = "4dd81c1c3636dd26f2b5f801af726bdfdbfcb6d9"
+    revision = "900e7d0bfba468644b477a547894f04d53c1486f"
     for name in ("e2e.yml", "smoke.yml"):
         workflow = yaml.safe_load(_read(ROOT / ".github/workflows" / name))
         assert workflow["env"]["CROPMODEL_REF"] == revision
